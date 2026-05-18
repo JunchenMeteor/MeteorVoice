@@ -5,13 +5,11 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { scenarios, accentProfiles, type AccentProfile } from '@/lib/scenarios'
 import { createMockSTT } from '@/lib/providers/mock-stt'
 import { createMockTTS } from '@/lib/providers/mock-tts'
-import { createAICoach } from '@/lib/providers/ai-provider'
 import { transition, createInitialSnapshot, type WorkflowState, type WorkflowSnapshot } from '@/lib/conversation-workflow'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-const ai = createAICoach()
 const stt = createMockSTT()
 const tts = createMockTTS()
 
@@ -86,15 +84,20 @@ export function SessionPageClient() {
 
     setStatusText('Coach is thinking...')
     applyTransition('thinking')
-    const response = await ai.generateReply(
-      [...snapshot.messages, userMsg],
-      {
-        scenario: { name: scenario.name, description: scenario.description },
-        accentProfile: { name: accent.name, region: accent.region },
-        sessionId: snapshot.sessionId,
-        turnNumber: snapshot.turnNumber + 1,
-      },
-    )
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [...snapshot.messages, userMsg],
+        context: {
+          scenario: { name: scenario.name, description: scenario.description },
+          accentProfile: { name: accent.name, region: accent.region },
+          sessionId: snapshot.sessionId,
+          turnNumber: snapshot.turnNumber + 1,
+        },
+      }),
+    })
+    const response: ConversationResponse = await res.json()
     applyTransition('thinking', { lastResponse: response.text })
     await sleep(300)
 
