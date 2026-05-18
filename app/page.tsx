@@ -2,9 +2,11 @@
 
 import { useRouter } from 'next/navigation'
 import { scenarios, pickRandomAccent } from '@/lib/scenarios'
+import { useT } from '@/components/LanguageProvider'
 
 export default function HomePage() {
   const router = useRouter()
+  const t = useT()
 
   function startSession(scenarioKey: string) {
     const accent = pickRandomAccent()
@@ -14,9 +16,9 @@ export default function HomePage() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-[var(--theme-text-primary)]">Practice English</h1>
+        <h1 className="text-2xl font-bold text-[var(--theme-text-primary)]">{t('home.title')}</h1>
         <p className="text-sm text-[var(--theme-text-secondary)] mt-1">
-          Choose a scenario to start a voice conversation with an AI coach. Accent and corrections are automatic.
+          {t('home.subtitle')}
         </p>
       </div>
 

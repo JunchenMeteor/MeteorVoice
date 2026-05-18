@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 
 export default function LoginPage() {
   const router = useRouter()
+  const t = useT()
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -42,7 +44,7 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-full p-6" style={{ background: 'var(--theme-bg)' }}>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{isSignUp ? 'Create Account' : 'Welcome Back'}</CardTitle>
+          <CardTitle>{isSignUp ? t('login.signup') : t('login.welcome')}</CardTitle>
           <CardDescription>
             {isSignUp ? 'Sign up to start practicing' : 'Sign in to your coach'}
           </CardDescription>
@@ -50,7 +52,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">Email</label>
+              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">{t('login.email')}</label>
               <Input
                 type="email"
                 value={email}
@@ -60,7 +62,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">Password</label>
+              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">{t('login.password')}</label>
               <Input
                 type="password"
                 value={password}
@@ -78,18 +80,18 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Loading...' : isSignUp ? 'Create Account' : 'Sign In'}
+              {loading ? t('login.loading') : isSignUp ? t('login.signup') : t('login.signin')}
             </Button>
           </form>
 
           <p className="text-xs text-[var(--theme-text-muted)] mt-4 text-center">
-            {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+            {isSignUp ? t('login.switch_signin') : t('login.switch_signup')}{' '}
             <button
               type="button"
               onClick={() => { setIsSignUp(!isSignUp); setError('') }}
               className="font-medium text-[var(--theme-accent)] hover:underline"
             >
-              {isSignUp ? 'Sign in' : 'Sign up'}
+              {isSignUp ? t('login.signin') : t('login.signup')}
             </button>
           </p>
         </CardContent>
