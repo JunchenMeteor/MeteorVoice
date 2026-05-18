@@ -3,18 +3,21 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-
-const navItems = [
-  { href: '/',       label: 'Home',       icon: HomeIcon },
-  { href: '/session', label: 'Practice',   icon: MicIcon },
-  { href: '/history', label: 'History',    icon: ClockIcon },
-  { href: '/settings', label: 'Settings',  icon: GearIcon },
-]
+import { useT } from '@/components/LanguageProvider'
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const t = useT()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  const navItems = [
+    { href: '/',       label: t('nav.home'),      icon: HomeIcon },
+    { href: '/session', label: t('nav.practice'),  icon: MicIcon },
+    { href: '/review',  label: t('nav.review'),    icon: BookIcon },
+    { href: '/history', label: t('nav.history'),   icon: ClockIcon },
+    { href: '/settings', label: t('nav.settings'), icon: GearIcon },
+  ]
 
   const sidebar = (isMobile: boolean) => (
     <aside
@@ -25,7 +28,6 @@ export default function Sidebar() {
         borderColor: 'var(--theme-border)',
       }}
     >
-      {/* Logo */}
       <div className="flex items-center gap-2 h-14 px-3 shrink-0">
         <span className="text-xl">🗣️</span>
         {!collapsed && <span className="font-semibold text-sm text-[var(--theme-text-primary)]">MeteorVoice</span>}
@@ -43,7 +45,6 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Nav items */}
       <nav className="flex-1 px-2 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = href === '/'
@@ -67,7 +68,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle — desktop only */}
       {!isMobile && (
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -90,7 +90,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-3 left-3 z-40 p-2 rounded-lg"
@@ -104,10 +103,8 @@ export default function Sidebar() {
         </svg>
       </button>
 
-      {/* Desktop sidebar — always visible */}
       <div className="hidden lg:block h-full">{sidebar(false)}</div>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <>
           <div
@@ -138,6 +135,15 @@ function MicIcon({ className }: { className?: string }) {
       <path d="M4 10a6 6 0 0012 0" />
       <line x1="10" y1="16" x2="10" y2="19" />
       <line x1="7" y1="19" x2="13" y2="19" />
+    </svg>
+  )
+}
+
+function BookIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 6v11a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2z" />
+      <path d="M6 1v6l2-2 2 2V1" />
     </svg>
   )
 }

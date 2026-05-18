@@ -2,11 +2,12 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { scenarios, accentProfiles, type AccentProfile } from '@/lib/scenarios'
+import { scenarios, accentProfiles, pickRandomAccent, type AccentProfile } from '@/lib/scenarios'
 import { createMockSTT } from '@/lib/providers/mock-stt'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { transition, createInitialSnapshot, type WorkflowState, type WorkflowSnapshot } from '@/lib/conversation-workflow'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
+import { useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -16,18 +17,24 @@ const tts = createMockTTS()
 export function SessionPageClient() {
   const router = useRouter()
   const params = useSearchParams()
+  const tr = useT()
   const scenarioKey = params.get('scenario') ?? 'small-talk'
   const accentKey = params.get('accent') ?? 'american'
 
   const scenario = scenarios.find(s => s.key === scenarioKey) ?? scenarios[0]
-  const accent = accentProfiles.find(a => a.key === accentKey) ?? accentProfiles[0]
 
+  const [accent, setAccent] = useState<AccentProfile>(
+    accentProfiles.find(a => a.key === accentKey) ?? accentProfiles[0],
+  )
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() =>
     createInitialSnapshot(crypto.randomUUID()),
   )
-  const [statusText, setStatusText] = useState('Ready')
+  const [statusText, setStatusText] = useState(tr('session.ready'))
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [corrections, setCorrections] = useState<ConversationResponse['corrections']>([])
+  const [summary, setSummary] = useState<string | null>(null)
+  const [interrupted, setInterrupted] = useState(false)
+  const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const messages: ConversationMessage[] = snapshot.messages
@@ -40,17 +47,33 @@ export function SessionPageClient() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [snapshot.messages.length])
 
+  useEffect(() => {
+    if (accentBanner) {
+      const timer = setTimeout(() => setAccentBanner(null), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [accentBanner])
+
+  function rotateAccent(): AccentProfile {
+    const next = pickRandomAccent()
+    setAccent(next)
+    setAccentBanner(`${tr('session.accent_changed')} ${next.name}`)
+    return next
+  }
+
   function startSession() {
     setIsSessionActive(true)
-    setStatusText('Listening...')
+    setStatusText(tr('session.listening'))
+    setSummary(null)
     applyTransition('listening')
     simulateTurn()
   }
 
-  function endSession() {
+  async function endSession() {
     setIsSessionActive(false)
     applyTransition('session_ended')
-    setStatusText('Session ended')
+    setStatusText(tr('session.ended'))
+
     // Save to localStorage history
     try {
       const raw = localStorage.getItem('meteorvoice-history')
@@ -63,17 +86,54 @@ export function SessionPageClient() {
         turns: snapshot.turnNumber,
         corrections: corrections.length + snapshot.lastCorrections.length,
         status: 'completed',
+        summary: summary ?? '',
       })
       localStorage.setItem('meteorvoice-history', JSON.stringify(history.slice(0, 50)))
+    } catch {}
+
+    // Generate AI summary
+    try {
+      const res = await fetch('/api/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: snapshot.sessionId,
+          scenario: scenario.name,
+          messages: snapshot.messages.slice(-10),
+          turnNumber: snapshot.turnNumber,
+        }),
+      })
+      const data = await res.json()
+      if (data.summary) setSummary(data.summary)
     } catch {}
   }
 
   async function simulateTurn() {
-    setStatusText('Listening...')
+    setInterrupted(false)
+    setStatusText(tr('session.listening'))
     applyTransition('listening')
+
+    // Simulate live interruption (20% chance during listening)
+    const shouldInterrupt = Math.random() < 0.2
+    if (shouldInterrupt) {
+      await sleep(800 + Math.random() * 700)
+      setInterrupted(true)
+      setStatusText(tr('session.interrupted'))
+      applyTransition('correcting')
+      const mockInterruption: ConversationResponse['corrections'] = [{
+        type: 'pronunciation',
+        originalText: '...interrupted...',
+        suggestedText: 'Focus on clear pronunciation',
+        explanation: 'Try speaking more slowly and clearly.',
+        severity: 'moderate',
+      }]
+      setCorrections(mockInterruption)
+      return
+    }
+
     await sleep(1500)
 
-    setStatusText('Transcribing...')
+    setStatusText(tr('session.transcribing'))
     applyTransition('transcribing')
     const { transcript } = await stt.transcribe(new Blob())
     applyTransition('transcribing', { lastTranscript: transcript })
@@ -82,7 +142,10 @@ export function SessionPageClient() {
     setSnapshot(prev => ({ ...prev, messages: [...prev.messages, userMsg] }))
     await sleep(500)
 
-    setStatusText('Coach is thinking...')
+    // Rotate accent every 3 turns
+    const newAccent = snapshot.turnNumber > 0 && snapshot.turnNumber % 3 === 0 ? rotateAccent() : accent
+
+    setStatusText(tr('session.thinking'))
     applyTransition('thinking')
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -91,7 +154,7 @@ export function SessionPageClient() {
         messages: [...snapshot.messages, userMsg],
         context: {
           scenario: { name: scenario.name, description: scenario.description },
-          accentProfile: { name: accent.name, region: accent.region },
+          accentProfile: { name: newAccent.name, region: newAccent.region },
           sessionId: snapshot.sessionId,
           turnNumber: snapshot.turnNumber + 1,
         },
@@ -99,32 +162,43 @@ export function SessionPageClient() {
     })
     const response: ConversationResponse = await res.json()
     applyTransition('thinking', { lastResponse: response.text })
-    await sleep(300)
 
-    setStatusText('Speaking...')
+    setStatusText(tr('session.speaking'))
     applyTransition('speaking')
-    await tts.synthesize(response.text, { accent: accent.name })
+    await tts.synthesize(response.text, { accent: newAccent.name })
     const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
     setSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
 
     if (response.corrections.length > 0) {
       setCorrections(response.corrections)
       applyTransition('correcting', { lastCorrections: response.corrections })
-      setStatusText('Coach suggests corrections')
+      setStatusText(tr('session.correcting'))
     } else {
-      setStatusText('Tap mic to continue')
+      setStatusText(tr('session.tap_mic'))
       applyTransition('idle')
     }
   }
 
   function continueSpeaking() {
     setCorrections([])
-    setStatusText('Listening...')
+    setStatusText(tr('session.listening'))
     simulateTurn()
+  }
+
+  function playCorrection(text: string) {
+    tts.synthesize(text, { accent: accent.name })
   }
 
   return (
     <div className="p-6 max-w-3xl mx-auto flex flex-col h-full">
+      {/* Accent rotation banner */}
+      {accentBanner && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg"
+          style={{ background: 'var(--theme-accent)' }}>
+          {accentBanner}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4 shrink-0">
         <div>
           <h1 className="text-lg font-bold text-[var(--theme-text-primary)]">
@@ -135,9 +209,9 @@ export function SessionPageClient() {
           </p>
         </div>
         {isSessionActive ? (
-          <Button variant="danger" size="sm" onClick={endSession}>End Session</Button>
+          <Button variant="danger" size="sm" onClick={endSession}>{tr('session.end')}</Button>
         ) : (
-          <Button size="sm" onClick={startSession}>Start Session</Button>
+          <Button size="sm" onClick={startSession}>{tr('session.start')}</Button>
         )}
       </div>
 
@@ -147,7 +221,20 @@ export function SessionPageClient() {
           style={{ background: isSessionActive ? 'var(--theme-success)' : 'var(--theme-text-muted)' }}
         />
         <span className="text-sm text-[var(--theme-text-secondary)]">{statusText}</span>
+        {interrupted && (
+          <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
+        )}
       </div>
+
+      {summary && (
+        <div className="shrink-0 mb-4 p-4 rounded-xl border" style={{
+          background: 'var(--theme-bg-card)',
+          borderColor: 'var(--theme-accent)',
+        }}>
+          <h3 className="text-sm font-semibold text-[var(--theme-accent)] mb-2">{tr('session.summary_title')}</h3>
+          <p className="text-sm text-[var(--theme-text-secondary)] whitespace-pre-wrap">{summary}</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-4 quiet-scrollbar min-h-0">
         {messages.length === 0 && !isSessionActive && (
@@ -159,7 +246,7 @@ export function SessionPageClient() {
               Accent: <span className="text-[var(--theme-accent)]">{accent.name}</span>
             </p>
             <p className="text-xs mt-6 text-[var(--theme-text-muted)]">
-              Press <span className="font-semibold text-[var(--theme-accent)]">Start Session</span> to begin
+              {tr('session.start')}
             </p>
           </div>
         )}
@@ -194,12 +281,25 @@ export function SessionPageClient() {
           <Card>
             <CardContent>
               <h4 className="text-sm font-semibold text-[var(--theme-accent)] mb-3">
-                Correction Tips
+                {tr('session.correction_tips')}
               </h4>
               <div className="space-y-3">
                 {corrections.map((c, i) => (
                   <div key={i} className="border-l-2 border-[var(--theme-accent)] pl-3 space-y-1">
-                    <span className="status-badge warning">{c.type}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="status-badge warning">{c.type}</span>
+                      <button
+                        type="button"
+                        onClick={() => playCorrection(c.suggestedText)}
+                        className="text-xs text-[var(--theme-accent)] hover:underline flex items-center gap-1"
+                        title={tr('session.play_correction')}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M5 3l12 7-12 7V3z" />
+                        </svg>
+                        {tr('session.play_correction')}
+                      </button>
+                    </div>
                     <p className="text-xs text-[var(--theme-text-secondary)]">
                       <span className="line-through text-[var(--theme-danger)]">{c.originalText}</span>
                       {' → '}
@@ -210,7 +310,7 @@ export function SessionPageClient() {
                 ))}
               </div>
               <Button size="sm" className="mt-3" onClick={continueSpeaking}>
-                Continue Speaking
+                {tr('session.continue')}
               </Button>
             </CardContent>
           </Card>
