@@ -5,13 +5,14 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { scenarios, accentProfiles, pickRandomAccent, type AccentProfile } from '@/lib/scenarios'
 import { createMockSTT } from '@/lib/providers/mock-stt'
 import { createMockTTS } from '@/lib/providers/mock-tts'
+import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { transition, createInitialSnapshot, type WorkflowState, type WorkflowSnapshot } from '@/lib/conversation-workflow'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
-const stt = createMockSTT()
+const mockSTT = createMockSTT()
 const tts = createMockTTS()
 
 export function SessionPageClient() {
@@ -74,7 +75,7 @@ export function SessionPageClient() {
     applyTransition('session_ended')
     setStatusText(tr('session.ended'))
 
-    // Save to localStorage history
+    // Save to localStorage history (always as fallback)
     try {
       const raw = localStorage.getItem('meteorvoice-history')
       const history = raw ? JSON.parse(raw) : []
@@ -86,12 +87,31 @@ export function SessionPageClient() {
         turns: snapshot.turnNumber,
         corrections: corrections.length + snapshot.lastCorrections.length,
         status: 'completed',
-        summary: summary ?? '',
+        summary: '',
       })
       localStorage.setItem('meteorvoice-history', JSON.stringify(history.slice(0, 50)))
     } catch {}
 
-    // Generate AI summary
+    // Sync to Supabase: create session record
+    const sessionPayload = {
+      session_id: snapshot.sessionId,
+      scenario: scenario.name,
+      accent: accent.name,
+      turns: snapshot.turnNumber,
+      messages: snapshot.messages.slice(-10),
+      turnNumber: snapshot.turnNumber,
+      corrections: [...corrections, ...snapshot.lastCorrections],
+    }
+
+    try {
+      await fetch('/api/session/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionPayload),
+      })
+    } catch {}
+
+    // Generate AI summary (also saves to learning_history server-side)
     try {
       const res = await fetch('/api/summary', {
         method: 'POST',
@@ -135,7 +155,21 @@ export function SessionPageClient() {
 
     setStatusText(tr('session.transcribing'))
     applyTransition('transcribing')
-    const { transcript } = await stt.transcribe(new Blob())
+    // Use browser STT if available, otherwise mock
+    let transcript: string
+    if (browserSTTSupported()) {
+      try {
+        const browserSTT = createBrowserSTT()
+        const result = await browserSTT.transcribe(new Blob())
+        transcript = result.transcript
+      } catch {
+        const result = await mockSTT.transcribe(new Blob())
+        transcript = result.transcript
+      }
+    } else {
+      const result = await mockSTT.transcribe(new Blob())
+      transcript = result.transcript
+    }
     applyTransition('transcribing', { lastTranscript: transcript })
 
     const userMsg: ConversationMessage = { role: 'user', content: transcript }
