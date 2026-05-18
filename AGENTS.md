@@ -37,7 +37,7 @@ All spec, plan, and implementation handoff files live in `docs/`:
 - Issue/PR titles: `[Feature] ...` or `[Fix] ...` (English only)
 - Issue/PR body must include: `## Summary`, `## Test Plan`. Issues additionally: `## Expected Behavior`, `## Proposed Changes`. PRs additionally: `Closes #<issue>`
 - Labels: `enhancement` (feature) or `bug` (fix)
-- Push with HTTP/1.1: `git -c http.version=HTTP/1.1 push`
+- Push via SSH: `git@github.com:JunchenMeteor/MeteorVoice.git`
 - Always work on a separate branch, create issue and PR for every change
 
 ## Environment
