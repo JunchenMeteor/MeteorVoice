@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { parseLoginIdentifier } from '@/lib/auth/identifier'
 import { useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +12,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 export default function LoginPage() {
   const router = useRouter()
   const t = useT()
-  const supabase = createClient()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState('')
@@ -21,14 +21,38 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    const parsed = parseLoginIdentifier(identifier)
+    if (!parsed) {
+      setError('Enter a valid username, phone number, or email.')
+      return
+    }
     setLoading(true)
     try {
+      const supabase = createClient()
+      const authValue = parsed.kind === 'username' ? parsed.email : parsed.phone
       if (isSignUp) {
-        const { error: signUpError } = await supabase.auth.signUp({ email, password })
+        const { error: signUpError } = await supabase.auth.signUp(
+          parsed.kind === 'phone'
+            ? { phone: authValue, password }
+            : {
+                email: authValue,
+                password,
+                options: {
+                  data: {
+                    username: parsed.username,
+                    display_name: parsed.username,
+                  },
+                },
+              },
+        )
         if (signUpError) { setError(signUpError.message); return }
         setError('Check your email for the confirmation link.')
       } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+        const { error: signInError } = await supabase.auth.signInWithPassword(
+          parsed.kind === 'phone'
+            ? { phone: authValue, password }
+            : { email: authValue, password },
+        )
         if (signInError) { setError(signInError.message); return }
         router.push('/')
         router.refresh()
@@ -52,12 +76,12 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">{t('login.email')}</label>
+              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">Account</label>
               <Input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                type="text"
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value)}
+                placeholder="username, phone, or email"
                 required
               />
             </div>
