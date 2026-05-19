@@ -89,10 +89,13 @@ Current migration state:
 
 - `001_init.sql` creates the schema and seed data
 - `002_rls.sql` enables RLS and user-owned access policies
+- `003_tts_preferences.sql` adds the per-user TTS provider preference
 
 ## TTS
 
-Google Cloud TTS is the recommended real voice provider for now.
+Domestic providers are the recommended real voice path for users in China: Xunfei first, with Volcengine and Tencent Cloud available as alternatives.
+
+The app stores each user's selected voice provider in Supabase. Provider credentials stay in server-side environment variables.
 
 See `docs/tts-integration.md` and `docs/supabase-setup.md`.
 

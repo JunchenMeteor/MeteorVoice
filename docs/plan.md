@@ -85,6 +85,12 @@ Recommended default stack:
 - Speech: browser microphone capture, STT/TTS abstraction, and mock providers for local demo
 - Env: `.env.local` for optional AI model, STT, and TTS provider keys
 
+Current implementation status:
+
+- Implemented: username/phone account parsing, RLS migrations, Supabase-backed TTS provider preference, `/api/tts`, Xunfei/Volcengine/Tencent provider adapters, Settings provider switch, and accent capability gating.
+- Requires external setup: Supabase migrations, Vercel/server environment variables, and real TTS provider account credentials.
+- Not fully verified without credentials: real provider audio output, provider-specific English voice quality, and exact multi-accent voice availability.
+
 Cost-control requirements:
 
 - Use mock providers for initial development and tests.
@@ -109,3 +115,4 @@ npm run dev
 - Theme tokens must be used consistently from the start.
 - LangGraph should stay limited to conversation/correction/session-summary flow; do not use it for simple CRUD.
 - LangChain should stay optional in v1; Vercel AI SDK should remain the primary AI streaming layer.
+- Domestic TTS provider capabilities differ by voice package; keep unsupported accents disabled until a specific voice ID is confirmed.
