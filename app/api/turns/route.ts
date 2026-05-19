@@ -1,12 +1,8 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { createTurn } from '@/lib/server/turns'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const body = await request.json() as {
       session_id: string
       speaker: string
@@ -19,34 +15,9 @@ export async function POST(request: Request) {
         severity: string
       }[]
     }
-
-    const { data: turn, error } = await supabase
-      .from('turns')
-      .insert({
-        session_id: body.session_id,
-        speaker: body.speaker,
-        transcript: body.transcript,
-      })
-      .select()
-      .single()
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-    // Save corrections if any
-    if (body.corrections && body.corrections.length > 0 && turn) {
-      const correctionRows = body.corrections.map(c => ({
-        turn_id: turn.id,
-        correction_type: c.type,
-        original_text: c.originalText,
-        suggested_text: c.suggestedText,
-        explanation: c.explanation,
-        severity: c.severity,
-      }))
-      await supabase.from('correction_items').insert(correctionRows)
-    }
-
-    return NextResponse.json({ success: true, turn_id: turn?.id })
+    const result = await createTurn(body)
+    return jsonApiResult(result)
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    return jsonServerError(e)
   }
 }

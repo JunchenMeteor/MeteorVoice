@@ -19,6 +19,7 @@
 - [Authentication](#authentication)
 - [Persistence](#persistence)
 - [TTS](#tts)
+- [Project Structure](#project-structure)
 - [Run](#run)
 - [Validation](#validation)
 
@@ -98,6 +99,10 @@ Domestic providers are the recommended real voice path for users in China: Xunfe
 The app stores each user's selected voice provider in Supabase. Provider credentials stay in server-side environment variables.
 
 See `docs/tts-integration.md` and `docs/supabase-setup.md`.
+
+## Project Structure
+
+See `docs/project-structure.md` for the frontend/backend-like layering rules used in this repo.
 
 ## Run
 

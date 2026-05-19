@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { createServerTTS } from '@/lib/providers/server-tts'
+import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { synthesizeSpeechFromRequest } from '@/lib/server/tts'
 
 export const runtime = 'nodejs'
 
@@ -12,21 +12,9 @@ export async function POST(request: Request) {
       provider?: string
     }
 
-    if (!body.text?.trim()) {
-      return NextResponse.json({ error: 'Text is required' }, { status: 400 })
-    }
-
-    const tts = createServerTTS(body.provider)
-    const result = await tts.synthesize(body.text, {
-      accent: body.accent,
-      speed: body.speed,
-    })
-
-    return NextResponse.json(result)
+    const result = await synthesizeSpeechFromRequest(body)
+    return jsonApiResult(result)
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'TTS failed' },
-      { status: 500 },
-    )
+    return jsonServerError(error, 'TTS failed')
   }
 }
