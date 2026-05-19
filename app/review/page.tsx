@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
+import type { ConversationResponse } from '@/lib/providers/types'
 
 interface ReviewItem {
   id: string
@@ -14,23 +15,73 @@ interface ReviewItem {
   date: string
 }
 
-function loadReviewItems(): ReviewItem[] {
+type Translate = (key: string) => string
+
+function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'date'>, index: number, t: Translate): ReviewItem[] {
+  return [
+    {
+      id: `${session.date}-${index}-a`,
+      type: 'grammar',
+      original: t('review.sample.grammar.original'),
+      suggested: t('review.sample.grammar.suggested'),
+      explanation: t('review.sample.grammar.explanation'),
+      scenario: session.scenario,
+      date: session.date,
+    },
+    {
+      id: `${session.date}-${index}-b`,
+      type: 'vocabulary',
+      original: t('review.sample.vocabulary.original'),
+      suggested: t('review.sample.vocabulary.suggested'),
+      explanation: t('review.sample.vocabulary.explanation'),
+      scenario: session.scenario,
+      date: session.date,
+    },
+    {
+      id: `${session.date}-${index}-c`,
+      type: 'pronunciation',
+      original: t('review.sample.pronunciation.original'),
+      suggested: t('review.sample.pronunciation.suggested'),
+      explanation: t('review.sample.pronunciation.explanation'),
+      scenario: session.scenario,
+      date: session.date,
+    },
+  ]
+}
+
+function loadReviewItems(t: Translate): ReviewItem[] {
   if (typeof window === 'undefined') return []
 
   try {
     const raw = localStorage.getItem('meteorvoice-history')
     if (!raw) return []
 
-    const sessions = JSON.parse(raw) as { scenario: string; date: string; corrections: number }[]
+    const sessions = JSON.parse(raw) as {
+      scenario: string
+      date: string
+      corrections: number
+      correctionItems?: ConversationResponse['corrections']
+    }[]
     const reviewItems: ReviewItem[] = []
     sessions.forEach(s => {
+      if (s.correctionItems?.length) {
+        s.correctionItems.forEach((correction, i) => {
+          reviewItems.push({
+            id: `${s.date}-${i}-${correction.type}`,
+            type: correction.type,
+            original: correction.originalText,
+            suggested: correction.suggestedText,
+            explanation: correction.explanation,
+            scenario: s.scenario,
+            date: s.date,
+          })
+        })
+        return
+      }
+
       const count = s.corrections ?? Math.floor(Math.random() * 3)
       for (let i = 0; i < count; i++) {
-        const templates: ReviewItem[] = [
-          { id: `${s.date}-${i}-a`, type: 'grammar', original: 'I goes to school', suggested: 'I go to school', explanation: 'Third-person "s" only applies to he/she/it.', scenario: s.scenario, date: s.date },
-          { id: `${s.date}-${i}-b`, type: 'vocabulary', original: 'I want to order', suggested: 'I would like to order', explanation: '"Would like" is more polite in service situations.', scenario: s.scenario, date: s.date },
-          { id: `${s.date}-${i}-c`, type: 'pronunciation', original: 'com-fort-a-ble', suggested: 'comf-ta-ble', explanation: 'Native speakers drop the middle syllable.', scenario: s.scenario, date: s.date },
-        ]
+        const templates = sampleReviewItems(s, i, t)
         reviewItems.push(templates[i % 3])
       }
     })
@@ -42,9 +93,13 @@ function loadReviewItems(): ReviewItem[] {
 
 export default function ReviewPage() {
   const t = useT()
-  const [items] = useState<ReviewItem[]>(loadReviewItems)
+  const [items] = useState<ReviewItem[]>(() => loadReviewItems(t))
   const [currentIndex, setCurrentIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
+
+  function correctionTypeLabel(type: string) {
+    return t(`correction.type.${type}`)
+  }
 
   if (items.length === 0) {
     return (
@@ -73,9 +128,9 @@ export default function ReviewPage() {
       <Card>
         <CardContent className="space-y-6 pt-6">
           <div className="text-center">
-            <span className="status-badge warning text-sm mb-3">{current.type}</span>
+            <span className="status-badge warning text-sm mb-3">{correctionTypeLabel(current.type)}</span>
             <div className="mt-4 p-6 rounded-xl border-2" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
-              <p className="text-sm text-[var(--theme-text-muted)] mb-1">Original</p>
+              <p className="text-sm text-[var(--theme-text-muted)] mb-1">{t('review.original')}</p>
               <p className="text-xl font-medium text-[var(--theme-danger)] line-through">{current.original}</p>
             </div>
           </div>
@@ -88,13 +143,13 @@ export default function ReviewPage() {
                 className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: 'var(--theme-accent)' }}
               >
-                Reveal Correction
+                {t('review.reveal')}
               </button>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="p-6 rounded-xl border-2" style={{ borderColor: 'var(--theme-success)', background: 'var(--theme-surface)' }}>
-                <p className="text-sm text-[var(--theme-text-muted)] mb-1">Corrected</p>
+                <p className="text-sm text-[var(--theme-text-muted)] mb-1">{t('review.corrected')}</p>
                 <p className="text-xl font-medium text-[var(--theme-success)]">{current.suggested}</p>
               </div>
               <p className="text-sm text-center text-[var(--theme-text-secondary)]">{current.explanation}</p>
@@ -112,7 +167,7 @@ export default function ReviewPage() {
               className="chip-action"
               style={{ opacity: currentIndex === 0 ? 0.4 : 1 }}
             >
-              ← Previous
+              {t('review.previous')}
             </button>
             <button
               type="button"
@@ -124,7 +179,7 @@ export default function ReviewPage() {
               className="chip-action"
               style={{ opacity: currentIndex === items.length - 1 ? 0.4 : 1 }}
             >
-              Next →
+              {t('review.next')}
             </button>
           </div>
         </CardContent>
