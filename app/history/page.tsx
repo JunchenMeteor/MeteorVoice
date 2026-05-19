@@ -13,11 +13,26 @@ interface HistoryEntry {
   summary: string | null
 }
 
+function loadLocalHistory(): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem('meteorvoice-history')
+    return raw ? JSON.parse(raw) as HistoryEntry[] : []
+  } catch {
+    return []
+  }
+}
+
 export default function HistoryPage() {
   const t = useT()
   const [sessions, setSessions] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [source, setSource] = useState<'supabase' | 'local' | 'none'>('none')
+
+  function statusLabel(status: string) {
+    const key = `history.status.${status}`
+    const label = t(key)
+    return label === key ? status : label
+  }
 
   useEffect(() => {
     // Try Supabase first
@@ -29,17 +44,17 @@ export default function HistoryPage() {
           setSource('supabase')
         } else {
           // Fallback to localStorage
-          const raw = localStorage.getItem('meteorvoice-history')
-          if (raw) {
-            setSessions(JSON.parse(raw) as HistoryEntry[])
+          const localSessions = loadLocalHistory()
+          if (localSessions.length > 0) {
+            setSessions(localSessions)
             setSource('local')
           }
         }
       })
       .catch(() => {
-        const raw = localStorage.getItem('meteorvoice-history')
-        if (raw) {
-          setSessions(JSON.parse(raw) as HistoryEntry[])
+        const localSessions = loadLocalHistory()
+        if (localSessions.length > 0) {
+          setSessions(localSessions)
           setSource('local')
         }
       })
@@ -52,7 +67,7 @@ export default function HistoryPage() {
         <h1 className="text-2xl font-bold text-[var(--theme-text-primary)]">{t('history.title')}</h1>
         <p className="text-sm text-[var(--theme-text-secondary)] mt-1">
           {source === 'local'
-            ? 'Review past practice sessions. History is stored locally until Supabase sync is configured.'
+            ? t('history.local_subtitle')
             : t('history.subtitle')
           }
         </p>
@@ -81,7 +96,7 @@ export default function HistoryPage() {
                       <p className="text-xs text-[var(--theme-text-secondary)] mt-2 line-clamp-2">{s.summary}</p>
                     )}
                   </div>
-                  <span className="status-badge success shrink-0">{s.status}</span>
+                  <span className="status-badge success shrink-0">{statusLabel(s.status)}</span>
                 </div>
               </CardContent>
             </Card>
