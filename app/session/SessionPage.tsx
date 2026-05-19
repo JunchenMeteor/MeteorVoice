@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 const mockSTT = createMockSTT()
-const tts = createMockTTS()
+const mockTTS = createMockTTS()
 
 export function SessionPageClient() {
   const router = useRouter()
@@ -36,6 +36,7 @@ export function SessionPageClient() {
   const [summary, setSummary] = useState<string | null>(null)
   const [interrupted, setInterrupted] = useState(false)
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
+  const [ttsProvider, setTtsProvider] = useState('mock')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const messages: ConversationMessage[] = snapshot.messages
@@ -54,6 +55,15 @@ export function SessionPageClient() {
       return () => clearTimeout(timer)
     }
   }, [accentBanner])
+
+  useEffect(() => {
+    fetch('/api/preferences')
+      .then(res => res.json())
+      .then((data: { tts_provider?: string }) => {
+        if (data.tts_provider) setTtsProvider(data.tts_provider)
+      })
+      .catch(() => {})
+  }, [])
 
   function rotateAccent(): AccentProfile {
     const next = pickRandomAccent()
@@ -199,7 +209,7 @@ export function SessionPageClient() {
 
     setStatusText(tr('session.speaking'))
     applyTransition('speaking')
-    await tts.synthesize(response.text, { accent: newAccent.name })
+    await speakText(response.text, newAccent.name)
     const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
     setSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
 
@@ -219,8 +229,29 @@ export function SessionPageClient() {
     simulateTurn()
   }
 
+  async function speakText(text: string, accentName: string) {
+    try {
+      if (ttsProvider === 'mock') {
+        await mockTTS.synthesize(text, { accent: accentName })
+        return
+      }
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, accent: accentName, provider: ttsProvider }),
+      })
+      const result = await res.json() as { audioUrl?: string }
+      if (result.audioUrl) {
+        const audio = new Audio(result.audioUrl)
+        await audio.play()
+      }
+    } catch {
+      await mockTTS.synthesize(text, { accent: accentName })
+    }
+  }
+
   function playCorrection(text: string) {
-    tts.synthesize(text, { accent: accent.name })
+    speakText(text, accent.name)
   }
 
   return (

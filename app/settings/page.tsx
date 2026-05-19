@@ -3,24 +3,53 @@
 import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles } from '@/lib/scenarios'
+import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import type { Locale } from '@/lib/i18n'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
+
+const ttsProviders = [
+  { key: 'mock', labelKey: 'settings.tts_provider_mock' },
+  { key: 'xunfei', labelKey: 'settings.tts_provider_xunfei' },
+  { key: 'volcengine', labelKey: 'settings.tts_provider_volcengine' },
+  { key: 'tencent', labelKey: 'settings.tts_provider_tencent' },
+] as const
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const { locale, setLocale } = useLocale()
   const t = useT()
   const [defaultAccent, setDefaultAccent] = useState('american')
+  const [ttsProvider, setTtsProvider] = useState('mock')
 
   useEffect(() => {
     const stored = localStorage.getItem('coach-default-accent')
     if (stored) setDefaultAccent(stored)
+    fetch('/api/preferences')
+      .then(res => res.json())
+      .then((data: { tts_provider?: string }) => {
+        if (data.tts_provider) setTtsProvider(data.tts_provider)
+      })
+      .catch(() => {})
   }, [])
 
   function handleAccentChange(key: string) {
+    if (!supportsAccent(ttsProvider, key)) return
     setDefaultAccent(key)
     localStorage.setItem('coach-default-accent', key)
+  }
+
+  function handleTtsProviderChange(key: string) {
+    setTtsProvider(key)
+    if (!supportsAccent(key, defaultAccent)) {
+      setDefaultAccent('american')
+      localStorage.setItem('coach-default-accent', 'american')
+    }
+    fetch('/api/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts_provider: key }),
+    }).catch(() => {})
   }
 
   return (
@@ -84,17 +113,25 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2">
-            {accentProfiles.map(a => (
+            {accentProfiles.map(a => {
+              const enabled = supportsAccent(ttsProvider, a.key)
+              return (
               <button
                 key={a.key}
                 type="button"
                 onClick={() => handleAccentChange(a.key)}
-                className={`chip-action ${a.key === defaultAccent ? 'is-active' : ''}`}
+                disabled={!enabled}
+                title={enabled ? a.name : t('settings.accent_not_supported')}
+                className={`chip-action ${a.key === defaultAccent ? 'is-active' : ''} ${enabled ? '' : 'opacity-40 cursor-not-allowed'}`}
               >
                 {a.name}
               </button>
-            ))}
+              )
+            })}
           </div>
+          <p className="text-xs text-[var(--theme-text-muted)] mt-3">
+            {t('settings.accent_provider_hint')}
+          </p>
         </CardContent>
       </Card>
 
@@ -113,6 +150,30 @@ export default function SettingsPage() {
               {t('settings.ai_hint')}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.tts_provider')}</CardTitle>
+          <CardDescription>{t('settings.tts_provider_desc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {ttsProviders.map(provider => (
+              <button
+                key={provider.key}
+                type="button"
+                onClick={() => handleTtsProviderChange(provider.key)}
+                className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''}`}
+              >
+                {t(provider.labelKey)}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-[var(--theme-text-muted)] mt-3">
+            {t('settings.tts_provider_hint')}
+          </p>
         </CardContent>
       </Card>
 

@@ -1,186 +1,156 @@
 # TTS Integration Guide
 
-## Current State
+## Current Direction
 
-Browsers: `speechSynthesis` API — robotic voice, no accent control.
+For users in China, use domestic TTS providers first:
 
-## Provider Comparison
+1. Xunfei
+2. Volcengine
+3. Tencent Cloud
 
-| Provider | Free Tier | Beyond Free | Accent Support | latency |
-|---|---|---|---|---|
-| **Google Cloud TTS** | 400万字符/月 (Standard) | $4/百万字符 | 多英语口音 | ~200ms |
-| Microsoft Azure | 50万字符/月 (Neural) | $15/百万字符 | 多英语口音 | ~300ms |
-| OpenAI TTS | 无 | $15/百万字符 | 基本 | ~400ms |
-| ElevenLabs | 10分钟/月 | $5/月起 | 最优 | ~75ms (Flash) |
+Google Cloud TTS remains a future option, but it is not the default path because account and billing setup can be blocked by region/payment constraints.
 
-**推荐：Google Cloud TTS**
-- 免费额度最大（400万字符足够 MVP）
-- 付费最便宜（$4/百万字符）
-- 支持 British、American、Australian、Indian 等口音
-- 已有 Node.js SDK，接入成本低
+## Runtime Switching
 
-## Google Cloud TTS Setup
+The app supports runtime provider switching:
 
-### 1. Create GCP Project + Enable API
+- Settings page: choose `Mock / Browser`, `Xunfei`, `Volcengine`, or `Tencent Cloud`
+- Server route: `POST /api/tts`
+- Provider factory: `lib/providers/server-tts.ts`
+- User preference storage: `theme_preferences.tts_provider`
+
+Provider keys stay on the server. The browser only sends the selected provider name.
+
+Do not store provider API keys in the database for the MVP. Keep keys in server-side environment variables. Storing keys in the database would require encryption, key rotation, access auditing, and a secure admin flow.
+
+## Environment Variables
+
+Local development uses `.env.local`.
+
+Vercel or another deployment platform should use provider-managed environment variables instead. Do not commit real keys.
+
+After applying the first two migrations, also run:
+
+```text
+supabase/migrations/003_tts_preferences.sql
+```
+
+## Xunfei Setup
+
+Use Xunfei first for MVP testing because it has a clear free daily quota and is reachable from China.
+
+1. Open Xunfei Open Platform:
+
+```text
+https://www.xfyun.cn/
+```
+
+2. Create an app for online TTS.
+3. Enable online speech synthesis / WebAPI.
+4. Copy these values:
+
+```text
+XUNFEI_APP_ID=
+XUNFEI_API_KEY=
+XUNFEI_API_SECRET=
+```
+
+5. Configure `.env.local` or deployment env vars:
+
+```env
+TTS_PROVIDER=xunfei
+XUNFEI_APP_ID=your_app_id
+XUNFEI_API_KEY=your_api_key
+XUNFEI_API_SECRET=your_api_secret
+XUNFEI_TTS_VOICE=x4_EnUs_Laura_education
+```
+
+6. In the app Settings page, select `Xunfei`.
+
+## Volcengine Setup
+
+1. Open Volcengine console:
+
+```text
+https://console.volcengine.com/
+```
+
+2. Enable speech synthesis / audio technology.
+3. Copy app id and access token.
+4. Configure:
+
+```env
+TTS_PROVIDER=volcengine
+VOLCENGINE_TTS_APP_ID=your_app_id
+VOLCENGINE_TTS_ACCESS_TOKEN=your_access_token
+VOLCENGINE_TTS_CLUSTER=volcano_tts
+VOLCENGINE_TTS_VOICE=BV001_streaming
+```
+
+5. In the app Settings page, select `Volcengine`.
+
+## Tencent Cloud Setup
+
+1. Open Tencent Cloud TTS:
+
+```text
+https://cloud.tencent.com/product/tts
+```
+
+2. Enable text-to-speech.
+3. Create or reuse an API key:
+
+```text
+SecretId
+SecretKey
+```
+
+4. Configure:
+
+```env
+TTS_PROVIDER=tencent
+TENCENT_SECRET_ID=your_secret_id
+TENCENT_SECRET_KEY=your_secret_key
+TENCENT_TTS_REGION=ap-guangzhou
+TENCENT_TTS_VOICE=101001
+```
+
+5. In the app Settings page, select `Tencent Cloud`.
+
+## Provider Behavior
+
+- `mock`: browser speech synthesis fallback
+- `xunfei`: server-side WebSocket provider
+- `volcengine`: server-side HTTP provider
+- `tencent`: server-side signed Tencent Cloud API request
+
+If a selected provider is not configured, the frontend falls back to browser mock speech.
+
+## Accent Capability Status
+
+The Settings page disables accent options that are not supported by the selected TTS provider.
+
+Current conservative mapping:
+
+| Provider | Enabled accents |
+|---|---|
+| Mock / Browser | British, American, Indian, Australian, Singapore, African |
+| Xunfei | American only |
+| Volcengine | American only |
+| Tencent Cloud | American only |
+
+Open additional accents only after the exact provider voice IDs are confirmed and tested.
+
+## Completion Status
+
+- Implemented: provider switching UI, server-side `/api/tts`, Xunfei/Volcengine/Tencent provider adapters, Supabase-backed user preference, accent capability gating.
+- Requires user configuration: provider account creation, server environment variables, `003_tts_preferences.sql`.
+- Not fully verified without credentials: real provider audio output and exact provider-specific voice IDs.
+
+## Validation
 
 ```bash
-# 创建项目
-gcloud projects create meteorvoice-tts
-
-# 启用 TTS API
-gcloud services enable texttospeech.googleapis.com
-
-# 创建服务账号
-gcloud iam service-accounts create meteorvoice-tts \
-  --display-name="MeteorVoice TTS"
-
-# 下载密钥
-gcloud iam service-accounts keys create ~/tts-key.json \
-  --iam-account=meteorvoice-tts@meteorvoice-tts.iam.gserviceaccount.com
+npm run build
 ```
 
-### 2. Set Environment Variable
-
-本地 `.env.local`:
-```
-GOOGLE_TTS_KEY={"type":"service_account",...}
-```
-
-Vercel: 添加 `GOOGLE_TTS_KEY` 环境变量（把 JSON 内容整体放进去）
-
-### 3. Install SDK
-
-```bash
-npm install @google-cloud/text-to-speech
-```
-
-### 4. Create Provider (`lib/providers/google-tts.ts`)
-
-```typescript
-import type { TTSProvider, TTSResult } from './types'
-
-const accentVoiceMap: Record<string, { languageCode: string; name: string }> = {
-  'british':    { languageCode: 'en-GB', name: 'en-GB-Studio-B' },
-  'american':   { languageCode: 'en-US', name: 'en-US-Studio-O' },
-  'australian': { languageCode: 'en-AU', name: 'en-AU-Studio-B' },
-  'indian':     { languageCode: 'en-IN', name: 'en-IN-Studio-A' },
-  'singapore':  { languageCode: 'en-SG', name: 'en-US-Studio-O' },  // fallback
-  'african':    { languageCode: 'en-ZA', name: 'en-US-Studio-O' },  // fallback
-}
-
-export function createGoogleTTS(): TTSProvider {
-  const key = process.env.GOOGLE_TTS_KEY
-  if (!key) {
-    throw new Error('GOOGLE_TTS_KEY not set')
-  }
-
-  const client = new (require('@google-cloud/text-to-speech').v1.TextToSpeechClient)({
-    credentials: JSON.parse(key),
-  })
-
-  return {
-    async synthesize(
-      text: string,
-      options?: { accent?: string; speed?: number },
-    ): Promise<TTSResult> {
-      const voiceConfig = accentVoiceMap[options?.accent ?? 'american']
-        ?? accentVoiceMap['american']
-
-      const [response] = await client.synthesizeSpeech({
-        input: { text },
-        voice: {
-          languageCode: voiceConfig.languageCode,
-          name: voiceConfig.name,
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
-          speakingRate: options?.speed ?? 1.0,
-        },
-      })
-
-      const audioContent = response.audioContent as string | Uint8Array
-      const buffer = typeof audioContent === 'string'
-        ? Buffer.from(audioContent, 'base64')
-        : Buffer.from(audioContent)
-      const audioUrl = `data:audio/mp3;base64,${buffer.toString('base64')}`
-      const duration = text.length * 0.05
-
-      return { audioUrl, duration }
-    },
-  }
-}
-```
-
-### 5. Add API Route (`app/api/tts/route.ts`)
-
-```typescript
-import { NextResponse } from 'next/server'
-import { createGoogleTTS } from '@/lib/providers/google-tts'
-import { createMockTTS } from '@/lib/providers/mock-tts'
-
-export async function POST(request: Request) {
-  try {
-    const { text, accent, speed } = await request.json() as {
-      text: string; accent?: string; speed?: number
-    }
-
-    let tts
-    try {
-      tts = createGoogleTTS()
-    } catch {
-      tts = createMockTTS()
-    }
-
-    const result = await tts.synthesize(text, { accent, speed })
-    return NextResponse.json(result)
-  } catch {
-    return NextResponse.json({ error: 'TTS failed' }, { status: 500 })
-  }
-}
-```
-
-### 6. Update SessionPage
-
-Replace `const tts = createMockTTS()` with `fetch('/api/tts', ...)`:
-
-```typescript
-async function speakText(text: string, accentName: string) {
-  const res = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, accent: accentName.toLowerCase() }),
-  })
-  const { audioUrl } = await res.json()
-  if (audioUrl) {
-    const audio = new Audio(audioUrl)
-    await audio.play()
-  }
-}
-```
-
-## Cost Estimate for MVP
-
-- 一次练习约 10 轮对话，每轮 AI 回复 ~200 字符
-- 一次 session: 10 × 200 = 2,000 字符
-- 每天 10 次 session: 20,000 字符
-- 每月: 600,000 字符
-
-**完全在 Google 免费 400 万字符额度内，免费。**
-
-## ElevenLabs Alternative (Higher Quality)
-
-如果需要最高质量的语音，ElevenLabs 接入成本类似但需注册：
-
-```bash
-npm install elevenlabs
-```
-
-API key: `ELEVENLABS_API_KEY`
-
-参照同样 Provider 模式，在 `lib/providers/elevenlabs-tts.ts` 中实现。
-
-## Migration Path
-
-1. 先接 Google Cloud TTS 验证口音切换效果
-2. 如果语音质量不够，可无缝切换 ElevenLabs（Provider 接口已定义好）
-3. 两种 Provider 可共存，按 `TTS_PROVIDER` 环境变量切换
+Then run the app, open Settings, select a TTS provider, and start a session.

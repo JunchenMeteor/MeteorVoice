@@ -2,6 +2,7 @@ const defaultUsernameEmailDomain = 'users.meteorvoice.local'
 
 export type LoginIdentifier =
   | { kind: 'phone'; phone: string }
+  | { kind: 'email'; email: string }
   | { kind: 'username'; email: string; username: string }
 
 function usernameEmailDomain() {
@@ -26,6 +27,10 @@ export function parseLoginIdentifier(value: string): LoginIdentifier | null {
 
   const phone = normalizePhoneIdentifier(trimmed)
   if (phone) return { kind: 'phone', phone }
+
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    return { kind: 'email', email: trimmed.toLowerCase() }
+  }
 
   if (/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,19}$/.test(trimmed)) {
     const username = trimmed.toLowerCase()

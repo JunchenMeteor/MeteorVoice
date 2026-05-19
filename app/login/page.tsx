@@ -29,7 +29,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const supabase = createClient()
-      const authValue = parsed.kind === 'username' ? parsed.email : parsed.phone
+      const authValue = parsed.kind === 'phone' ? parsed.phone : parsed.email
       if (isSignUp) {
         const { error: signUpError } = await supabase.auth.signUp(
           parsed.kind === 'phone'
@@ -39,8 +39,8 @@ export default function LoginPage() {
                 password,
                 options: {
                   data: {
-                    username: parsed.username,
-                    display_name: parsed.username,
+                    username: parsed.kind === 'username' ? parsed.username : undefined,
+                    display_name: parsed.kind === 'username' ? parsed.username : undefined,
                   },
                 },
               },

@@ -63,6 +63,7 @@ Suggested fields:
 - `AccentProfile`: id, name, region, description, enabled
 - `Scenario`: id, key, name, description, difficulty
 - `ThemePreference`: userId, themeKey, uiMode, subtitleMode
+- `ThemePreference.ttsProvider`: selected TTS provider, such as mock, xunfei, volcengine, or tencent
 - `AudioClip`: id, ownerType, ownerId, url, duration
 - `LearningHistory`: id, userId, sessionId, summary, createdAt
 
@@ -103,6 +104,7 @@ Suggested fields:
 - Login provider
 - Speech recognition provider
 - Text-to-speech provider
+- TTS provider capability map for accent availability
 - AI model provider
 - Storage for audio and history
 
@@ -124,6 +126,7 @@ Recommended default stack, not a hard requirement:
 - Retrieval layer: optional RAG-style retrieval for scenario packs, user history, and correction memory; add it after the core voice loop is stable
 - Auth: local email/password or lightweight credentials-based auth for the MVP
 - Speech: browser microphone capture with STT/TTS provider abstractions and mock providers for development
+- Domestic TTS options: Xunfei first, then Volcengine and Tencent Cloud; keep Google as a future option
 - Storage: cloud storage/persistence for synced history, corrections, preferences, and audio metadata; local mock data is acceptable for development
 
 Recommended approach:
@@ -229,3 +232,4 @@ npm run dev
 - Bilingual subtitles may distract if shown too aggressively
 - Theme consistency must be handled through tokens, not hard-coded colors
 - Retrieval quality will depend on how scenario packs and correction history are structured and indexed
+- Real voice quality and accent support must be verified against each provider's actual voice IDs
