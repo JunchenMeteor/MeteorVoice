@@ -25,12 +25,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const stored = localStorage.getItem('coach-default-accent')
     if (stored) setDefaultAccent(stored)
-    fetch('/api/preferences')
-      .then(res => res.json())
-      .then((data: { tts_provider?: string }) => {
-        if (data.tts_provider) setTtsProvider(data.tts_provider)
-      })
-      .catch(() => {})
+    loadTtsProvider()
   }, [])
 
   function handleAccentChange(key: string) {
@@ -50,6 +45,14 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tts_provider: key }),
     }).catch(() => {})
+  }
+
+  async function loadTtsProvider() {
+    try {
+      const res = await fetch('/api/preferences')
+      const data = await res.json() as { tts_provider?: string }
+      if (data.tts_provider) setTtsProvider(data.tts_provider)
+    } catch {}
   }
 
   return (

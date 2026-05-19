@@ -90,6 +90,7 @@ Current implementation status:
 - Implemented: username/phone account parsing, RLS migrations, Supabase-backed TTS provider preference, `/api/tts`, Xunfei/Volcengine/Tencent provider adapters, Settings provider switch, and accent capability gating.
 - Requires external setup: Supabase migrations, Vercel/server environment variables, and real TTS provider account credentials.
 - Not fully verified without credentials: real provider audio output, provider-specific English voice quality, and exact multi-accent voice availability.
+- Structural docs added: `docs/project-structure.md` for frontend/backend-style layering without a full repo split.
 
 Cost-control requirements:
 

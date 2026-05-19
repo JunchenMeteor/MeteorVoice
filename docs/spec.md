@@ -204,6 +204,14 @@ Use the common AI application development modes deliberately:
 - Accent expansion
 - Review and retention features
 
+## Current Completion Snapshot
+
+- Core voice loop: implemented with mock and provider-based TTS.
+- Auth and persistence: implemented with Supabase and RLS.
+- TTS provider switching: implemented with user preference storage.
+- Accent gating: implemented for unsupported provider accents.
+- Docs: partially synchronized; the new project structure doc clarifies the frontend/backend-like layering.
+
 ## Validation and Acceptance Criteria
 
 Validation should confirm:
