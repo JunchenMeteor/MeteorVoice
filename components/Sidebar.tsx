@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getUserDisplayName, getUserInitial } from '@/lib/auth/display'
 import { useT } from '@/components/LanguageProvider'
 
 export default function Sidebar() {
@@ -12,18 +13,15 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userDisplayName, setUserDisplayName] = useState<string | null>(null)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
-    function updateUser(user: { email?: string; user_metadata?: { display_name?: string } } | null) {
+    function updateUser(user: Parameters<typeof getUserDisplayName>[0]) {
       if (user) {
-        setUserEmail(user.email ?? null)
-        setUserDisplayName(user.user_metadata?.display_name ?? null)
+        setUserDisplayName(getUserDisplayName(user))
         setIsLoggedIn(true)
       } else {
-        setUserEmail(null)
         setUserDisplayName(null)
         setIsLoggedIn(false)
       }
@@ -42,10 +40,6 @@ export default function Sidebar() {
     { href: '/history', label: t('nav.history'),   icon: ClockIcon },
     { href: '/settings', label: t('nav.settings'), icon: GearIcon },
   ]
-
-  function userInitial(email: string) {
-    return email.charAt(0).toUpperCase()
-  }
 
   const sidebar = (isMobile: boolean) => (
     <aside
@@ -99,17 +93,17 @@ export default function Sidebar() {
 
       {/* Bottom: user area */}
       <div className="px-2 pb-1">
-        {isLoggedIn && (userDisplayName || userEmail) ? (
+        {isLoggedIn ? (
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
             <div
               className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
               style={{ background: 'var(--theme-accent)' }}
             >
-              {userInitial(userDisplayName ?? userEmail ?? '')}
+              {getUserInitial(userDisplayName ?? t('nav.account'))}
             </div>
             {!collapsed && (
               <span className="text-sm font-medium text-[var(--theme-text-primary)] truncate">
-                {userDisplayName ?? userEmail}
+                {userDisplayName ?? t('nav.account')}
               </span>
             )}
           </div>
