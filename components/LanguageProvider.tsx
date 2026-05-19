@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import type { Locale } from '@/lib/i18n'
 import { t } from '@/lib/i18n'
 
@@ -13,15 +13,14 @@ const LangContext = createContext<{
 export function useLocale() { return useContext(LangContext) }
 export function useT() { return useContext(LangContext).t }
 
-export default function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('en')
+function initialLocale(): Locale {
+  if (typeof window === 'undefined') return 'en'
+  const stored = localStorage.getItem('coach-locale') as Locale | null
+  return stored === 'en' || stored === 'zh' ? stored : 'en'
+}
 
-  useEffect(() => {
-    const stored = localStorage.getItem('coach-locale') as Locale | null
-    if (stored === 'en' || stored === 'zh') {
-      setLocaleState(stored)
-    }
-  }, [])
+export default function LanguageProvider({ children }: { children: ReactNode }) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale)
 
   function setLocale(l: Locale) {
     setLocaleState(l)

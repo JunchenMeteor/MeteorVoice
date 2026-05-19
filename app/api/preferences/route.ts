@@ -1,10 +1,11 @@
 import { jsonApiResult, jsonServerError } from '@/lib/server/http'
-import { getTTSProviderPreference, setTTSProviderPreference } from '@/lib/server/preferences'
+import { getTTSProviderPreference, setTTSProviderPreference, getAvailableProviders } from '@/lib/server/preferences'
 
 export async function GET() {
   try {
     const ttsProvider = await getTTSProviderPreference()
-    return jsonApiResult({ tts_provider: ttsProvider })
+    const availableProviders = getAvailableProviders()
+    return jsonApiResult({ tts_provider: ttsProvider, available_providers: availableProviders })
   } catch (error) {
     return jsonServerError(error, 'Failed to load preferences')
   }

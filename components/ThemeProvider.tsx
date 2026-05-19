@@ -21,15 +21,24 @@ const ThemeContext = createContext<{
 
 export function useTheme() { return useContext(ThemeContext) }
 
+function isThemeKey(value: string | null | undefined): value is ThemeKey {
+  return themes.some(theme => theme.key === value)
+}
+
+function initialTheme(initial?: string): ThemeKey {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('coach-theme')
+    if (isThemeKey(stored)) return stored
+  }
+  return isThemeKey(initial) ? initial : 'default-calm'
+}
+
 export default function ThemeProvider({ children, initial }: { children: ReactNode; initial?: string }) {
-  const [theme, setThemeState] = useState<ThemeKey>('default-calm')
+  const [theme, setThemeState] = useState<ThemeKey>(() => initialTheme(initial))
 
   useEffect(() => {
-    const stored = localStorage.getItem('coach-theme') as ThemeKey | null
-    const t = stored ?? (initial as ThemeKey) ?? 'default-calm'
-    setThemeState(t)
-    applyTheme(t)
-  }, [initial])
+    applyTheme(theme)
+  }, [theme])
 
   function setTheme(t: ThemeKey) {
     setThemeState(t)

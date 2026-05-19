@@ -5,7 +5,7 @@
  * End state: session_ended
  */
 
-import type { ConversationContext, ConversationMessage, ConversationResponse } from './providers/types'
+import type { ConversationMessage, ConversationResponse } from './providers/types'
 
 export type WorkflowState =
   | 'idle'
@@ -28,11 +28,11 @@ export interface WorkflowSnapshot {
 }
 
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
-  idle:            ['listening'],
-  listening:       ['transcribing', 'idle'],
-  transcribing:    ['thinking', 'idle'],
-  thinking:        ['speaking', 'idle'],
-  speaking:        ['correcting', 'listening', 'idle'],
+  idle:            ['listening', 'session_ended'],
+  listening:       ['transcribing', 'idle', 'session_ended'],
+  transcribing:    ['thinking', 'idle', 'session_ended'],
+  thinking:        ['speaking', 'idle', 'session_ended'],
+  speaking:        ['correcting', 'listening', 'idle', 'session_ended'],
   correcting:      ['listening', 'session_ended'],
   session_ended:   [],
 }

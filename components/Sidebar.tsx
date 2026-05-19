@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/components/LanguageProvider'
 
 export default function Sidebar() {
@@ -10,6 +11,29 @@ export default function Sidebar() {
   const t = useT()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [userDisplayName, setUserDisplayName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    function updateUser(user: { email?: string; user_metadata?: { display_name?: string } } | null) {
+      if (user) {
+        setUserEmail(user.email ?? null)
+        setUserDisplayName(user.user_metadata?.display_name ?? null)
+        setIsLoggedIn(true)
+      } else {
+        setUserEmail(null)
+        setUserDisplayName(null)
+        setIsLoggedIn(false)
+      }
+    }
+    supabase.auth.getUser().then(({ data: { user } }) => updateUser(user))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      updateUser(session?.user ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const navItems = [
     { href: '/',       label: t('nav.home'),      icon: HomeIcon },
@@ -18,6 +42,10 @@ export default function Sidebar() {
     { href: '/history', label: t('nav.history'),   icon: ClockIcon },
     { href: '/settings', label: t('nav.settings'), icon: GearIcon },
   ]
+
+  function userInitial(email: string) {
+    return email.charAt(0).toUpperCase()
+  }
 
   const sidebar = (isMobile: boolean) => (
     <aside
@@ -28,8 +56,9 @@ export default function Sidebar() {
         borderColor: 'var(--theme-border)',
       }}
     >
-      <div className="flex items-center gap-2 h-14 px-3 shrink-0">
-        <span className="text-xl">🗣️</span>
+      {/* Header: branding */}
+      <div className="flex items-center gap-2 h-12 px-3 shrink-0">
+        <span className="text-lg shrink-0">🗣️</span>
         {!collapsed && <span className="font-semibold text-sm text-[var(--theme-text-primary)]">MeteorVoice</span>}
         {isMobile && (
           <button
@@ -45,7 +74,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      <nav className="flex-1 px-2 space-y-1">
+      <nav className="flex-1 px-2 space-y-1 mt-2">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = href === '/'
             ? pathname === '/'
@@ -68,22 +97,62 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {!isMobile && (
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center h-10 mx-2 mb-2 rounded-lg text-[var(--theme-text-muted)] hover:bg-[var(--theme-surface)] hover:text-[var(--theme-text-secondary)] transition-colors"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect x="1" y="1" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="6" y1="1" x2="6" y2="17" stroke="currentColor" strokeWidth="1.2" />
-            {collapsed ? (
-              <path d="M10 6.5l2.5 2.5-2.5 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            ) : (
-              <path d="M12.5 6.5L10 9l2.5 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Bottom: user area */}
+      <div className="px-2 pb-1">
+        {isLoggedIn && (userDisplayName || userEmail) ? (
+          <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+              style={{ background: 'var(--theme-accent)' }}
+            >
+              {userInitial(userDisplayName ?? userEmail ?? '')}
+            </div>
+            {!collapsed && (
+              <span className="text-sm font-medium text-[var(--theme-text-primary)] truncate">
+                {userDisplayName ?? userEmail}
+              </span>
             )}
-          </svg>
-        </button>
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            onClick={() => isMobile && setMobileOpen(false)}
+            className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[var(--theme-surface)] transition-colors"
+          >
+            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: 'var(--theme-surface)', color: 'var(--theme-text-muted)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M15 7a5 5 0 11-10 0 5 5 0 0110 0z" />
+                <path d="M1.5 17.5c1.5-2.5 5-4 8.5-4s7 1.5 8.5 4" />
+              </svg>
+            </div>
+            {!collapsed && (
+              <span className="text-xs text-[var(--theme-text-secondary)]">{t('nav.login')}</span>
+            )}
+          </Link>
+        )}
+      </div>
+
+      {/* Collapse toggle at bottom right */}
+      {!isMobile && (
+        <div className="flex justify-end px-2 pb-2">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-[var(--theme-text-muted)] hover:bg-[var(--theme-surface)] hover:text-[var(--theme-text-secondary)] transition-colors"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+              <rect x="1" y="1" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.2" />
+              <line x1="6" y1="1" x2="6" y2="17" stroke="currentColor" strokeWidth="1.2" />
+              {collapsed ? (
+                <path d="M10 6.5l2.5 2.5-2.5 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              ) : (
+                <path d="M12.5 6.5L10 9l2.5 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              )}
+            </svg>
+          </button>
+        </div>
       )}
     </aside>
   )

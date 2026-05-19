@@ -1,31 +1,9 @@
 import { generateText } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
+import { createDeepSeek } from '@ai-sdk/deepseek'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
 
-function deepseekProvider() {
-  const baseURL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
-  const apiKey = process.env.DEEPSEEK_API_KEY
-
-  if (!apiKey) return null
-
-  return createOpenAI({
-    baseURL: `${baseURL}/v1`,
-    apiKey,
-  })
-}
-
-export function createAICoach(): AIProvider {
-  const provider = deepseekProvider()
-
-  return {
-    async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
-      if (!provider) {
-        // Fallback to mock
-        const { createMockAI } = await import('./mock-ai')
-        return createMockAI().generateReply(messages, context)
-      }
-
-      const systemPrompt = `You are an English conversation coach. The user is practicing: "${context.scenario.name} - ${context.scenario.description}".
+const SYSTEM_PROMPT = (context: ConversationContext) =>
+`You are an English conversation coach. The user is practicing: "${context.scenario.name} - ${context.scenario.description}".
 Your accent style is: ${context.accentProfile.name} (${context.accentProfile.region}).
 This is turn #${context.turnNumber} in the session.
 
@@ -49,10 +27,30 @@ Respond in JSON format:
 }
 Only include corrections if the user made clear mistakes.`
 
+function getDeepSeek() {
+  const apiKey = process.env.DEEPSEEK_API_KEY
+  if (!apiKey) return null
+
+  return createDeepSeek({
+    apiKey,
+    baseURL: process.env.DEEPSEEK_BASE_URL || undefined,
+  })
+}
+
+export function createAICoach(): AIProvider {
+  const deepseek = getDeepSeek()
+
+  return {
+    async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
+      if (!deepseek) {
+        const { createMockAI } = await import('./mock-ai')
+        return createMockAI().generateReply(messages, context)
+      }
+
       try {
         const result = await generateText({
-          model: provider('deepseek-chat'),
-          system: systemPrompt,
+          model: deepseek('deepseek-chat'),
+          system: SYSTEM_PROMPT(context),
           prompt: messages.map(m => `${m.role}: ${m.content}`).join('\n'),
           temperature: 0.7,
           maxOutputTokens: 500,
@@ -64,8 +62,8 @@ Only include corrections if the user made clear mistakes.`
           corrections: parsed.corrections || [],
           suggestedReply: parsed.text || result.text,
         }
-      } catch {
-        // Fallback on any error
+      } catch (err) {
+        console.error('DeepSeek API call failed, falling back to mock:', err)
         const { createMockAI } = await import('./mock-ai')
         return createMockAI().generateReply(messages, context)
       }

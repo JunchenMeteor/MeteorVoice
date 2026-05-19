@@ -10,7 +10,8 @@ const mockTranscripts = [
 
 export function createMockSTT(): STTProvider {
   return {
-    async transcribe(_audioBlob: Blob): Promise<STTResult> {
+    async transcribe(audioBlob: Blob): Promise<STTResult> {
+      void audioBlob
       // Simulate processing delay
       await sleep(300 + Math.random() * 400)
       const transcript = mockTranscripts[Math.floor(Math.random() * mockTranscripts.length)]

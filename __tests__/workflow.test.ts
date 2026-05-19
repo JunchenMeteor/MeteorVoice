@@ -3,7 +3,6 @@ import {
   createInitialSnapshot,
   transition,
   snapshotSummary,
-  VALID_TRANSITIONS,
 } from '@/lib/conversation-workflow'
 
 describe('conversation-workflow', () => {
@@ -76,6 +75,20 @@ describe('conversation-workflow', () => {
 
     const next = transition(snap, 'idle')
     expect(next.error).toContain('Invalid transition')
+  })
+
+  it('allows ending from active non-correction states', () => {
+    const idle = createInitialSnapshot('s5')
+    expect(transition(idle, 'session_ended').state).toBe('session_ended')
+
+    const listening = transition(createInitialSnapshot('s6'), 'listening')
+    expect(transition(listening, 'session_ended').state).toBe('session_ended')
+
+    const thinking = transition(
+      transition(transition(createInitialSnapshot('s7'), 'listening'), 'transcribing'),
+      'thinking',
+    )
+    expect(transition(thinking, 'session_ended').state).toBe('session_ended')
   })
 
   it('snapshotSummary returns correct summary', () => {

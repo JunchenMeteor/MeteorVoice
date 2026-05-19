@@ -7,10 +7,24 @@ export function normalizeTTSProvider(value?: string | null): TTSProviderPreferen
   return 'mock'
 }
 
+export function getAvailableProviders(): TTSProviderPreference[] {
+  const providers: TTSProviderPreference[] = ['mock']
+  if (process.env.XUNFEI_APP_ID && process.env.XUNFEI_API_KEY && process.env.XUNFEI_API_SECRET) {
+    providers.push('xunfei')
+  }
+  if (process.env.VOLCENGINE_TTS_APP_ID && process.env.VOLCENGINE_TTS_ACCESS_TOKEN) {
+    providers.push('volcengine')
+  }
+  if (process.env.TENCENT_SECRET_ID && process.env.TENCENT_SECRET_KEY) {
+    providers.push('tencent')
+  }
+  return providers
+}
+
 export async function getTTSProviderPreference() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return 'mock' as const
+  if (!user) return normalizeTTSProvider(process.env.TTS_PROVIDER)
 
   const { data, error } = await supabase
     .from('theme_preferences')
@@ -19,7 +33,7 @@ export async function getTTSProviderPreference() {
     .maybeSingle()
 
   if (error) throw error
-  return normalizeTTSProvider(data?.tts_provider)
+  return normalizeTTSProvider(data?.tts_provider ?? process.env.TTS_PROVIDER)
 }
 
 export async function setTTSProviderPreference(ttsProvider: string) {
@@ -30,6 +44,10 @@ export async function setTTSProviderPreference(ttsProvider: string) {
   }
 
   const normalized = normalizeTTSProvider(ttsProvider)
+  const available = getAvailableProviders()
+  if (!available.includes(normalized)) {
+    throw new Error(`TTS provider "${normalized}" is not configured`)
+  }
   const { error } = await supabase
     .from('theme_preferences')
     .upsert({
