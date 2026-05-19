@@ -15,15 +15,17 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
-  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState<'error' | 'success'>('error')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
+    setMessage('')
+    setMessageType('error')
     const parsed = parseLoginIdentifier(identifier)
     if (!parsed) {
-      setError('Enter a valid username, phone number, or email.')
+      setMessage(t('login.error_invalid_account'))
       return
     }
     setLoading(true)
@@ -45,20 +47,21 @@ export default function LoginPage() {
                 },
               },
         )
-        if (signUpError) { setError(signUpError.message); return }
-        setError('Check your email for the confirmation link.')
+        if (signUpError) { setMessage(signUpError.message); return }
+        setMessageType('success')
+        setMessage(parsed.kind === 'phone' ? t('login.signup_phone_success') : t('login.signup_email_success'))
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword(
           parsed.kind === 'phone'
             ? { phone: authValue, password }
             : { email: authValue, password },
         )
-        if (signInError) { setError(signInError.message); return }
+        if (signInError) { setMessage(signInError.message); return }
         router.push('/')
         router.refresh()
       }
     } catch {
-      setError('Connection failed. Is Supabase running?')
+      setMessage(t('login.error_connection'))
     } finally {
       setLoading(false)
     }
@@ -70,18 +73,18 @@ export default function LoginPage() {
         <CardHeader>
           <CardTitle>{isSignUp ? t('login.signup') : t('login.welcome')}</CardTitle>
           <CardDescription>
-            {isSignUp ? 'Sign up to start practicing' : 'Sign in to your coach'}
+            {isSignUp ? t('login.signup_desc') : t('login.signin_desc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">Account</label>
+              <label className="block text-sm font-medium text-[var(--theme-text-secondary)] mb-1">{t('login.account')}</label>
               <Input
                 type="text"
                 value={identifier}
                 onChange={e => setIdentifier(e.target.value)}
-                placeholder="username, phone, or email"
+                placeholder={t('login.account_placeholder')}
                 required
               />
             </div>
@@ -97,9 +100,9 @@ export default function LoginPage() {
               />
             </div>
 
-            {error && (
-              <p className={`text-sm ${error.includes('Check your email') ? 'text-[var(--theme-success)]' : 'text-[var(--theme-danger)]'}`}>
-                {error}
+            {message && (
+              <p className={`text-sm ${messageType === 'success' ? 'text-[var(--theme-success)]' : 'text-[var(--theme-danger)]'}`}>
+                {message}
               </p>
             )}
 
@@ -112,7 +115,7 @@ export default function LoginPage() {
             {isSignUp ? t('login.switch_signin') : t('login.switch_signup')}{' '}
             <button
               type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setError('') }}
+              onClick={() => { setIsSignUp(!isSignUp); setMessage(''); setMessageType('error') }}
               className="font-medium text-[var(--theme-accent)] hover:underline"
             >
               {isSignUp ? t('login.signin') : t('login.signup')}
