@@ -1,11 +1,11 @@
-const defaultUsernameEmailDomain = 'users.meteorvoice.local'
+export const defaultUsernameEmailDomain = 'users.meteorvoice.local'
 
 export type LoginIdentifier =
   | { kind: 'phone'; phone: string }
   | { kind: 'email'; email: string }
   | { kind: 'username'; email: string; username: string }
 
-function usernameEmailDomain() {
+export function usernameEmailDomain() {
   return process.env.NEXT_PUBLIC_METEORVOICE_USERNAME_EMAIL_DOMAIN?.trim() || defaultUsernameEmailDomain
 }
 
