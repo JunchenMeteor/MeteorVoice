@@ -29,6 +29,9 @@ declare global {
   }
 }
 
+const SILENCE_TIMEOUT = 1500
+const MAX_DURATION = 15000
+
 export function browserSTTSupported(): boolean {
   return !!(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition))
 }
@@ -46,33 +49,91 @@ export function createBrowserSTT(): STTProvider {
     transcribe(): Promise<STTResult> {
       return new Promise((resolve, reject) => {
         const recognition = new SpeechRecognitionCtor()
-        recognition.continuous = false
-        recognition.interimResults = false
+        recognition.continuous = true
+        recognition.interimResults = true
         recognition.lang = 'en-US'
 
+        let settled = false
+        let silenceTimer: ReturnType<typeof setTimeout> | null = null
+        let maxTimer: ReturnType<typeof setTimeout> | null = null
+        let lastInterim = ''
+        const allResults: string[] = []
+
+        function clearSilenceTimer() {
+          if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
+        }
+
+        function finalize() {
+          if (settled) return
+          settled = true
+          clearSilenceTimer()
+          if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          try { recognition.abort() } catch {}
+          const transcript = (allResults.join(' ').trim() || lastInterim.trim())
+          if (transcript) {
+            resolve({ transcript, confidence: 0.9 })
+          } else {
+            reject(new Error('No speech detected'))
+          }
+        }
+
+        maxTimer = setTimeout(() => finalize(), MAX_DURATION)
+
         recognition.onresult = (event: SpeechRecognitionEvent) => {
-          const transcript = Array.from(event.results)
-            .map(r => r[0].transcript)
-            .join(' ')
-          const confidence = event.results[0][0].confidence
-          resolve({ transcript: transcript.trim() || '[no speech detected]', confidence })
+          clearSilenceTimer()
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i]
+            if (result.isFinal) {
+              allResults.push(result[0].transcript.trim())
+            } else {
+              lastInterim = result[0].transcript.trim()
+            }
+          }
+          if (allResults.length > 0 || lastInterim) {
+            silenceTimer = setTimeout(() => {
+              finalize()
+            }, SILENCE_TIMEOUT)
+          }
         }
 
         recognition.onerror = (event: SpeechRecognitionError) => {
-          reject(new Error(`Speech recognition error: ${event.error}`))
+          if (settled) return
+          if (event.error === 'no-speech') {
+            // Mic works but no speech. Let onend finalize (which will reject).
+            return
+          }
+          if (event.error === 'aborted') return
+          settled = true
+          if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          clearSilenceTimer()
+          try { recognition.abort() } catch {}
+
+          if (event.error === 'not-allowed') {
+            reject(new Error('Microphone permission denied. Please allow mic access in browser settings.'))
+          } else if (event.error === 'audio-capture') {
+            reject(new Error('No microphone found. Please check your device settings.'))
+          } else if (event.error === 'network') {
+            reject(new Error('Speech recognition requires a network connection.'))
+          } else {
+            reject(new Error(`Speech recognition error: ${event.error}`))
+          }
         }
 
         recognition.onend = () => {
-          // If no result came back, resolve with empty
-          setTimeout(() => {
-            resolve({ transcript: '[listening...]', confidence: 0 })
-          }, 100)
+          if (!settled) {
+            setTimeout(() => { if (!settled) finalize() }, 300)
+          }
         }
 
         try {
           recognition.start()
-        } catch (e) {
-          reject(new Error(`Failed to start speech recognition: ${e}`))
+        } catch (e: unknown) {
+          settled = true
+          if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          const msg = e instanceof DOMException && e.name === 'NotAllowedError'
+            ? 'Microphone permission denied. Please allow mic access in browser settings.'
+            : `Failed to start speech recognition: ${e}`
+          reject(new Error(msg))
         }
       })
     },

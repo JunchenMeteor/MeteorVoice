@@ -8,24 +8,37 @@ import type { Locale } from '@/lib/i18n'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
 
-const ttsProviders = [
+const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
   { key: 'xunfei', labelKey: 'settings.tts_provider_xunfei' },
   { key: 'volcengine', labelKey: 'settings.tts_provider_volcengine' },
   { key: 'tencent', labelKey: 'settings.tts_provider_tencent' },
 ] as const
 
+function initialDefaultAccent() {
+  if (typeof window === 'undefined') return 'american'
+  return localStorage.getItem('coach-default-accent') ?? 'american'
+}
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const { locale, setLocale } = useLocale()
   const t = useT()
-  const [defaultAccent, setDefaultAccent] = useState('american')
+  const [defaultAccent, setDefaultAccent] = useState(initialDefaultAccent)
   const [ttsProvider, setTtsProvider] = useState('mock')
+  const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
 
   useEffect(() => {
-    const stored = localStorage.getItem('coach-default-accent')
-    if (stored) setDefaultAccent(stored)
-    loadTtsProvider()
+    async function loadTtsProvider() {
+      try {
+        const res = await fetch('/api/preferences')
+        const data = await res.json() as { tts_provider?: string; available_providers?: string[] }
+        if (data.tts_provider) setTtsProvider(data.tts_provider)
+        if (data.available_providers) setAvailableProviders(data.available_providers)
+      } catch {}
+    }
+
+    void loadTtsProvider()
   }, [])
 
   function handleAccentChange(key: string) {
@@ -45,14 +58,6 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tts_provider: key }),
     }).catch(() => {})
-  }
-
-  async function loadTtsProvider() {
-    try {
-      const res = await fetch('/api/preferences')
-      const data = await res.json() as { tts_provider?: string }
-      if (data.tts_provider) setTtsProvider(data.tts_provider)
-    } catch {}
   }
 
   return (
@@ -163,16 +168,21 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2">
-            {ttsProviders.map(provider => (
+            {allTtsProviders.map(provider => {
+              const isAvailable = availableProviders.includes(provider.key)
+              return (
               <button
                 key={provider.key}
                 type="button"
-                onClick={() => handleTtsProviderChange(provider.key)}
-                className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''}`}
+                onClick={() => isAvailable && handleTtsProviderChange(provider.key)}
+                disabled={!isAvailable}
+                title={isAvailable ? undefined : t('settings.tts_not_configured')}
+                className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''} ${!isAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 {t(provider.labelKey)}
               </button>
-            ))}
+              )
+            })}
           </div>
           <p className="text-xs text-[var(--theme-text-muted)] mt-3">
             {t('settings.tts_provider_hint')}

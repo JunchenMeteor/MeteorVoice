@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { scenarios, accentProfiles, pickRandomAccent, type AccentProfile } from '@/lib/scenarios'
 import { createMockSTT } from '@/lib/providers/mock-stt'
@@ -16,7 +16,6 @@ const mockSTT = createMockSTT()
 const mockTTS = createMockTTS()
 
 export function SessionPageClient() {
-  const router = useRouter()
   const params = useSearchParams()
   const tr = useT()
   const scenarioKey = params.get('scenario') ?? 'small-talk'
@@ -74,9 +73,7 @@ export function SessionPageClient() {
 
   function startSession() {
     setIsSessionActive(true)
-    setStatusText(tr('session.listening'))
     setSummary(null)
-    applyTransition('listening')
     simulateTurn()
   }
 
@@ -140,32 +137,11 @@ export function SessionPageClient() {
 
   async function simulateTurn() {
     setInterrupted(false)
+    setCorrections([])
     setStatusText(tr('session.listening'))
     applyTransition('listening')
 
-    // Simulate live interruption (20% chance during listening)
-    const shouldInterrupt = Math.random() < 0.2
-    if (shouldInterrupt) {
-      await sleep(800 + Math.random() * 700)
-      setInterrupted(true)
-      setStatusText(tr('session.interrupted'))
-      applyTransition('correcting')
-      const mockInterruption: ConversationResponse['corrections'] = [{
-        type: 'pronunciation',
-        originalText: '...interrupted...',
-        suggestedText: 'Focus on clear pronunciation',
-        explanation: 'Try speaking more slowly and clearly.',
-        severity: 'moderate',
-      }]
-      setCorrections(mockInterruption)
-      return
-    }
-
-    await sleep(1500)
-
-    setStatusText(tr('session.transcribing'))
-    applyTransition('transcribing')
-    // Use browser STT if available, otherwise mock
+    // Try browser STT first, fall back to mock only when API unsupported
     let transcript: string
     if (browserSTTSupported()) {
       try {
@@ -173,18 +149,20 @@ export function SessionPageClient() {
         const result = await browserSTT.transcribe(new Blob())
         transcript = result.transcript
       } catch {
-        const result = await mockSTT.transcribe(new Blob())
-        transcript = result.transcript
+        setStatusText(tr('session.no_speech'))
+        applyTransition('idle')
+        return
       }
     } else {
       const result = await mockSTT.transcribe(new Blob())
       transcript = result.transcript
     }
+
+    setStatusText(tr('session.transcribing'))
     applyTransition('transcribing', { lastTranscript: transcript })
 
     const userMsg: ConversationMessage = { role: 'user', content: transcript }
     setSnapshot(prev => ({ ...prev, messages: [...prev.messages, userMsg] }))
-    await sleep(500)
 
     // Rotate accent every 3 turns
     const newAccent = snapshot.turnNumber > 0 && snapshot.turnNumber % 3 === 0 ? rotateAccent() : accent
@@ -402,8 +380,4 @@ export function SessionPageClient() {
       )}
     </div>
   )
-}
-
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }

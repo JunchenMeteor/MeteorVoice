@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     }
     const summary = await generateSessionSummary(body)
     return jsonApiResult({ summary })
-  } catch (e) {
+  } catch {
     return jsonApiResult({ summary: FALLBACK_SESSION_SUMMARY })
   }
 }

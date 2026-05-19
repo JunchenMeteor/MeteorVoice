@@ -40,17 +40,17 @@ const mockCorrections: ConversationResponse['corrections'] = [
   { type: 'pronunciation', originalText: 'com-fort-a-ble', suggestedText: 'comf-ta-ble', explanation: 'Native speakers drop the middle syllable. Say "comf-ta-ble", not "com-fort-a-ble".', severity: 'moderate' },
 ]
 
-export function createMockAI(): AIProvider {
-  let turnCount = 0
+let globalTurnCount = 0
 
+export function createMockAI(): AIProvider {
   return {
-    async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
+    async generateReply(_messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
       await sleep(300 + Math.random() * 600)
-      turnCount++
+      globalTurnCount++
 
       const scenarioKey = context.scenario.name.toLowerCase().replace(/\s+/g, '-')
       const replies = coachReplies[scenarioKey as keyof typeof coachReplies] ?? defaultReplies
-      const replyText = replies[turnCount % replies.length]
+      const replyText = replies[globalTurnCount % replies.length]
       const shouldCorrect = Math.random() > 0.5
 
       return {

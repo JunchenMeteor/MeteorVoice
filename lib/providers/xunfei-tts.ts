@@ -52,7 +52,6 @@ export function createXunfeiTTS(): TTSProvider {
             common: { app_id: appId },
             business: {
               aue: 'lame',
-              auf: 'audio/L16;rate=16000',
               vcn: voiceForAccent(options?.accent),
               speed: Math.round((options?.speed ?? 1) * 50),
               volume: 50,

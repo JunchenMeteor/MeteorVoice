@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -14,32 +14,37 @@ interface ReviewItem {
   date: string
 }
 
-export default function ReviewPage() {
-  const t = useT()
-  const [items, setItems] = useState<ReviewItem[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [revealed, setRevealed] = useState(false)
+function loadReviewItems(): ReviewItem[] {
+  if (typeof window === 'undefined') return []
 
-  useEffect(() => {
-    // Build review list from localStorage history
+  try {
     const raw = localStorage.getItem('meteorvoice-history')
-    if (!raw) return
+    if (!raw) return []
+
     const sessions = JSON.parse(raw) as { scenario: string; date: string; corrections: number }[]
-    // Generate mock review items from sessions with corrections
     const reviewItems: ReviewItem[] = []
     sessions.forEach(s => {
       const count = s.corrections ?? Math.floor(Math.random() * 3)
       for (let i = 0; i < count; i++) {
-        const items: ReviewItem[] = [
+        const templates: ReviewItem[] = [
           { id: `${s.date}-${i}-a`, type: 'grammar', original: 'I goes to school', suggested: 'I go to school', explanation: 'Third-person "s" only applies to he/she/it.', scenario: s.scenario, date: s.date },
           { id: `${s.date}-${i}-b`, type: 'vocabulary', original: 'I want to order', suggested: 'I would like to order', explanation: '"Would like" is more polite in service situations.', scenario: s.scenario, date: s.date },
           { id: `${s.date}-${i}-c`, type: 'pronunciation', original: 'com-fort-a-ble', suggested: 'comf-ta-ble', explanation: 'Native speakers drop the middle syllable.', scenario: s.scenario, date: s.date },
         ]
-        reviewItems.push(items[i % 3])
+        reviewItems.push(templates[i % 3])
       }
     })
-    setItems(reviewItems)
-  }, [])
+    return reviewItems
+  } catch {
+    return []
+  }
+}
+
+export default function ReviewPage() {
+  const t = useT()
+  const [items] = useState<ReviewItem[]>(loadReviewItems)
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [revealed, setRevealed] = useState(false)
 
   if (items.length === 0) {
     return (
