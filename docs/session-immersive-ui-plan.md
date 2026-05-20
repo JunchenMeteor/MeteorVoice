@@ -129,6 +129,27 @@
 5. Phase 4：补齐字幕模式、可访问性、本地化和回归验证。
 6. 文档整理阶段：代码阶段完成后，再整理 `docs/` 体系、实施记录和最终规则。
 
+## 当前集成分支实施状态
+
+当前即将开发的集成分支为 `dev/feature/session-immersive-experience`。本次集成目标是 **Phase 1 + Phase 4 基础版**，用于先交付可验收的沉浸式会话界面和字幕/布局体验。
+
+本次 MUST 覆盖：
+
+- 状态驱动 waveform：根据会话状态显示 listening、speaking、thinking/transcribing、paused/ended 等视觉状态。
+- 当前字幕：主舞台只突出当前用户字幕和当前 AI 字幕，完整历史放入 `Transcript` tab。
+- `Corrections` / `Transcript` tabs：学习面板可切换，Corrections 不阻塞主语音控制。
+- 多语言文案：新增可见 UI 文案 MUST 覆盖中文和英文，不暴露 raw enum、内部 ID 或 provider payload。
+- 桌面/移动布局：桌面保持主舞台和学习面板清晰分区；移动端主操作、tabs、字幕和状态 MUST 不溢出、不遮挡。
+
+本次 MUST NOT 覆盖：
+
+- 不接入真实麦克风频谱，不新增 Web Audio analyser，不新建第二套麦克风权限流程。
+- 不接入真实 TTS playback 频谱，不调整音频播放链路来驱动 waveform。
+- 不改 STT/TTS turn loop，不改变“用户真实输入 -> AI 回复 -> TTS 播放完成 -> 下一轮 listening”的核心时序。
+- 不为了视觉效果删除或弱化 session persistence、route pause/resume、corrections replay、active turn guard。
+
+Phase 2/3 的真实音频频谱能力仅作为后续增强：Phase 2 处理用户麦克风实时音量 waveform，Phase 3 处理 AI 播放音频 waveform。二者 MAY 在后续独立任务中评估和实现，但不属于本次代码范围，也不作为本次验收阻塞项。
+
 ## 四阶段落地计划
 
 ### Phase 1: 状态驱动的沉浸式布局
@@ -249,20 +270,24 @@
 
 - 改 `/session` 布局、状态驱动 waveform、Corrections/Transcript tabs、当前字幕。
 - 不接真实 Web Audio。
+- 本次集成分支 MUST 完成此任务。
 
 ### Task C: Phase 2 Mic Waveform
 
 - 添加麦克风音量 analyser。
 - 和 route-aware pause/resume 对齐。
+- 本次集成分支 MUST 不实现；仅保留为后续增强。
 
 ### Task D: Phase 3 Playback Waveform
 
 - 评估并实现 AI playback analyser 或 fallback。
 - 保持 TTS 完播后再监听。
+- 本次集成分支 MUST 不实现；仅保留为后续增强。
 
 ### Task E: Phase 4 Polish & Regression
 
 - 补字幕体验、移动端、a11y、本地化和测试。
+- 本次集成分支 MUST 完成基础版：当前字幕、中文/英文文案、桌面和移动端布局验收。
 
 ### Task F: Docs Consolidation
 
@@ -271,15 +296,32 @@
 
 ## 验收标准
 
+### 本次集成分支验收
+
 - `/session` 首屏能直接开始或继续语音练习。
+- Waveform MUST 由 session 状态驱动，不依赖真实麦克风频谱或真实 TTS playback 频谱。
+- 主舞台 MUST 显示当前用户字幕和当前 AI 字幕；完整历史 MUST 只放在 `Transcript` tab。
 - Corrections 和 Transcript 通过 tabs 清晰切换，且不会阻塞主语音控制。
+- 桌面布局 MUST 保持主语音舞台、session context、学习面板层级清晰。
+- 移动端布局 MUST 保证按钮、tabs、字幕、summary、status 不溢出、不遮挡核心语音控制。
+- 中文和英文 UI 都无明显硬编码遗漏，主要状态、tabs、按钮和错误文案可读。
+- 不显示内部 ID、内部邮箱别名、raw provider payload。
+- 本次 MUST 明确不接入真实麦克风频谱、不接入真实 AI 音频频谱。
+- 本次 MUST 不改 STT/TTS 核心 turn loop。
+
+### 语音循环回归验收
+
 - 用户说一句，AI 只回复一次；AI 说完后等待下一句真实用户输入。
 - 用户沉默时，系统不会自动生成用户消息。
 - TTS 播放期间，STT 不会把 AI 声音识别成用户输入。
 - 离开 `/session` 后麦克风暂停；返回后同一 active session 可继续。
-- 中文和英文 UI 都无明显硬编码遗漏，主要状态和错误可读。
-- 不显示内部 ID、内部邮箱别名、raw provider payload。
 - `npm run build` 和可用测试通过，或明确记录无法运行的原因。
+
+### 后续增强验收
+
+- Phase 2 接入真实麦克风频谱时，MUST 复用现有麦克风授权和会话状态，不影响 STT turn guard。
+- Phase 3 接入真实 AI 音频频谱时，MUST 保持 TTS 播放完成后再恢复 listening。
+- Phase 2/3 失败或受浏览器限制时，MUST 回退到本次交付的状态驱动 waveform。
 
 ## 推荐 PR 拆分
 

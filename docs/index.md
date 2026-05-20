@@ -24,9 +24,11 @@
 
 ## 当前执行状态
 
-- 会话页沉浸式语音 UI 目前处于计划文档阶段。
-- `docs/session-immersive-ui-plan.md` 已定义 Phase 1-4 的范围、禁止项、agent 分工和验收标准。
-- 代码实现 MUST 另开任务/分支/PR，按 Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 顺序推进。
+- 会话页沉浸式语音 UI 当前即将进入 `dev/feature/session-immersive-experience` 集成开发。
+- 本次集成目标 MUST 限定为 Phase 1 + Phase 4 基础版：状态驱动 waveform、当前字幕、`Corrections` / `Transcript` tabs、多语言文案、桌面/移动布局。
+- 本次集成 MUST 不接入真实麦克风频谱，MUST 不接入真实 AI 播放音频频谱，MUST 不改 STT/TTS turn loop。
+- Phase 2/3 的真实音频频谱能力 SHOULD 作为后续增强独立评估和开发，不属于本次代码范围，也不作为本次验收阻塞项。
+- `docs/session-immersive-ui-plan.md` 已定义 Phase 1-4 的范围、禁止项、agent 分工和本次集成验收标准。
 - 文档体系最终整理 SHOULD 在代码阶段完成后再做一次，以记录已完成范围、未完成风险和后续规则。
 
 ## 历史交接资料

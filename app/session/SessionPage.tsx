@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getAccentLabel,
   getAccentRegion,
@@ -13,6 +13,30 @@ import type { ConversationResponse } from '@/lib/providers/types'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { useVoiceSession } from '@/components/VoiceSessionProvider'
 import { Button } from '@/components/ui/button'
+import { VoiceWaveform, type VoiceWaveformMode } from './VoiceWaveform'
+
+type SidePanelTab = 'corrections' | 'transcript'
+
+function toWaveformMode(input: {
+  state: string
+  isSessionActive: boolean
+  isRoutePaused: boolean
+}): VoiceWaveformMode {
+  if (input.isRoutePaused) return 'paused'
+  if (!input.isSessionActive && input.state === 'session_ended') return 'ended'
+  if (!input.isSessionActive) return 'idle'
+  if (input.state === 'correcting') return 'speaking'
+  if (
+    input.state === 'listening' ||
+    input.state === 'transcribing' ||
+    input.state === 'thinking' ||
+    input.state === 'speaking' ||
+    input.state === 'idle'
+  ) {
+    return input.state
+  }
+  return 'idle'
+}
 
 export function SessionPageClient() {
   const params = useSearchParams()
@@ -21,6 +45,7 @@ export function SessionPageClient() {
   const scenarioKey = params.get('scenario') ?? 'small-talk'
   const accentKey = params.get('accent') ?? 'american'
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [activeTab, setActiveTab] = useState<SidePanelTab>('corrections')
   const {
     scenario,
     accent,
@@ -65,6 +90,19 @@ export function SessionPageClient() {
     : isRoutePaused
       ? 'var(--theme-warning)'
       : 'var(--theme-text-muted)'
+  const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
+  const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
+  const waveformMode = toWaveformMode({
+    state: snapshot.state,
+    isSessionActive,
+    isRoutePaused,
+  })
+  const tabButtonClass = (tab: SidePanelTab) =>
+    `flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+      activeTab === tab
+        ? 'bg-[var(--theme-accent)] text-white'
+        : 'text-[var(--theme-text-secondary)] hover:bg-[var(--theme-surface)] hover:text-[var(--theme-text-primary)]'
+    }`
 
   return (
     <div className="p-4 lg:p-6 max-w-6xl mx-auto h-full">
@@ -75,7 +113,7 @@ export function SessionPageClient() {
         </div>
       )}
 
-      <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div>
@@ -116,9 +154,9 @@ export function SessionPageClient() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto space-y-4 quiet-scrollbar min-h-0">
+          <div className="flex-1 min-h-0 data-panel flex flex-col items-center justify-center gap-5 overflow-hidden p-5 text-center md:p-8">
             {messages.length === 0 && !isSessionActive && (
-              <div className="text-center py-20 text-[var(--theme-text-muted)]">
+              <div className="text-[var(--theme-text-muted)]">
                 <p className="text-4xl mb-4">{scenario.icon}</p>
                 <p className="text-lg font-medium text-[var(--theme-text-primary)]">{scenarioLabel}</p>
                 <p className="text-sm mt-2">{scenarioDescription}</p>
@@ -131,29 +169,41 @@ export function SessionPageClient() {
               </div>
             )}
 
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className="max-w-[80%] rounded-2xl px-4 py-3 text-sm"
-                  style={{
-                    background: msg.role === 'user'
-                      ? 'var(--theme-accent)'
-                      : 'var(--theme-bg-card)',
-                    color: msg.role === 'user'
-                      ? '#fff'
-                      : 'var(--theme-text-primary)',
-                    borderColor: msg.role === 'assistant' ? 'var(--theme-border)' : 'transparent',
-                    borderWidth: msg.role === 'assistant' ? 1 : 0,
-                  }}
-                >
-                  {msg.content}
+            {(messages.length > 0 || isSessionActive) && (
+              <>
+                <VoiceWaveform mode={waveformMode} label={statusText} />
+
+                <div className="w-full max-w-3xl space-y-3 rounded-lg border p-4 text-left" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
+                      {tr('session.current_subtitles')}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('transcript')}
+                      className="text-xs font-medium text-[var(--theme-accent)] hover:underline"
+                    >
+                      {tr('session.view_transcript')}
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="min-h-[5.5rem] rounded-lg border p-3" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
+                      <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">{tr('session.you')}</p>
+                      <p className="text-base leading-relaxed text-[var(--theme-text-primary)]">
+                        {latestUserMessage?.content ?? tr('session.subtitle_waiting_user')}
+                      </p>
+                    </div>
+                    <div className="min-h-[5.5rem] rounded-lg border p-3" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
+                      <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">{tr('session.coach')}</p>
+                      <p className="text-base leading-relaxed text-[var(--theme-text-primary)]">
+                        {latestAssistantMessage?.content ?? tr('session.subtitle_waiting_coach')}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
 
           {canContinue && (
@@ -176,46 +226,89 @@ export function SessionPageClient() {
           )}
         </section>
 
-        <aside className="data-panel flex min-h-[12rem] flex-col p-4 lg:min-h-0">
+        <aside className="data-panel flex min-h-[18rem] flex-col p-4 lg:min-h-0">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
-                {tr('session.correction_tips')}
+                {activeTab === 'corrections' ? tr('session.correction_tips') : tr('session.transcript')}
               </h2>
               <p className="text-xs text-[var(--theme-text-muted)]">
-                {corrections.length === 0
-                  ? tr('session.corrections_empty')
-                  : tr('session.corrections_count').replace('{count}', String(corrections.length))}
+                {activeTab === 'corrections'
+                  ? corrections.length === 0
+                    ? tr('session.corrections_empty')
+                    : tr('session.corrections_count').replace('{count}', String(corrections.length))
+                  : messages.length === 0
+                    ? tr('session.transcript_empty')
+                    : tr('session.transcript_count').replace('{count}', String(messages.length))}
               </p>
             </div>
           </div>
 
+          <div className="mb-3 flex rounded-lg border p-1" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
+            <button
+              type="button"
+              className={tabButtonClass('corrections')}
+              onClick={() => setActiveTab('corrections')}
+            >
+              {tr('session.corrections_tab')}
+            </button>
+            <button
+              type="button"
+              className={tabButtonClass('transcript')}
+              onClick={() => setActiveTab('transcript')}
+            >
+              {tr('session.transcript_tab')}
+            </button>
+          </div>
+
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto quiet-scrollbar">
-            {corrections.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
-                {tr('session.corrections_live_hint')}
-              </div>
-            ) : corrections.map((c, i) => (
-              <div key={`${c.type}-${i}-${c.originalText}`} className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="status-badge warning">{correctionTypeLabel(c.type)}</span>
-                  <button
-                    type="button"
-                    onClick={() => playCorrection(c.suggestedText)}
-                    className="text-xs text-[var(--theme-accent)] hover:underline"
-                    title={tr('session.play_correction')}
-                  >
-                    {tr('session.play_correction')}
-                  </button>
+            {activeTab === 'corrections' ? (
+              corrections.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
+                  {tr('session.corrections_live_hint')}
                 </div>
-                <p className="text-xs text-[var(--theme-text-secondary)]">
-                  <span className="line-through text-[var(--theme-danger)]">{c.originalText}</span>
-                  {' -> '}
-                  <span className="text-[var(--theme-success)]">{c.suggestedText}</span>
-                </p>
-                <p className="text-xs leading-relaxed text-[var(--theme-text-muted)]">{c.explanation}</p>
+              ) : corrections.map((c, i) => (
+                <div key={`${c.type}-${i}-${c.originalText}`} className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="status-badge warning">{correctionTypeLabel(c.type)}</span>
+                    <button
+                      type="button"
+                      onClick={() => playCorrection(c.suggestedText)}
+                      className="text-xs text-[var(--theme-accent)] hover:underline"
+                      title={tr('session.play_correction')}
+                    >
+                      {tr('session.play_correction')}
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--theme-text-secondary)]">
+                    <span className="line-through text-[var(--theme-danger)]">{c.originalText}</span>
+                    {' -> '}
+                    <span className="text-[var(--theme-success)]">{c.suggestedText}</span>
+                  </p>
+                  <p className="text-xs leading-relaxed text-[var(--theme-text-muted)]">{c.explanation}</p>
+                </div>
+              ))
+            ) : messages.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
+                {tr('session.transcript_empty')}
               </div>
-            ))}
+            ) : (
+              <>
+                {messages.map((msg, i) => (
+                  <div
+                    key={`${msg.role}-${i}`}
+                    className="rounded-lg border p-3"
+                    style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}
+                  >
+                    <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">
+                      {msg.role === 'user' ? tr('session.you') : tr('session.coach')}
+                    </p>
+                    <p className="text-sm leading-relaxed text-[var(--theme-text-primary)]">{msg.content}</p>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
         </aside>
       </div>
