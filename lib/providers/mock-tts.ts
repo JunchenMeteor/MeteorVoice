@@ -6,15 +6,39 @@ export function createMockTTS(): TTSProvider {
       const speed = options?.speed ?? 1
       // Use browser SpeechSynthesis if available, otherwise just return mock
       if (typeof window !== 'undefined' && window.speechSynthesis) {
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = Math.max(0.5, Math.min(1.4, speed))
-        utterance.pitch = 1.0
-        window.speechSynthesis.speak(utterance)
+        await speakWithBrowserTTS(text, speed)
+      } else {
+        await sleep(200 + (text.length * 30) / speed)
       }
-      await sleep(200 + (text.length * 30) / speed)
       return { audioUrl: '', duration: (text.length * 0.06) / speed }
     },
   }
+}
+
+function speakWithBrowserTTS(text: string, speed: number) {
+  return new Promise<void>(resolve => {
+    const synth = window.speechSynthesis
+    const utterance = new SpeechSynthesisUtterance(text)
+    const fallback = window.setTimeout(() => resolve(), Math.max(1200, (text.length * 80) / speed))
+
+    function finish() {
+      window.clearTimeout(fallback)
+      resolve()
+    }
+
+    utterance.rate = Math.max(0.5, Math.min(1.4, speed))
+    utterance.pitch = 1.0
+    utterance.onend = finish
+    utterance.onerror = finish
+
+    try {
+      synth.cancel()
+      synth.speak(utterance)
+      if (synth.paused) synth.resume()
+    } catch {
+      finish()
+    }
+  })
 }
 
 function sleep(ms: number) {
