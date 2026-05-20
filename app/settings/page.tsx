@@ -4,6 +4,7 @@ import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
+import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import type { Locale } from '@/lib/i18n'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
@@ -26,6 +27,7 @@ export default function SettingsPage() {
   const t = useT()
   const [defaultAccent, setDefaultAccent] = useState(initialDefaultAccent)
   const [ttsProvider, setTtsProvider] = useState('mock')
+  const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
 
   useEffect(() => {
@@ -58,6 +60,12 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tts_provider: key }),
     }).catch(() => {})
+  }
+
+  function handleTtsSpeedChange(index: number) {
+    const next = ttsSpeedOptions[index] ?? 1
+    setTtsSpeed(next)
+    writeTTSSpeedPreference(next)
   }
 
   return (
@@ -187,6 +195,37 @@ export default function SettingsPage() {
           <p className="text-xs text-[var(--theme-text-muted)] mt-3">
             {t('settings.tts_provider_hint')}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.tts_speed')}</CardTitle>
+          <CardDescription>{t('settings.tts_speed_desc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm font-medium text-[var(--theme-text-primary)]">
+              <span>{t('settings.tts_speed_slow')}</span>
+              <span className="status-badge success">{ttsSpeed.toFixed(2).replace(/0$/, '')}x</span>
+              <span>{t('settings.tts_speed_fast')}</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={ttsSpeedOptions.length - 1}
+              step={1}
+              value={ttsSpeedOptions.indexOf(ttsSpeed)}
+              onChange={event => handleTtsSpeedChange(Number(event.target.value))}
+              className="w-full accent-[var(--theme-accent)]"
+              aria-label={t('settings.tts_speed')}
+            />
+            <div className="grid grid-cols-5 text-center text-xs text-[var(--theme-text-muted)]">
+              {ttsSpeedOptions.map(speed => (
+                <span key={speed}>{speed === 1 ? t('settings.tts_speed_normal') : `${speed}x`}</span>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
