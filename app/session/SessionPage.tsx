@@ -2,13 +2,23 @@
 
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { scenarios, accentProfiles, pickRandomAccent, type AccentProfile } from '@/lib/scenarios'
+import {
+  scenarios,
+  accentProfiles,
+  pickRandomAccent,
+  getAccentLabel,
+  getAccentRegion,
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
+  type AccentProfile,
+} from '@/lib/scenarios'
 import { createMockSTT } from '@/lib/providers/mock-stt'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { transition, createInitialSnapshot, type WorkflowState, type WorkflowSnapshot } from '@/lib/conversation-workflow'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
-import { useT } from '@/components/LanguageProvider'
+import { useLocale, useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 
 const mockSTT = createMockSTT()
@@ -23,6 +33,7 @@ function publishActiveSession(active: boolean) {
 
 export function SessionPageClient() {
   const params = useSearchParams()
+  const { locale } = useLocale()
   const tr = useT()
   const scenarioKey = params.get('scenario') ?? 'small-talk'
   const accentKey = params.get('accent') ?? 'american'
@@ -50,6 +61,11 @@ export function SessionPageClient() {
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>([])
 
   const messages: ConversationMessage[] = snapshot.messages
+  const scenarioLabel = getScenarioLabel(scenario, locale)
+  const scenarioDescription = getScenarioDescription(scenario, locale)
+  const accentLabel = getAccentLabel(accent, locale)
+  const accentRegion = getAccentRegion(accent, locale)
+  const difficultyLabel = getDifficultyLabel(scenario.difficulty, locale)
 
   useEffect(() => {
     snapshotRef.current = snapshot
@@ -94,7 +110,7 @@ export function SessionPageClient() {
   function rotateAccent(): AccentProfile {
     const next = pickRandomAccent()
     setAccent(next)
-    setAccentBanner(`${tr('session.accent_changed')} ${next.name}`)
+    setAccentBanner(`${tr('session.accent_changed')} ${getAccentLabel(next, locale)}`)
     return next
   }
 
@@ -126,7 +142,9 @@ export function SessionPageClient() {
       history.unshift({
         id: snapshot.sessionId,
         scenario: scenario.name,
+        scenarioKey: scenario.key,
         accent: accent.name,
+        accentKey: accent.key,
         date: new Date().toISOString().split('T')[0],
         turns: snapshot.turnNumber,
         corrections: sessionCorrections.length,
@@ -141,7 +159,9 @@ export function SessionPageClient() {
     const sessionPayload = {
       session_id: snapshot.sessionId,
       scenario: scenario.name,
+      scenarioKey: scenario.key,
       accent: accent.name,
+      accentKey: accent.key,
       turns: snapshot.turnNumber,
       messages: snapshot.messages.slice(-10),
       turnNumber: snapshot.turnNumber,
@@ -316,10 +336,10 @@ export function SessionPageClient() {
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div>
               <h1 className="text-lg font-bold text-[var(--theme-text-primary)]">
-                {scenario.icon} {scenario.name}
+                {scenario.icon} {scenarioLabel}
               </h1>
               <p className="text-xs text-[var(--theme-text-muted)]">
-                {tr('session.accent_label')}: {accent.name} ({accent.region}) · {scenario.difficulty}
+                {tr('session.accent_label')}: {accentLabel} ({accentRegion}) · {difficultyLabel}
               </p>
             </div>
             {isSessionActive ? (
@@ -356,10 +376,10 @@ export function SessionPageClient() {
             {messages.length === 0 && !isSessionActive && (
               <div className="text-center py-20 text-[var(--theme-text-muted)]">
                 <p className="text-4xl mb-4">{scenario.icon}</p>
-                <p className="text-lg font-medium text-[var(--theme-text-primary)]">{scenario.nameZh}</p>
-                <p className="text-sm mt-2">{scenario.description}</p>
+                <p className="text-lg font-medium text-[var(--theme-text-primary)]">{scenarioLabel}</p>
+                <p className="text-sm mt-2">{scenarioDescription}</p>
                 <p className="text-xs mt-4">
-                  {tr('session.accent_label')}: <span className="text-[var(--theme-accent)]">{accent.name}</span>
+                  {tr('session.accent_label')}: <span className="text-[var(--theme-accent)]">{accentLabel}</span>
                 </p>
                 <p className="text-xs mt-6 text-[var(--theme-text-muted)]">
                   {tr('session.start')}

@@ -1,11 +1,12 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { scenarios, pickRandomAccent } from '@/lib/scenarios'
-import { useT } from '@/components/LanguageProvider'
+import { getDifficultyLabel, getScenarioDescription, getScenarioLabel, scenarios, pickRandomAccent } from '@/lib/scenarios'
+import { useLocale, useT } from '@/components/LanguageProvider'
 
 export default function HomePage() {
   const router = useRouter()
+  const { locale } = useLocale()
   const t = useT()
 
   function startSession(scenarioKey: string) {
@@ -31,10 +32,9 @@ export default function HomePage() {
             className="data-panel p-5 text-left hover:ring-2 hover:ring-[var(--theme-accent)] transition-all cursor-pointer"
           >
             <div className="text-2xl mb-3">{s.icon}</div>
-            <h3 className="font-semibold text-[var(--theme-text-primary)]">{s.name}</h3>
-            <p className="text-xs text-[var(--theme-accent)] mt-0.5">{s.nameZh}</p>
-            <p className="text-sm text-[var(--theme-text-secondary)] mt-2">{s.description}</p>
-            <span className="inline-block chip-action mt-3">{s.difficulty}</span>
+            <h3 className="font-semibold text-[var(--theme-text-primary)]">{getScenarioLabel(s, locale)}</h3>
+            <p className="text-sm text-[var(--theme-text-secondary)] mt-2">{getScenarioDescription(s, locale)}</p>
+            <span className="inline-block chip-action mt-3">{getDifficultyLabel(s.difficulty, locale)}</span>
           </button>
         ))}
       </div>

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useT } from '@/components/LanguageProvider'
+import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 import type { ConversationResponse } from '@/lib/providers/types'
+import { findScenarioByKeyOrName, getScenarioLabel } from '@/lib/scenarios'
 
 interface ReviewItem {
   id: string
@@ -12,12 +13,13 @@ interface ReviewItem {
   suggested: string
   explanation: string
   scenario: string
+  scenarioKey?: string
   date: string
 }
 
 type Translate = (key: string) => string
 
-function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'date'>, index: number, t: Translate): ReviewItem[] {
+function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'scenarioKey' | 'date'>, index: number, t: Translate): ReviewItem[] {
   return [
     {
       id: `${session.date}-${index}-a`,
@@ -26,6 +28,7 @@ function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'date'>, index
       suggested: t('review.sample.grammar.suggested'),
       explanation: t('review.sample.grammar.explanation'),
       scenario: session.scenario,
+      scenarioKey: session.scenarioKey,
       date: session.date,
     },
     {
@@ -35,6 +38,7 @@ function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'date'>, index
       suggested: t('review.sample.vocabulary.suggested'),
       explanation: t('review.sample.vocabulary.explanation'),
       scenario: session.scenario,
+      scenarioKey: session.scenarioKey,
       date: session.date,
     },
     {
@@ -44,6 +48,7 @@ function sampleReviewItems(session: Pick<ReviewItem, 'scenario' | 'date'>, index
       suggested: t('review.sample.pronunciation.suggested'),
       explanation: t('review.sample.pronunciation.explanation'),
       scenario: session.scenario,
+      scenarioKey: session.scenarioKey,
       date: session.date,
     },
   ]
@@ -58,6 +63,7 @@ function loadReviewItems(t: Translate): ReviewItem[] {
 
     const sessions = JSON.parse(raw) as {
       scenario: string
+      scenarioKey?: string
       date: string
       corrections: number
       correctionItems?: ConversationResponse['corrections']
@@ -73,6 +79,7 @@ function loadReviewItems(t: Translate): ReviewItem[] {
             suggested: correction.suggestedText,
             explanation: correction.explanation,
             scenario: s.scenario,
+            scenarioKey: s.scenarioKey,
             date: s.date,
           })
         })
@@ -92,6 +99,7 @@ function loadReviewItems(t: Translate): ReviewItem[] {
 }
 
 export default function ReviewPage() {
+  const { locale } = useLocale()
   const t = useT()
   const [items] = useState<ReviewItem[]>(() => loadReviewItems(t))
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -99,6 +107,11 @@ export default function ReviewPage() {
 
   function correctionTypeLabel(type: string) {
     return t(`correction.type.${type}`)
+  }
+
+  function scenarioLabel(item: ReviewItem) {
+    const scenario = findScenarioByKeyOrName(item.scenarioKey ?? item.scenario)
+    return scenario ? getScenarioLabel(scenario, locale) : item.scenario
   }
 
   if (items.length === 0) {
@@ -121,7 +134,7 @@ export default function ReviewPage() {
       <div>
         <h1 className="text-2xl font-bold text-[var(--theme-text-primary)] mb-1">{t('review.title')}</h1>
         <p className="text-sm text-[var(--theme-text-secondary)]">
-          {currentIndex + 1} / {items.length} · {current.scenario} · {current.date}
+          {currentIndex + 1} / {items.length} · {scenarioLabel(current)} · {current.date}
         </p>
       </div>
 
