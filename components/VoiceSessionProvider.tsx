@@ -11,14 +11,62 @@ import {
 } from '@/lib/scenarios'
 import { createInitialSnapshot, transition, type WorkflowSnapshot, type WorkflowState } from '@/lib/conversation-workflow'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
-import { createMockSTT } from '@/lib/providers/mock-stt'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
+import { readTTSSpeedPreference, ttsSpeedChangeEvent, type TTSSpeed } from '@/lib/tts-speed'
 import { useT } from '@/components/LanguageProvider'
 
-const mockSTT = createMockSTT()
 const mockTTS = createMockTTS()
 const activeSessionStorageKey = 'meteorvoice-active-session'
+const voiceSessionStateStorageKey = 'meteorvoice-session-state'
+
+interface PersistedVoiceSessionState {
+  scenarioKey: string
+  accentKey: string
+  snapshot: WorkflowSnapshot
+  statusText: string
+  isSessionActive: boolean
+  isRoutePaused: boolean
+  corrections: ConversationResponse['corrections']
+  summary: string | null
+}
+
+function createDefaultPersistedState(): PersistedVoiceSessionState {
+  return {
+    scenarioKey: 'small-talk',
+    accentKey: 'american',
+    snapshot: createInitialSnapshot(crypto.randomUUID()),
+    statusText: '',
+    isSessionActive: false,
+    isRoutePaused: false,
+    corrections: [],
+    summary: null,
+  }
+}
+
+function readPersistedSessionState(): PersistedVoiceSessionState {
+  if (typeof window === 'undefined') return createDefaultPersistedState()
+
+  try {
+    const raw = sessionStorage.getItem(voiceSessionStateStorageKey)
+    if (!raw) return createDefaultPersistedState()
+    const parsed = JSON.parse(raw) as Partial<PersistedVoiceSessionState>
+    if (!parsed.snapshot?.sessionId) return createDefaultPersistedState()
+
+    return {
+      scenarioKey: parsed.scenarioKey ?? 'small-talk',
+      accentKey: parsed.accentKey ?? 'american',
+      snapshot: parsed.snapshot,
+      statusText: parsed.statusText ?? '',
+      isSessionActive: parsed.isSessionActive === true,
+      isRoutePaused: parsed.isRoutePaused === true,
+      corrections: parsed.corrections ?? [],
+      summary: parsed.summary ?? null,
+    }
+  } catch {
+    return createDefaultPersistedState()
+  }
+}
 
 function publishActiveSession(active: boolean) {
   if (typeof window === 'undefined') return
@@ -57,17 +105,21 @@ export function useVoiceSession() {
 export default function VoiceSessionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const tr = useT()
-  const [scenarioKey, setScenarioKey] = useState('small-talk')
-  const [accent, setAccent] = useState<AccentProfile>(accentProfiles[0])
-  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot(crypto.randomUUID()))
-  const [statusText, setStatusText] = useState(tr('session.ready'))
-  const [isSessionActive, setIsSessionActive] = useState(false)
-  const [isRoutePaused, setIsRoutePaused] = useState(false)
-  const [corrections, setCorrections] = useState<ConversationResponse['corrections']>([])
-  const [summary, setSummary] = useState<string | null>(null)
+  const [initialState] = useState(readPersistedSessionState)
+  const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
+  const [accent, setAccent] = useState<AccentProfile>(() =>
+    accentProfiles.find(a => a.key === initialState.accentKey) ?? accentProfiles[0],
+  )
+  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(initialState.snapshot)
+  const [statusText, setStatusText] = useState(initialState.statusText || tr('session.ready'))
+  const [isSessionActive, setIsSessionActive] = useState(initialState.isSessionActive)
+  const [isRoutePaused, setIsRoutePaused] = useState(initialState.isRoutePaused)
+  const [corrections, setCorrections] = useState<ConversationResponse['corrections']>(initialState.corrections)
+  const [summary, setSummary] = useState<string | null>(initialState.summary)
   const [interrupted, setInterrupted] = useState(false)
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
+  const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
 
   const scenario = useMemo(
@@ -81,13 +133,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const scenarioRef = useRef(scenario)
   const accentRef = useRef(accent)
   const ttsProviderRef = useRef(ttsProvider)
-  const activeSessionRef = useRef(false)
+  const ttsSpeedRef = useRef(ttsSpeed)
+  const activeSessionRef = useRef(initialState.isSessionActive)
   const activeTurnRef = useRef(0)
   const canListenOnRouteRef = useRef(isSessionRoute)
-  const routePausedRef = useRef(false)
+  const routePausedRef = useRef(initialState.isRoutePaused)
   const abortListeningRef = useRef<AbortController | null>(null)
   const simulateTurnRef = useRef<(turnId: number) => void>(() => {})
-  const correctionHistoryRef = useRef<ConversationResponse['corrections']>([])
+  const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
 
   useEffect(() => {
     snapshotRef.current = snapshot
@@ -104,6 +157,20 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   useEffect(() => {
     ttsProviderRef.current = ttsProvider
   }, [ttsProvider])
+
+  useEffect(() => {
+    ttsSpeedRef.current = ttsSpeed
+  }, [ttsSpeed])
+
+  useEffect(() => {
+    function handleSpeedChange(event: Event) {
+      const customEvent = event as CustomEvent<{ speed?: TTSSpeed }>
+      setTtsSpeed(customEvent.detail?.speed ?? readTTSSpeedPreference())
+    }
+
+    window.addEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+    return () => window.removeEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+  }, [])
 
   useEffect(() => {
     if (accentBanner) {
@@ -126,6 +193,37 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     publishActiveSession(isSessionActive)
     return () => publishActiveSession(false)
   }, [isSessionActive])
+
+  useEffect(() => {
+    activeSessionRef.current = isSessionActive
+  }, [isSessionActive])
+
+  useEffect(() => {
+    routePausedRef.current = isRoutePaused
+  }, [isRoutePaused])
+
+  useEffect(() => {
+    correctionHistoryRef.current = corrections
+  }, [corrections])
+
+  useEffect(() => {
+    if (!isSessionActive) {
+      sessionStorage.removeItem(voiceSessionStateStorageKey)
+      return
+    }
+
+    const state: PersistedVoiceSessionState = {
+      scenarioKey: scenarioRef.current.key,
+      accentKey: accentRef.current.key,
+      snapshot,
+      statusText,
+      isSessionActive,
+      isRoutePaused,
+      corrections,
+      summary,
+    }
+    sessionStorage.setItem(voiceSessionStateStorageKey, JSON.stringify(state))
+  }, [accent.key, corrections, isRoutePaused, isSessionActive, scenario.key, snapshot, statusText, summary])
 
   const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
     const next = updater(snapshotRef.current)
@@ -166,14 +264,15 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const speakText = useCallback(async (text: string, accentName: string) => {
     try {
       const provider = ttsProviderRef.current
+      const speed = ttsSpeedRef.current
       if (provider === 'mock') {
-        await mockTTS.synthesize(text, { accent: accentName })
+        await mockTTS.synthesize(text, { accent: accentName, speed })
         return
       }
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, accent: accentName, provider }),
+        body: JSON.stringify({ text, accent: accentName, provider, speed }),
       })
       const result = await res.json() as { audioUrl?: string }
       if (result.audioUrl) {
@@ -181,7 +280,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         await audio.play()
       }
     } catch {
-      await mockTTS.synthesize(text, { accent: accentName })
+      await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
     }
   }, [])
 
@@ -254,6 +353,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setIsSessionActive(false)
     applyTransition('session_ended')
     setStatusText(tr('session.ended'))
+    sessionStorage.removeItem(voiceSessionStateStorageKey)
 
     const currentSnapshot = snapshotRef.current
     const currentScenario = scenarioRef.current
@@ -344,19 +444,21 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         transcript = result.transcript
       } catch {
         if (!canContinueListening()) return
-        setStatusText(tr('session.no_speech'))
+        setStatusText(tr('session.waiting_for_speech'))
         applyTransition('idle')
+        window.setTimeout(() => {
+          if (activeSessionRef.current && canListenOnRouteRef.current && snapshotRef.current.state === 'idle') {
+            startNextTurn()
+          }
+        }, 500)
         return
       }
     } else {
-      try {
-        const result = await mockSTT.transcribe(new Blob(), { signal: abortController.signal })
-        if (!canContinueListening()) return
-        transcript = result.transcript
-      } catch {
-        if (!canContinueListening()) return
-        return
-      }
+      abortListeningRef.current = null
+      if (!canContinueListening()) return
+      setStatusText(tr('session.stt_unavailable'))
+      applyTransition('idle')
+      return
     }
     abortListeningRef.current = null
 
