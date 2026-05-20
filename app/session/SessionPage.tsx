@@ -13,6 +13,13 @@ import { Button } from '@/components/ui/button'
 
 const mockSTT = createMockSTT()
 const mockTTS = createMockTTS()
+const activeSessionStorageKey = 'meteorvoice-active-session'
+
+function publishActiveSession(active: boolean) {
+  if (typeof window === 'undefined') return
+  sessionStorage.setItem(activeSessionStorageKey, active ? 'true' : 'false')
+  window.dispatchEvent(new CustomEvent('meteorvoice-active-session-change', { detail: { active } }))
+}
 
 export function SessionPageClient() {
   const params = useSearchParams()
@@ -35,16 +42,28 @@ export function SessionPageClient() {
   const [interrupted, setInterrupted] = useState(false)
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
+  const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const activeSessionRef = useRef(false)
   const activeTurnRef = useRef(0)
+  const snapshotRef = useRef(snapshot)
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>([])
 
   const messages: ConversationMessage[] = snapshot.messages
 
-  const applyTransition = useCallback((to: WorkflowState, patch: Partial<WorkflowSnapshot> = {}) => {
-    setSnapshot(prev => transition(prev, to, { ...patch }))
+  useEffect(() => {
+    snapshotRef.current = snapshot
+  }, [snapshot])
+
+  const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
+    const next = updater(snapshotRef.current)
+    snapshotRef.current = next
+    setSnapshot(next)
   }, [])
+
+  const applyTransition = useCallback((to: WorkflowState, patch: Partial<WorkflowSnapshot> = {}) => {
+    updateSnapshot(prev => transition(prev, to, { ...patch }))
+  }, [updateSnapshot])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -64,7 +83,13 @@ export function SessionPageClient() {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
       })
       .catch(() => {})
+      .finally(() => setTtsPreferenceLoaded(true))
   }, [])
+
+  useEffect(() => {
+    publishActiveSession(isSessionActive)
+    return () => publishActiveSession(false)
+  }, [isSessionActive])
 
   function rotateAccent(): AccentProfile {
     const next = pickRandomAccent()
@@ -74,13 +99,16 @@ export function SessionPageClient() {
   }
 
   function startSession() {
+    if (!ttsPreferenceLoaded) {
+      setStatusText(tr('session.loading_voice'))
+      return
+    }
     activeSessionRef.current = true
-    activeTurnRef.current += 1
     correctionHistoryRef.current = []
     setIsSessionActive(true)
     setCorrections([])
     setSummary(null)
-    simulateTurn(activeTurnRef.current)
+    startNextTurn()
   }
 
   async function endSession() {
@@ -145,6 +173,13 @@ export function SessionPageClient() {
     } catch {}
   }
 
+  function startNextTurn() {
+    if (!activeSessionRef.current) return
+    const nextTurnId = activeTurnRef.current + 1
+    activeTurnRef.current = nextTurnId
+    void simulateTurn(nextTurnId)
+  }
+
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
 
@@ -176,10 +211,13 @@ export function SessionPageClient() {
     applyTransition('transcribing', { lastTranscript: transcript })
 
     const userMsg: ConversationMessage = { role: 'user', content: transcript }
-    setSnapshot(prev => ({ ...prev, messages: [...prev.messages, userMsg] }))
+    const snapshotBeforeUserMessage = snapshotRef.current
+    const messagesWithUser = [...snapshotBeforeUserMessage.messages, userMsg]
+    updateSnapshot(prev => ({ ...prev, messages: messagesWithUser }))
 
     // Rotate accent every 3 turns
-    const newAccent = snapshot.turnNumber > 0 && snapshot.turnNumber % 3 === 0 ? rotateAccent() : accent
+    const currentSnapshot = snapshotRef.current
+    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : accent
 
     setStatusText(tr('session.thinking'))
     applyTransition('thinking')
@@ -189,12 +227,12 @@ export function SessionPageClient() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...snapshot.messages, userMsg],
+          messages: messagesWithUser,
           context: {
             scenario: { name: scenario.name, description: scenario.description },
             accentProfile: { name: newAccent.name, region: newAccent.region },
-            sessionId: snapshot.sessionId,
-            turnNumber: snapshot.turnNumber + 1,
+            sessionId: currentSnapshot.sessionId,
+            turnNumber: currentSnapshot.turnNumber + 1,
           },
         }),
       })
@@ -214,24 +252,22 @@ export function SessionPageClient() {
     await speakText(response.text, newAccent.name)
     if (!isCurrentTurn()) return
     const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
-    setSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
+    updateSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
 
     if (response.corrections.length > 0) {
       correctionHistoryRef.current = [...correctionHistoryRef.current, ...response.corrections]
       setCorrections(correctionHistoryRef.current)
-      applyTransition('idle', { lastCorrections: response.corrections })
-      setStatusText(tr('session.tap_mic'))
-    } else {
-      setStatusText(tr('session.tap_mic'))
-      applyTransition('idle')
+      applyTransition('correcting', { lastCorrections: response.corrections })
     }
+
+    window.setTimeout(() => {
+      if (isCurrentTurn()) startNextTurn()
+    }, 250)
   }
 
   function continueSpeaking() {
     activeSessionRef.current = true
-    activeTurnRef.current += 1
-    setStatusText(tr('session.listening'))
-    simulateTurn(activeTurnRef.current)
+    startNextTurn()
   }
 
   async function speakText(text: string, accentName: string) {
@@ -263,7 +299,7 @@ export function SessionPageClient() {
     return tr(`correction.type.${type}`)
   }
 
-  const canContinue = isSessionActive && !['listening', 'transcribing', 'thinking'].includes(snapshot.state)
+  const canContinue = isSessionActive && snapshot.state === 'idle'
 
   return (
     <div className="p-4 lg:p-6 max-w-6xl mx-auto h-full">
@@ -289,7 +325,9 @@ export function SessionPageClient() {
             {isSessionActive ? (
               <Button variant="danger" size="sm" onClick={endSession}>{tr('session.end')}</Button>
             ) : (
-              <Button size="sm" onClick={startSession}>{tr('session.start')}</Button>
+              <Button size="sm" onClick={startSession} disabled={!ttsPreferenceLoaded}>
+                {ttsPreferenceLoaded ? tr('session.start') : tr('login.loading')}
+              </Button>
             )}
           </div>
 

@@ -7,6 +7,15 @@ export function normalizeTTSProvider(value?: string | null): TTSProviderPreferen
   return 'mock'
 }
 
+export function resolveTTSProviderPreference(storedValue?: string | null) {
+  const fallback = normalizeTTSProvider(process.env.TTS_PROVIDER)
+  const stored = normalizeTTSProvider(storedValue)
+
+  if (!storedValue) return fallback
+  if (stored === 'mock' && fallback !== 'mock') return fallback
+  return stored
+}
+
 export function getAvailableProviders(): TTSProviderPreference[] {
   const providers: TTSProviderPreference[] = ['mock']
   if (process.env.XUNFEI_APP_ID && process.env.XUNFEI_API_KEY && process.env.XUNFEI_API_SECRET) {
@@ -24,7 +33,7 @@ export function getAvailableProviders(): TTSProviderPreference[] {
 export async function getTTSProviderPreference() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return normalizeTTSProvider(process.env.TTS_PROVIDER)
+  if (!user) return resolveTTSProviderPreference()
 
   const { data, error } = await supabase
     .from('theme_preferences')
@@ -33,7 +42,7 @@ export async function getTTSProviderPreference() {
     .maybeSingle()
 
   if (error) throw error
-  return normalizeTTSProvider(data?.tts_provider ?? process.env.TTS_PROVIDER)
+  return resolveTTSProviderPreference(data?.tts_provider)
 }
 
 export async function setTTSProviderPreference(ttsProvider: string) {
