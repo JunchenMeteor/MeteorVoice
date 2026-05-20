@@ -4,6 +4,7 @@ import Sidebar from '@/components/Sidebar'
 import ThemeProvider from '@/components/ThemeProvider'
 import LanguageProvider from '@/components/LanguageProvider'
 import VoiceSessionProvider from '@/components/VoiceSessionProvider'
+import ActiveSessionBar from '@/components/ActiveSessionBar'
 
 export const metadata: Metadata = {
   title: 'MeteorVoice',
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <main className="flex-1 overflow-auto min-w-0">
                   {children}
                 </main>
+                <ActiveSessionBar />
               </div>
             </VoiceSessionProvider>
           </LanguageProvider>
