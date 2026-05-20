@@ -1,13 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useT } from '@/components/LanguageProvider'
+import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
+import { findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 
 interface HistoryEntry {
   id: string
   scenario: string
+  scenarioKey?: string
   accent: string
+  accentKey?: string
   date: string
   status: string
   summary: string | null
@@ -23,6 +26,7 @@ function loadLocalHistory(): HistoryEntry[] {
 }
 
 export default function HistoryPage() {
+  const { locale } = useLocale()
   const t = useT()
   const [sessions, setSessions] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,6 +36,16 @@ export default function HistoryPage() {
     const key = `history.status.${status}`
     const label = t(key)
     return label === key ? status : label
+  }
+
+  function scenarioLabel(entry: HistoryEntry) {
+    const scenario = findScenarioByKeyOrName(entry.scenarioKey ?? entry.scenario)
+    return scenario ? getScenarioLabel(scenario, locale) : entry.scenario
+  }
+
+  function accentLabel(entry: HistoryEntry) {
+    const accent = findAccentByKeyOrName(entry.accentKey ?? entry.accent)
+    return accent ? getAccentLabel(accent, locale) : entry.accent
   }
 
   useEffect(() => {
@@ -88,9 +102,9 @@ export default function HistoryPage() {
               <CardContent>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-[var(--theme-text-primary)]">{s.scenario}</h4>
+                    <h4 className="font-medium text-[var(--theme-text-primary)]">{scenarioLabel(s)}</h4>
                     <p className="text-xs text-[var(--theme-text-muted)]">
-                      {s.date} · {s.accent}
+                      {s.date} · {accentLabel(s)}
                     </p>
                     {s.summary && (
                       <p className="text-xs text-[var(--theme-text-secondary)] mt-2 line-clamp-2">{s.summary}</p>

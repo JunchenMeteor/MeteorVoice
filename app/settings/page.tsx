@@ -2,7 +2,7 @@
 
 import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
-import { accentProfiles } from '@/lib/scenarios'
+import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import type { Locale } from '@/lib/i18n'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
@@ -129,10 +129,10 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => handleAccentChange(a.key)}
                 disabled={!enabled}
-                title={enabled ? a.name : t('settings.accent_not_supported')}
+                title={enabled ? getAccentLabel(a, locale) : t('settings.accent_not_supported')}
                 className={`chip-action ${a.key === defaultAccent ? 'is-active' : ''} ${enabled ? '' : 'opacity-40 cursor-not-allowed'}`}
               >
-                {a.name}
+                {getAccentLabel(a, locale)}
               </button>
               )
             })}
