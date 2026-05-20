@@ -19,6 +19,7 @@ import { useT } from '@/components/LanguageProvider'
 const mockTTS = createMockTTS()
 const activeSessionStorageKey = 'meteorvoice-active-session'
 const voiceSessionStateStorageKey = 'meteorvoice-session-state'
+const postPlaybackListenDelayMs = 900
 
 interface PersistedVoiceSessionState {
   scenarioKey: string
@@ -72,6 +73,51 @@ function publishActiveSession(active: boolean) {
   if (typeof window === 'undefined') return
   sessionStorage.setItem(activeSessionStorageKey, active ? 'true' : 'false')
   window.dispatchEvent(new CustomEvent('meteorvoice-active-session-change', { detail: { active } }))
+}
+
+function wait(ms: number) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+function playAudioToEnd(audioUrl: string) {
+  return new Promise<void>((resolve, reject) => {
+    const audio = new Audio(audioUrl)
+    let settled = false
+    let timeout: number | null = null
+
+    function cleanup() {
+      audio.onended = null
+      audio.onerror = null
+      audio.onloadedmetadata = null
+      if (timeout) {
+        window.clearTimeout(timeout)
+        timeout = null
+      }
+    }
+
+    function settle(callback: () => void) {
+      if (settled) return
+      settled = true
+      cleanup()
+      callback()
+    }
+
+    function armTimeout(ms: number) {
+      if (timeout) window.clearTimeout(timeout)
+      timeout = window.setTimeout(() => settle(resolve), ms)
+    }
+
+    audio.onloadedmetadata = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        armTimeout((audio.duration * 1000) + 2000)
+      }
+    }
+    audio.onended = () => settle(resolve)
+    audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
+
+    armTimeout(45000)
+    audio.play().catch(error => settle(() => reject(error)))
+  })
 }
 
 interface VoiceSessionContextValue {
@@ -276,8 +322,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       })
       const result = await res.json() as { audioUrl?: string }
       if (result.audioUrl) {
-        const audio = new Audio(result.audioUrl)
-        await audio.play()
+        await playAudioToEnd(result.audioUrl)
       }
     } catch {
       await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
@@ -506,6 +551,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setStatusText(tr('session.speaking'))
     applyTransition('speaking', { lastResponse: response.text })
     await speakText(response.text, newAccent.name)
+    await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
 
     const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
