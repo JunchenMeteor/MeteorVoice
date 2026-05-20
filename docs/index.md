@@ -28,6 +28,7 @@
 - 本次集成目标 MUST 限定为 Phase 1 + Phase 4 基础版：状态驱动 waveform、当前字幕、`Corrections` / `Transcript` tabs、多语言文案、桌面/移动布局。
 - 本次集成 MUST 不接入真实麦克风频谱，MUST 不接入真实 AI 播放音频频谱，MUST 不改 STT/TTS turn loop。
 - Phase 2/3 的真实音频频谱能力 SHOULD 作为后续增强独立评估和开发，不属于本次代码范围，也不作为本次验收阻塞项。
+- `dev/feature/audio-driven-session-waveforms` 用于后续增强 #52：在不改变 STT/TTS turn loop 的前提下，为 listening/speaking waveform 接入真实音频音量采样，并保留状态驱动 fallback。
 - `docs/session-immersive-ui-plan.md` 已定义 Phase 1-4 的范围、禁止项、agent 分工和本次集成验收标准。
 - 文档体系最终整理 SHOULD 在代码阶段完成后再做一次，以记录已完成范围、未完成风险和后续规则。
 

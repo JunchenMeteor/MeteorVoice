@@ -59,6 +59,7 @@ export function SessionPageClient() {
     interrupted,
     accentBanner,
     ttsPreferenceLoaded,
+    voiceLevel,
     configureSession,
     startSession,
     endSession,
@@ -171,7 +172,7 @@ export function SessionPageClient() {
 
             {(messages.length > 0 || isSessionActive) && (
               <>
-                <VoiceWaveform mode={waveformMode} label={statusText} />
+                <VoiceWaveform mode={waveformMode} label={statusText} level={voiceLevel ?? undefined} />
 
                 <div className="w-full max-w-3xl space-y-3 rounded-lg border p-4 text-left" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
                   <div className="flex items-center justify-between gap-3">

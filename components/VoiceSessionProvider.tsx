@@ -21,6 +21,20 @@ const activeSessionStorageKey = 'meteorvoice-active-session'
 const voiceSessionStateStorageKey = 'meteorvoice-session-state'
 const postPlaybackListenDelayMs = 900
 
+type AudioLevelStop = () => void
+
+type AudioLevelSource = {
+  analyser: AnalyserNode
+  audioContext: AudioContext
+  stopSource?: () => void
+}
+
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext
+  }
+}
+
 interface PersistedVoiceSessionState {
   scenarioKey: string
   accentKey: string
@@ -79,16 +93,88 @@ function wait(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
 }
 
-function playAudioToEnd(audioUrl: string) {
+function sampleAudioLevel(source: AudioLevelSource, onLevel: (level: number | null) => void): AudioLevelStop {
+  const data = new Uint8Array(source.analyser.fftSize)
+  let frame = 0
+  let stopped = false
+
+  function tick() {
+    if (stopped) return
+    source.analyser.getByteTimeDomainData(data)
+    let sum = 0
+    for (const value of data) {
+      const centered = (value - 128) / 128
+      sum += centered * centered
+    }
+    const rms = Math.sqrt(sum / data.length)
+    onLevel(Math.min(1, rms * 4.2))
+    frame = window.requestAnimationFrame(tick)
+  }
+
+  frame = window.requestAnimationFrame(tick)
+
+  return () => {
+    if (stopped) return
+    stopped = true
+    window.cancelAnimationFrame(frame)
+    source.stopSource?.()
+    onLevel(null)
+    void source.audioContext.close().catch(() => {})
+  }
+}
+
+async function createMicLevelSampler(onLevel: (level: number | null) => void): Promise<AudioLevelStop | null> {
+  if (!navigator.mediaDevices?.getUserMedia) return null
+
+  try {
+    const permissions = navigator.permissions
+    if (!permissions?.query) return null
+    const status = await permissions.query({ name: 'microphone' as PermissionName })
+    if (status.state !== 'granted') return null
+  } catch {
+    return null
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
+    if (!AudioContextCtor) {
+      stream.getTracks().forEach(track => track.stop())
+      return null
+    }
+
+    const audioContext = new AudioContextCtor()
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
+    const source = audioContext.createMediaStreamSource(stream)
+    source.connect(analyser)
+
+    return sampleAudioLevel({
+      analyser,
+      audioContext,
+      stopSource: () => stream.getTracks().forEach(track => track.stop()),
+    }, onLevel)
+  } catch {
+    onLevel(null)
+    return null
+  }
+}
+
+function playAudioToEnd(audioUrl: string, onLevel?: (level: number | null) => void) {
   return new Promise<void>((resolve, reject) => {
     const audio = new Audio(audioUrl)
+    audio.crossOrigin = 'anonymous'
     let settled = false
     let timeout: number | null = null
+    let stopLevelSampler: AudioLevelStop | null = null
 
     function cleanup() {
       audio.onended = null
       audio.onerror = null
       audio.onloadedmetadata = null
+      stopLevelSampler?.()
+      stopLevelSampler = null
       if (timeout) {
         window.clearTimeout(timeout)
         timeout = null
@@ -116,6 +202,23 @@ function playAudioToEnd(audioUrl: string) {
     audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
 
     armTimeout(45000)
+    if (onLevel) {
+      try {
+        const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
+        if (AudioContextCtor) {
+          const audioContext = new AudioContextCtor()
+          const analyser = audioContext.createAnalyser()
+          analyser.fftSize = 256
+          analyser.smoothingTimeConstant = 0.7
+          const source = audioContext.createMediaElementSource(audio)
+          source.connect(analyser)
+          analyser.connect(audioContext.destination)
+          stopLevelSampler = sampleAudioLevel({ analyser, audioContext }, onLevel)
+        }
+      } catch {
+        onLevel(null)
+      }
+    }
     audio.play().catch(error => settle(() => reject(error)))
   })
 }
@@ -133,6 +236,7 @@ interface VoiceSessionContextValue {
   interrupted: boolean
   accentBanner: string | null
   ttsPreferenceLoaded: boolean
+  voiceLevel: number | null
   configureSession: (scenarioKey: string, accentKey: string) => void
   startSession: () => void
   endSession: () => Promise<void>
@@ -167,6 +271,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
+  const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
 
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
@@ -187,6 +292,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const abortListeningRef = useRef<AbortController | null>(null)
   const simulateTurnRef = useRef<(turnId: number) => void>(() => {})
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
+  const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
+  const voiceLevelRequestRef = useRef(0)
 
   useEffect(() => {
     snapshotRef.current = snapshot
@@ -281,11 +388,51 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     updateSnapshot(prev => transition(prev, to, { ...patch }))
   }, [updateSnapshot])
 
+  const stopVoiceLevelSampling = useCallback(() => {
+    voiceLevelRequestRef.current += 1
+    stopVoiceLevelRef.current?.()
+    stopVoiceLevelRef.current = null
+    setVoiceLevel(null)
+  }, [])
+
+  const startListeningLevelSampling = useCallback((turnId: number) => {
+    stopVoiceLevelSampling()
+    const requestId = voiceLevelRequestRef.current
+    void createMicLevelSampler(level => {
+      if (
+        activeSessionRef.current &&
+        activeTurnRef.current === turnId &&
+        canListenOnRouteRef.current &&
+        snapshotRef.current.state === 'listening'
+      ) {
+        setVoiceLevel(level)
+      }
+    }).then(stop => {
+      if (!stop) return
+      if (
+        voiceLevelRequestRef.current !== requestId ||
+        !activeSessionRef.current ||
+        activeTurnRef.current !== turnId ||
+        !canListenOnRouteRef.current ||
+        snapshotRef.current.state !== 'listening'
+      ) {
+        stop()
+        return
+      }
+      stopVoiceLevelRef.current = stop
+    })
+  }, [stopVoiceLevelSampling])
+
+  useEffect(() => {
+    return () => stopVoiceLevelSampling()
+  }, [stopVoiceLevelSampling])
+
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
     abortListeningRef.current = null
     activeTurnRef.current += 1
-  }, [])
+    stopVoiceLevelSampling()
+  }, [stopVoiceLevelSampling])
 
   const pauseListeningForNavigation = useCallback(() => {
     if (!activeSessionRef.current) return
@@ -297,7 +444,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       applyTransition('idle')
     }
     setStatusText(tr('session.paused'))
-  }, [applyTransition, cancelCurrentTurn, tr])
+    stopVoiceLevelSampling()
+  }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
 
   const rotateAccent = useCallback((): AccentProfile => {
     const next = pickRandomAccent()
@@ -308,10 +456,21 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [tr])
 
   const speakText = useCallback(async (text: string, accentName: string) => {
+    const updatePlaybackLevel = (level: number | null) => {
+      if (
+        activeSessionRef.current &&
+        canListenOnRouteRef.current &&
+        snapshotRef.current.state === 'speaking'
+      ) {
+        setVoiceLevel(level)
+      }
+    }
+
     try {
       const provider = ttsProviderRef.current
       const speed = ttsSpeedRef.current
       if (provider === 'mock') {
+        setVoiceLevel(null)
         await mockTTS.synthesize(text, { accent: accentName, speed })
         return
       }
@@ -322,10 +481,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       })
       const result = await res.json() as { audioUrl?: string }
       if (result.audioUrl) {
-        await playAudioToEnd(result.audioUrl)
+        await playAudioToEnd(result.audioUrl, updatePlaybackLevel)
       }
     } catch {
+      setVoiceLevel(null)
       await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
+    } finally {
+      setVoiceLevel(null)
     }
   }, [])
 
@@ -398,6 +560,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setIsSessionActive(false)
     applyTransition('session_ended')
     setStatusText(tr('session.ended'))
+    stopVoiceLevelSampling()
     sessionStorage.removeItem(voiceSessionStateStorageKey)
 
     const currentSnapshot = snapshotRef.current
@@ -454,7 +617,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       const data = await res.json()
       if (data.summary) setSummary(data.summary)
     } catch {}
-  }, [applyTransition, cancelCurrentTurn, tr])
+  }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
 
   const continueSpeaking = useCallback(() => {
     activeSessionRef.current = true
@@ -483,11 +646,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     let transcript: string
     if (browserSTTSupported()) {
       try {
+        startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()
         const result = await browserSTT.transcribe(new Blob(), { signal: abortController.signal })
         if (!canContinueListening()) return
         transcript = result.transcript
       } catch {
+        stopVoiceLevelSampling()
         if (!canContinueListening()) return
         setStatusText(tr('session.waiting_for_speech'))
         applyTransition('idle')
@@ -500,12 +665,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       }
     } else {
       abortListeningRef.current = null
+      stopVoiceLevelSampling()
       if (!canContinueListening()) return
       setStatusText(tr('session.stt_unavailable'))
       applyTransition('idle')
       return
     }
     abortListeningRef.current = null
+    stopVoiceLevelSampling()
 
     setStatusText(tr('session.transcribing'))
     applyTransition('transcribing', { lastTranscript: transcript })
@@ -550,6 +717,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
     setStatusText(tr('session.speaking'))
     applyTransition('speaking', { lastResponse: response.text })
+    setVoiceLevel(null)
     await speakText(response.text, newAccent.name)
     await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
@@ -594,6 +762,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     interrupted,
     accentBanner,
     ttsPreferenceLoaded,
+    voiceLevel,
     configureSession,
     startSession,
     endSession,
@@ -617,6 +786,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     statusText,
     summary,
     ttsPreferenceLoaded,
+    voiceLevel,
   ])
 
   return (
