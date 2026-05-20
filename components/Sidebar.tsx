@@ -2,10 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import type { MouseEvent } from 'react'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getUserDisplayName, getUserInitial } from '@/lib/auth/display'
 import { useT } from '@/components/LanguageProvider'
+
+const activeSessionStorageKey = 'meteorvoice-active-session'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -14,6 +17,9 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userDisplayName, setUserDisplayName] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [hasActiveSession, setHasActiveSession] = useState(() =>
+    typeof window !== 'undefined' && sessionStorage.getItem(activeSessionStorageKey) === 'true',
+  )
 
   useEffect(() => {
     const supabase = createClient()
@@ -32,6 +38,29 @@ export default function Sidebar() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    function handleActiveSessionChange(event: Event) {
+      const customEvent = event as CustomEvent<{ active?: boolean }>
+      setHasActiveSession(customEvent.detail?.active === true)
+    }
+
+    window.addEventListener('meteorvoice-active-session-change', handleActiveSessionChange)
+    return () => window.removeEventListener('meteorvoice-active-session-change', handleActiveSessionChange)
+  }, [])
+
+  function shouldLeaveActiveSession(href: string) {
+    if (!hasActiveSession || !pathname.startsWith('/session') || href.startsWith('/session')) return true
+    return window.confirm(t('nav.active_session_confirm'))
+  }
+
+  function handleNavClick(event: MouseEvent<HTMLAnchorElement>, href: string, isMobile: boolean) {
+    if (!shouldLeaveActiveSession(href)) {
+      event.preventDefault()
+      return
+    }
+    if (isMobile) setMobileOpen(false)
+  }
 
   const navItems = [
     { href: '/',       label: t('nav.home'),      icon: HomeIcon },
@@ -77,7 +106,7 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
-              onClick={() => isMobile && setMobileOpen(false)}
+              onClick={event => handleNavClick(event, href, isMobile)}
               className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
               style={{
                 background: active ? 'var(--theme-accent)' : 'transparent',
@@ -110,7 +139,7 @@ export default function Sidebar() {
         ) : (
           <Link
             href="/login"
-            onClick={() => isMobile && setMobileOpen(false)}
+            onClick={event => handleNavClick(event, '/login', isMobile)}
             className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[var(--theme-surface)] transition-colors"
           >
             <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
