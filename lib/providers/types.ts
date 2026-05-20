@@ -26,7 +26,7 @@ export interface ConversationResponse {
 }
 
 export interface STTProvider {
-  transcribe(audioBlob: Blob): Promise<STTResult>
+  transcribe(audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult>
 }
 
 export interface TTSProvider {

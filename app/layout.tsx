@@ -3,6 +3,7 @@ import './globals.css'
 import Sidebar from '@/components/Sidebar'
 import ThemeProvider from '@/components/ThemeProvider'
 import LanguageProvider from '@/components/LanguageProvider'
+import VoiceSessionProvider from '@/components/VoiceSessionProvider'
 
 export const metadata: Metadata = {
   title: 'MeteorVoice',
@@ -15,12 +16,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="h-full">
         <ThemeProvider>
           <LanguageProvider>
-            <div className="flex h-full">
-              <Sidebar />
-              <main className="flex-1 overflow-auto min-w-0">
-                {children}
-              </main>
-            </div>
+            <VoiceSessionProvider>
+              <div className="flex h-full">
+                <Sidebar />
+                <main className="flex-1 overflow-auto min-w-0">
+                  {children}
+                </main>
+              </div>
+            </VoiceSessionProvider>
           </LanguageProvider>
         </ThemeProvider>
       </body>

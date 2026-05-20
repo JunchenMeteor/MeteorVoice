@@ -46,7 +46,8 @@ export function createBrowserSTT(): STTProvider {
   }
 
   return {
-    transcribe(): Promise<STTResult> {
+    transcribe(_audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult> {
+      void _audioBlob
       return new Promise((resolve, reject) => {
         const recognition = new SpeechRecognitionCtor()
         recognition.continuous = true
@@ -59,8 +60,22 @@ export function createBrowserSTT(): STTProvider {
         let lastInterim = ''
         const allResults: string[] = []
 
+        function cleanupAbortListener() {
+          options?.signal?.removeEventListener('abort', abort)
+        }
+
         function clearSilenceTimer() {
           if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
+        }
+
+        function abort() {
+          if (settled) return
+          settled = true
+          clearSilenceTimer()
+          if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          try { recognition.abort() } catch {}
+          cleanupAbortListener()
+          reject(new DOMException('Aborted', 'AbortError'))
         }
 
         function finalize() {
@@ -69,6 +84,7 @@ export function createBrowserSTT(): STTProvider {
           clearSilenceTimer()
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
           try { recognition.abort() } catch {}
+          cleanupAbortListener()
           const transcript = (allResults.join(' ').trim() || lastInterim.trim())
           if (transcript) {
             resolve({ transcript, confidence: 0.9 })
@@ -107,6 +123,7 @@ export function createBrowserSTT(): STTProvider {
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
           clearSilenceTimer()
           try { recognition.abort() } catch {}
+          cleanupAbortListener()
 
           if (event.error === 'not-allowed') {
             reject(new Error('Microphone permission denied. Please allow mic access in browser settings.'))
@@ -126,10 +143,16 @@ export function createBrowserSTT(): STTProvider {
         }
 
         try {
+          if (options?.signal?.aborted) {
+            abort()
+            return
+          }
+          options?.signal?.addEventListener('abort', abort, { once: true })
           recognition.start()
         } catch (e: unknown) {
           settled = true
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          cleanupAbortListener()
           const msg = e instanceof DOMException && e.name === 'NotAllowedError'
             ? 'Microphone permission denied. Please allow mic access in browser settings.'
             : `Failed to start speech recognition: ${e}`

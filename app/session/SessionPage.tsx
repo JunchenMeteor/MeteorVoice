@@ -1,35 +1,18 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import {
-  scenarios,
-  accentProfiles,
-  pickRandomAccent,
   getAccentLabel,
   getAccentRegion,
   getDifficultyLabel,
   getScenarioDescription,
   getScenarioLabel,
-  type AccentProfile,
 } from '@/lib/scenarios'
-import { createMockSTT } from '@/lib/providers/mock-stt'
-import { createMockTTS } from '@/lib/providers/mock-tts'
-import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { transition, createInitialSnapshot, type WorkflowState, type WorkflowSnapshot } from '@/lib/conversation-workflow'
-import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
+import type { ConversationResponse } from '@/lib/providers/types'
 import { useLocale, useT } from '@/components/LanguageProvider'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
 import { Button } from '@/components/ui/button'
-
-const mockSTT = createMockSTT()
-const mockTTS = createMockTTS()
-const activeSessionStorageKey = 'meteorvoice-active-session'
-
-function publishActiveSession(active: boolean) {
-  if (typeof window === 'undefined') return
-  sessionStorage.setItem(activeSessionStorageKey, active ? 'true' : 'false')
-  window.dispatchEvent(new CustomEvent('meteorvoice-active-session-change', { detail: { active } }))
-}
 
 export function SessionPageClient() {
   const params = useSearchParams()
@@ -37,30 +20,27 @@ export function SessionPageClient() {
   const tr = useT()
   const scenarioKey = params.get('scenario') ?? 'small-talk'
   const accentKey = params.get('accent') ?? 'american'
-
-  const scenario = scenarios.find(s => s.key === scenarioKey) ?? scenarios[0]
-
-  const [accent, setAccent] = useState<AccentProfile>(
-    accentProfiles.find(a => a.key === accentKey) ?? accentProfiles[0],
-  )
-  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() =>
-    createInitialSnapshot(crypto.randomUUID()),
-  )
-  const [statusText, setStatusText] = useState(tr('session.ready'))
-  const [isSessionActive, setIsSessionActive] = useState(false)
-  const [corrections, setCorrections] = useState<ConversationResponse['corrections']>([])
-  const [summary, setSummary] = useState<string | null>(null)
-  const [interrupted, setInterrupted] = useState(false)
-  const [accentBanner, setAccentBanner] = useState<string | null>(null)
-  const [ttsProvider, setTtsProvider] = useState('mock')
-  const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const activeSessionRef = useRef(false)
-  const activeTurnRef = useRef(0)
-  const snapshotRef = useRef(snapshot)
-  const correctionHistoryRef = useRef<ConversationResponse['corrections']>([])
+  const {
+    scenario,
+    accent,
+    snapshot,
+    messages,
+    statusText,
+    isSessionActive,
+    isRoutePaused,
+    corrections,
+    summary,
+    interrupted,
+    accentBanner,
+    ttsPreferenceLoaded,
+    configureSession,
+    startSession,
+    endSession,
+    continueSpeaking,
+    playCorrection,
+  } = useVoiceSession()
 
-  const messages: ConversationMessage[] = snapshot.messages
   const scenarioLabel = getScenarioLabel(scenario, locale)
   const scenarioDescription = getScenarioDescription(scenario, locale)
   const accentLabel = getAccentLabel(accent, locale)
@@ -68,262 +48,26 @@ export function SessionPageClient() {
   const difficultyLabel = getDifficultyLabel(scenario.difficulty, locale)
 
   useEffect(() => {
-    snapshotRef.current = snapshot
-  }, [snapshot])
-
-  const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
-    const next = updater(snapshotRef.current)
-    snapshotRef.current = next
-    setSnapshot(next)
-  }, [])
-
-  const applyTransition = useCallback((to: WorkflowState, patch: Partial<WorkflowSnapshot> = {}) => {
-    updateSnapshot(prev => transition(prev, to, { ...patch }))
-  }, [updateSnapshot])
+    configureSession(scenarioKey, accentKey)
+  }, [accentKey, configureSession, scenarioKey])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [snapshot.messages.length])
 
-  useEffect(() => {
-    if (accentBanner) {
-      const timer = setTimeout(() => setAccentBanner(null), 2500)
-      return () => clearTimeout(timer)
-    }
-  }, [accentBanner])
-
-  useEffect(() => {
-    fetch('/api/preferences')
-      .then(res => res.json())
-      .then((data: { tts_provider?: string }) => {
-        if (data.tts_provider) setTtsProvider(data.tts_provider)
-      })
-      .catch(() => {})
-      .finally(() => setTtsPreferenceLoaded(true))
-  }, [])
-
-  useEffect(() => {
-    publishActiveSession(isSessionActive)
-    return () => publishActiveSession(false)
-  }, [isSessionActive])
-
-  function rotateAccent(): AccentProfile {
-    const next = pickRandomAccent()
-    setAccent(next)
-    setAccentBanner(`${tr('session.accent_changed')} ${getAccentLabel(next, locale)}`)
-    return next
-  }
-
-  function startSession() {
-    if (!ttsPreferenceLoaded) {
-      setStatusText(tr('session.loading_voice'))
-      return
-    }
-    activeSessionRef.current = true
-    correctionHistoryRef.current = []
-    setIsSessionActive(true)
-    setCorrections([])
-    setSummary(null)
-    startNextTurn()
-  }
-
-  async function endSession() {
-    activeSessionRef.current = false
-    activeTurnRef.current += 1
-    setIsSessionActive(false)
-    applyTransition('session_ended')
-    setStatusText(tr('session.ended'))
-    const sessionCorrections = correctionHistoryRef.current
-
-    // Save to localStorage history (always as fallback)
-    try {
-      const raw = localStorage.getItem('meteorvoice-history')
-      const history = raw ? JSON.parse(raw) : []
-      history.unshift({
-        id: snapshot.sessionId,
-        scenario: scenario.name,
-        scenarioKey: scenario.key,
-        accent: accent.name,
-        accentKey: accent.key,
-        date: new Date().toISOString().split('T')[0],
-        turns: snapshot.turnNumber,
-        corrections: sessionCorrections.length,
-        correctionItems: sessionCorrections,
-        status: 'completed',
-        summary: '',
-      })
-      localStorage.setItem('meteorvoice-history', JSON.stringify(history.slice(0, 50)))
-    } catch {}
-
-    // Sync to Supabase: create session record
-    const sessionPayload = {
-      session_id: snapshot.sessionId,
-      scenario: scenario.name,
-      scenarioKey: scenario.key,
-      accent: accent.name,
-      accentKey: accent.key,
-      turns: snapshot.turnNumber,
-      messages: snapshot.messages.slice(-10),
-      turnNumber: snapshot.turnNumber,
-      corrections: sessionCorrections,
-    }
-
-    try {
-      await fetch('/api/session/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sessionPayload),
-      })
-    } catch {}
-
-    // Generate AI summary (also saves to learning_history server-side)
-    try {
-      const res = await fetch('/api/summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: snapshot.sessionId,
-          scenario: scenario.name,
-          messages: snapshot.messages.slice(-10),
-          turnNumber: snapshot.turnNumber,
-        }),
-      })
-      const data = await res.json()
-      if (data.summary) setSummary(data.summary)
-    } catch {}
-  }
-
-  function startNextTurn() {
-    if (!activeSessionRef.current) return
-    const nextTurnId = activeTurnRef.current + 1
-    activeTurnRef.current = nextTurnId
-    void simulateTurn(nextTurnId)
-  }
-
-  async function simulateTurn(turnId: number) {
-    const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
-
-    setInterrupted(false)
-    setStatusText(tr('session.listening'))
-    applyTransition('listening')
-
-    // Try browser STT first, fall back to mock only when API unsupported
-    let transcript: string
-    if (browserSTTSupported()) {
-      try {
-        const browserSTT = createBrowserSTT()
-        const result = await browserSTT.transcribe(new Blob())
-        if (!isCurrentTurn()) return
-        transcript = result.transcript
-      } catch {
-        if (!isCurrentTurn()) return
-        setStatusText(tr('session.no_speech'))
-        applyTransition('idle')
-        return
-      }
-    } else {
-      const result = await mockSTT.transcribe(new Blob())
-      if (!isCurrentTurn()) return
-      transcript = result.transcript
-    }
-
-    setStatusText(tr('session.transcribing'))
-    applyTransition('transcribing', { lastTranscript: transcript })
-
-    const userMsg: ConversationMessage = { role: 'user', content: transcript }
-    const snapshotBeforeUserMessage = snapshotRef.current
-    const messagesWithUser = [...snapshotBeforeUserMessage.messages, userMsg]
-    updateSnapshot(prev => ({ ...prev, messages: messagesWithUser }))
-
-    // Rotate accent every 3 turns
-    const currentSnapshot = snapshotRef.current
-    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : accent
-
-    setStatusText(tr('session.thinking'))
-    applyTransition('thinking')
-    let response: ConversationResponse
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messagesWithUser,
-          context: {
-            scenario: { name: scenario.name, description: scenario.description },
-            accentProfile: { name: newAccent.name, region: newAccent.region },
-            sessionId: currentSnapshot.sessionId,
-            turnNumber: currentSnapshot.turnNumber + 1,
-          },
-        }),
-      })
-      if (!res.ok) throw new Error(`Chat request failed: ${res.status}`)
-      response = await res.json() as ConversationResponse
-    } catch {
-      if (!isCurrentTurn()) return
-      setStatusText(tr('session.tap_mic'))
-      applyTransition('idle')
-      return
-    }
-
-    if (!isCurrentTurn()) return
-
-    setStatusText(tr('session.speaking'))
-    applyTransition('speaking', { lastResponse: response.text })
-    await speakText(response.text, newAccent.name)
-    if (!isCurrentTurn()) return
-    const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
-    updateSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
-
-    if (response.corrections.length > 0) {
-      correctionHistoryRef.current = [...correctionHistoryRef.current, ...response.corrections]
-      setCorrections(correctionHistoryRef.current)
-      applyTransition('correcting', { lastCorrections: response.corrections })
-    }
-
-    window.setTimeout(() => {
-      if (isCurrentTurn()) startNextTurn()
-    }, 250)
-  }
-
-  function continueSpeaking() {
-    activeSessionRef.current = true
-    startNextTurn()
-  }
-
-  async function speakText(text: string, accentName: string) {
-    try {
-      if (ttsProvider === 'mock') {
-        await mockTTS.synthesize(text, { accent: accentName })
-        return
-      }
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, accent: accentName, provider: ttsProvider }),
-      })
-      const result = await res.json() as { audioUrl?: string }
-      if (result.audioUrl) {
-        const audio = new Audio(result.audioUrl)
-        await audio.play()
-      }
-    } catch {
-      await mockTTS.synthesize(text, { accent: accentName })
-    }
-  }
-
-  function playCorrection(text: string) {
-    speakText(text, accent.name)
-  }
-
   function correctionTypeLabel(type: ConversationResponse['corrections'][number]['type']) {
     return tr(`correction.type.${type}`)
   }
 
-  const canContinue = isSessionActive && snapshot.state === 'idle'
+  const canContinue = isSessionActive && !isRoutePaused && snapshot.state === 'idle'
+  const statusColor = isSessionActive && !isRoutePaused
+    ? 'var(--theme-success)'
+    : isRoutePaused
+      ? 'var(--theme-warning)'
+      : 'var(--theme-text-muted)'
 
   return (
     <div className="p-4 lg:p-6 max-w-6xl mx-auto h-full">
-      {/* Accent rotation banner */}
       {accentBanner && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg"
           style={{ background: 'var(--theme-accent)' }}>
@@ -354,7 +98,7 @@ export function SessionPageClient() {
           <div className="flex items-center gap-2 mb-4 shrink-0">
             <span
               className="w-2 h-2 rounded-full shrink-0"
-              style={{ background: isSessionActive ? 'var(--theme-success)' : 'var(--theme-text-muted)' }}
+              style={{ background: statusColor }}
             />
             <span className="text-sm text-[var(--theme-text-secondary)]">{statusText}</span>
             {interrupted && (
