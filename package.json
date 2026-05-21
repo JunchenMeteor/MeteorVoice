@@ -11,6 +11,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "mobile:start": "npm --workspace @meteorvoice/mobile run start",
+    "mobile:ios": "npm --workspace @meteorvoice/mobile run ios",
+    "mobile:android": "npm --workspace @meteorvoice/mobile run android",
+    "mobile:config": "npm --workspace @meteorvoice/mobile exec expo config -- --type public",
     "test": "vitest run && npm run build"
   },
   "dependencies": {
