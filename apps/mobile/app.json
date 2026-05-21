@@ -16,6 +16,17 @@
     "android": {
       "package": "com.jcmeteor.meteorvoice"
     },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "MeteorVoice uses the microphone for voice practice sessions.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
+    ],
     "extra": {
       "apiBaseUrl": ""
     }

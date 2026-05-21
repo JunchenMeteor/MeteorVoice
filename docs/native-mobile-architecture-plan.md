@@ -531,5 +531,6 @@ Native Mobile 架构升级完成时 MUST 满足：
 - PR 3 `Add API Client Package` 已在阶段分支实现：新增 `packages/api-client`，提供可传 `baseUrl` 的 typed fetch client。
 - PR 4 `Add Expo Mobile Probe` 已在阶段分支实现：新增 `apps/mobile`，提供可运行的 Expo session probe。
 - PR 5 `Extract Session Core` 已在阶段分支实现：新增 `packages/session-core`，抽出 workflow 和 turn guard helpers。
-- 下一步 SHOULD 执行 PR 6：`Native Audio Integration`。
+- PR 6 `Native Audio Integration` 已在阶段分支实现：Mobile probe 通过 `useNativeSessionAudio` 封装 native playback/recording adapter，配置 `expo-audio` 权限插件，覆盖录音权限、录音保存、TTS replay、前后台暂停和播放时禁止录音的基础约束。
+- 下一步 SHOULD 执行 PR 7：`Mobile Auth and API Session`。
 - 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。

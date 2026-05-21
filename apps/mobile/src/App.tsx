@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -9,9 +9,10 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { setAudioModeAsync, useAudioPlayer } from 'expo-audio'
 import { createMeteorVoiceApiClient, MeteorVoiceApiError } from '@meteorvoice/api-client'
 import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
+
+import { useNativeSessionAudio } from './nativeAudio'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
 
@@ -23,28 +24,15 @@ export default function App() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [status, setStatus] = useState('Ready')
   const [busy, setBusy] = useState(false)
-  const player = useAudioPlayer(audioUrl, { updateInterval: 500 })
+  const audio = useNativeSessionAudio(audioUrl)
 
   const scenario = scenarios.find(item => item.key === 'small-talk') ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === 'american') ?? accentProfiles[0]
   const api = useMemo(() => createMeteorVoiceApiClient({ baseUrl: apiBaseUrl.trim() }), [apiBaseUrl])
 
-  useEffect(() => {
-    void setAudioModeAsync({
-      playsInSilentMode: true,
-      interruptionMode: 'doNotMix',
-    }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!audioUrl) return
-    player.seekTo(0)
-    player.play()
-  }, [audioUrl, player])
-
   async function runTurn() {
     const transcript = input.trim()
-    if (!transcript || busy) return
+    if (!transcript || busy || audio.isRecording) return
 
     const userMessage: ConversationMessage = { role: 'user', content: transcript }
     const nextMessages = [...messages, userMessage]
@@ -93,6 +81,17 @@ export default function App() {
     }
   }
 
+  async function toggleRecording() {
+    if (audio.isRecording) {
+      const recordingUri = await audio.stopRecording()
+      setStatus(recordingUri ? 'Native recording saved' : 'Recording stopped')
+      return
+    }
+
+    const started = await audio.startRecording()
+    setStatus(started ? 'Native recording in progress' : 'Recording unavailable')
+  }
+
   return (
     <SafeAreaView style={styles.shell}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -136,10 +135,10 @@ export default function App() {
             style={[styles.input, styles.textarea]}
             value={input}
           />
-          <Pressable disabled={busy} onPress={runTurn} style={({ pressed }) => [
+          <Pressable disabled={busy || audio.isRecording} onPress={runTurn} style={({ pressed }) => [
             styles.button,
-            busy && styles.buttonDisabled,
-            pressed && !busy && styles.buttonPressed,
+            (busy || audio.isRecording) && styles.buttonDisabled,
+            pressed && !busy && !audio.isRecording && styles.buttonPressed,
           ]}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send turn</Text>}
           </Pressable>
@@ -147,17 +146,41 @@ export default function App() {
 
         <View style={styles.stage}>
           <Text style={styles.status}>{status}</Text>
+          <Text style={styles.audioState}>
+            Audio: {audio.phase} · Mic: {audio.permission} · {Math.round(audio.durationMillis / 1000)}s
+          </Text>
           <Text style={styles.speaker}>Coach</Text>
           <Text style={styles.reply}>
             {response?.text ?? 'The coach reply will appear here.'}
           </Text>
-          {audioUrl && (
-            <Pressable onPress={() => {
-              player.seekTo(0)
-              player.play()
-            }} style={styles.secondaryButton}>
-              <Text style={styles.secondaryButtonText}>Replay voice</Text>
+          <View style={styles.stageActions}>
+            <Pressable
+              disabled={audio.isPlaying}
+              onPress={toggleRecording}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                audio.isRecording && styles.recordingButton,
+                audio.isPlaying && styles.buttonDisabled,
+                pressed && !audio.isPlaying && styles.buttonPressed,
+              ]}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {audio.isRecording ? 'Stop recording' : 'Test native mic'}
+              </Text>
             </Pressable>
+            {audioUrl && (
+              <Pressable onPress={() => void audio.playReply()} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Replay voice</Text>
+              </Pressable>
+            )}
+          </View>
+          {audio.lastRecordingUri && (
+            <Text style={styles.recordingUri} numberOfLines={1}>
+              Recording: {audio.lastRecordingUri}
+            </Text>
+          )}
+          {audio.errorMessage && (
+            <Text style={styles.audioError}>{audio.errorMessage}</Text>
           )}
         </View>
 
@@ -283,6 +306,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  audioState: {
+    color: '#8fa394',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   speaker: {
     color: '#d6c486',
     fontSize: 12,
@@ -306,6 +334,27 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#fffaf3',
     fontWeight: '800',
+  },
+  stageActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  recordingButton: {
+    backgroundColor: '#7c2f28',
+    borderColor: '#d8a097',
+  },
+  recordingUri: {
+    color: '#b7c5b9',
+    fontSize: 12,
+    maxWidth: '100%',
+  },
+  audioError: {
+    color: '#ffb8ac',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   correction: {
     backgroundColor: '#fffaf3',
