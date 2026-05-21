@@ -530,5 +530,6 @@ Native Mobile 架构升级完成时 MUST 满足：
 - PR 2 `Add Shared Package Skeleton` 已在阶段分支实现：新增 `packages/shared`，抽出跨端 locale、scenario、accent、conversation 和 speech DTO。
 - PR 3 `Add API Client Package` 已在阶段分支实现：新增 `packages/api-client`，提供可传 `baseUrl` 的 typed fetch client。
 - PR 4 `Add Expo Mobile Probe` 已在阶段分支实现：新增 `apps/mobile`，提供可运行的 Expo session probe。
-- 下一步 SHOULD 执行 PR 5：`Extract Session Core`。
+- PR 5 `Extract Session Core` 已在阶段分支实现：新增 `packages/session-core`，抽出 workflow 和 turn guard helpers。
+- 下一步 SHOULD 执行 PR 6：`Native Audio Integration`。
 - 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。
