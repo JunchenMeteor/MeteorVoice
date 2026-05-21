@@ -25,6 +25,9 @@
   - `lib/supabase/server.ts` 同时支持 Web cookie 和 mobile bearer token。
 - Docs
   - Architecture plan、audio QA checklist、local build runbook 均已记录。
+- `apps/web`
+  - Web app 已迁入 `apps/web`。
+  - 根目录 `dev`、`build`、`start` 通过 workspace scripts 调用 Web app。
 
 ## 当前验证命令
 
@@ -51,6 +54,5 @@ npm run mobile:android
 
 ## 剩余架构收尾
 
-- PR15：将根目录 Web app 迁移到 `apps/web`。
 - PR16：更新 Vercel Root Directory、部署 runbook、workspace/branch 说明，并从 `dev/architecture/native-mobile` 向 `main` 提最终集成 PR。
 - 暂不合入 `release`，除非产品负责人确认。
