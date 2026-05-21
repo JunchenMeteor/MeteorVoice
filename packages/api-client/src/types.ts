@@ -7,11 +7,12 @@ import type {
 } from '@meteorvoice/shared'
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+export type ApiHeadersProvider = HeadersInit | (() => HeadersInit | Promise<HeadersInit>)
 
 export type ApiClientOptions = {
   baseUrl?: string
   fetch?: FetchLike
-  headers?: HeadersInit
+  headers?: ApiHeadersProvider
 }
 
 export type ApiErrorBody = {
@@ -57,6 +58,26 @@ export type SyncSessionRequest = {
 }
 
 export type SyncSessionResponse = {
+  success: true
+}
+
+export type CreateSessionRequest = {
+  scenario_id?: string
+  accent_profile_id?: string
+}
+
+export type CreateSessionResponse = {
+  id?: string
+  status?: string
+  started_at?: string
+}
+
+export type UpdateSessionStatusRequest = {
+  id: string
+  status: string
+}
+
+export type UpdateSessionStatusResponse = {
   success: true
 }
 
