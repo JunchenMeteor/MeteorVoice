@@ -1,29 +1,21 @@
-export interface STTResult {
-  transcript: string
-  confidence: number
-}
+export type {
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+  CorrectionItem,
+  CorrectionSeverity,
+  CorrectionType,
+  STTResult,
+  TTSResult,
+} from '@meteorvoice/shared'
 
-export interface TTSResult {
-  audioUrl: string
-  duration: number
-}
-
-export interface ConversationMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: string
-}
-
-export interface ConversationResponse {
-  text: string
-  corrections: {
-    type: 'grammar' | 'vocabulary' | 'fluency' | 'pronunciation'
-    originalText: string
-    suggestedText: string
-    explanation: string
-    severity: 'minor' | 'moderate' | 'major'
-  }[]
-  suggestedReply: string
-}
+import type {
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+  STTResult,
+  TTSResult,
+} from '@meteorvoice/shared'
 
 export interface STTProvider {
   transcribe(audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult>
@@ -35,11 +27,4 @@ export interface TTSProvider {
 
 export interface AIProvider {
   generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse>
-}
-
-export interface ConversationContext {
-  scenario: { name: string; description: string }
-  accentProfile: { name: string; region: string }
-  sessionId: string
-  turnNumber: number
 }
