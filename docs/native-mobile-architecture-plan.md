@@ -317,4 +317,5 @@ dev/architecture/native-mobile
 - Mobile Web 的 iOS audio unlock/fallback 已完成，但不能作为 native mobile 的长期架构替代。
 - Native Mobile 架构已开始。
 - PR 2 `Add Shared Package Skeleton` 已在阶段分支实现：新增 `packages/shared`，抽出跨端 locale、scenario、accent、conversation 和 speech DTO。
-- 下一步 SHOULD 执行 PR 3：`Add API Client Package`。
+- PR 3 `Add API Client Package` 已在阶段分支实现：新增 `packages/api-client`，提供可传 `baseUrl` 的 typed fetch client。
+- 下一步 SHOULD 执行 PR 4：`Add Expo Mobile Probe`。
