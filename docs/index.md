@@ -29,6 +29,8 @@
   - Native mobile 本地运行和编译说明，覆盖 Expo Go、development build、真机调试和国内网络建议。
 - `docs/native-mobile-completion-status.md`
   - Native mobile PR1-PR14 completion pass 状态、当前验证命令和剩余 PR15/PR16 收尾。
+- `docs/deployment-runbook.md`
+  - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 
 ## 已完成计划
 

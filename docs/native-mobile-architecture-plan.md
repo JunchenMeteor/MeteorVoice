@@ -469,9 +469,9 @@ dev/architecture/native-mobile
 范围：
 
 - 更新 Vercel 配置文档：
-  - Root Directory: `apps/web`
+  - Root Directory: repository root / blank
   - Production Branch: `release`
-  - Install Command / Build Command 的最终值
+  - Install Command / Build Command / Output Directory 的最终值
   - 环境变量迁移检查清单
 - 增加 `docs/deployment-runbook.md` 或更新现有部署文档。
 - 调整 GitHub ruleset/branch 流程说明，明确 `main`、`release`、`dev/architecture/native-mobile` 在迁移后的职责。
@@ -481,7 +481,7 @@ dev/architecture/native-mobile
 验收：
 
 - `main` 可以作为完整 monorepo 集成主线。
-- Vercel 能从 `apps/web` 构建 Web。
+- Vercel 能从仓库根目录安装 workspace，并输出 `apps/web/.next`。
 - `release` 仍作为稳定发布/预发布分支。
 - 文档中不再把根目录描述为长期 Next.js app 根路径。
 
@@ -541,5 +541,6 @@ Native Mobile 架构升级完成时 MUST 满足：
 - PR 13 `Mobile Local Build Runbook` 已在阶段分支实现：新增 `docs/mobile-local-build-runbook.md`，记录 Expo Go、`expo prebuild`、`expo run:ios`、免费 Apple ID 真机调试、环境变量和国内网络建议。
 - PR 14 `Native Mobile Completion Pass` 已在阶段分支实现：新增根目录 mobile workspace scripts 和 `docs/native-mobile-completion-status.md`，汇总 PR1-PR14 能力、验证命令、已知限制和剩余 PR15/PR16。
 - PR 15 `Move Web App to apps/web` 已在阶段分支实现：根目录 Web app、components、Web-only lib、public assets 和 Next/PostCSS 配置迁入 `apps/web`，根目录 scripts 改为 workspace 调用，TS/Vitest aliases 指向 `apps/web`。
-- 下一步 SHOULD 执行 PR 16：`Deployment and Workspace Finalization`。
+- PR 16 `Deployment and Workspace Finalization` 已在阶段分支实现：新增 `docs/deployment-runbook.md`，记录 Vercel root workspace 部署配置、环境变量、branch 职责和发布/回滚流程；当前推荐 Root Directory 保持仓库根目录，Output Directory 指向 `apps/web/.next`。
+- 下一步 SHOULD 从 `dev/architecture/native-mobile` 向 `main` 提最终集成 PR；暂不合入 `release`。
 - 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。
