@@ -46,6 +46,7 @@ export function SessionPageClient() {
   const accentKey = params.get('accent') ?? 'american'
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [activeTab, setActiveTab] = useState<SidePanelTab>('corrections')
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const {
     scenario,
     accent,
@@ -104,9 +105,93 @@ export function SessionPageClient() {
         ? 'bg-[var(--theme-accent)] text-white'
         : 'text-[var(--theme-text-secondary)] hover:bg-[var(--theme-surface)] hover:text-[var(--theme-text-primary)]'
     }`
+  const correctionSummary = corrections.length === 0
+    ? tr('session.corrections_empty')
+    : tr('session.corrections_count').replace('{count}', String(corrections.length))
+  const transcriptSummary = messages.length === 0
+    ? tr('session.transcript_empty')
+    : tr('session.transcript_count').replace('{count}', String(messages.length))
+
+  function openMobilePanel(tab: SidePanelTab) {
+    setActiveTab(tab)
+    setMobilePanelOpen(true)
+  }
+
+  function renderLearningContent() {
+    if (activeTab === 'corrections') {
+      return corrections.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
+          {tr('session.corrections_live_hint')}
+        </div>
+      ) : corrections.map((c, i) => (
+        <div key={`${c.type}-${i}-${c.originalText}`} className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="status-badge warning">{correctionTypeLabel(c.type)}</span>
+            <button
+              type="button"
+              onClick={() => playCorrection(c.suggestedText)}
+              className="text-xs text-[var(--theme-accent)] hover:underline"
+              title={tr('session.play_correction')}
+            >
+              {tr('session.play_correction')}
+            </button>
+          </div>
+          <p className="text-xs text-[var(--theme-text-secondary)]">
+            <span className="line-through text-[var(--theme-danger)]">{c.originalText}</span>
+            {' -> '}
+            <span className="text-[var(--theme-success)]">{c.suggestedText}</span>
+          </p>
+          <p className="text-xs leading-relaxed text-[var(--theme-text-muted)]">{c.explanation}</p>
+        </div>
+      ))
+    }
+
+    return messages.length === 0 ? (
+      <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
+        {tr('session.transcript_empty')}
+      </div>
+    ) : (
+      <>
+        {messages.map((msg, i) => (
+          <div
+            key={`${msg.role}-${i}`}
+            className="rounded-lg border p-3"
+            style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}
+          >
+            <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">
+              {msg.role === 'user' ? tr('session.you') : tr('session.coach')}
+            </p>
+            <p className="text-sm leading-relaxed text-[var(--theme-text-primary)]">{msg.content}</p>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </>
+    )
+  }
+
+  function renderPanelTabs() {
+    return (
+      <div className="mb-3 flex rounded-lg border p-1" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
+        <button
+          type="button"
+          className={tabButtonClass('corrections')}
+          onClick={() => setActiveTab('corrections')}
+        >
+          {tr('session.corrections_tab')}
+        </button>
+        <button
+          type="button"
+          className={tabButtonClass('transcript')}
+          onClick={() => setActiveTab('transcript')}
+        >
+          {tr('session.transcript_tab')}
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="p-4 lg:p-6 max-w-6xl mx-auto h-full">
+    <>
       {accentBanner && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg"
           style={{ background: 'var(--theme-accent)' }}>
@@ -114,7 +199,163 @@ export function SessionPageClient() {
         </div>
       )}
 
-      <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="lg:hidden relative flex min-h-[100dvh] flex-col overflow-hidden px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4">
+        <div className="pointer-events-none absolute inset-0" style={{
+          background: 'radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--theme-accent) 14%, transparent), transparent 38%)',
+        }} />
+
+        <header className="relative z-10 flex items-start justify-between gap-3 pl-11">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[var(--theme-text-primary)]">
+              {scenario.icon} {scenarioLabel}
+            </p>
+            <p className="mt-1 truncate text-xs text-[var(--theme-text-muted)]">
+              {accentLabel} ({accentRegion}) · {difficultyLabel}
+            </p>
+          </div>
+          {isSessionActive ? (
+            <Button variant="danger" size="sm" onClick={endSession}>{tr('session.end')}</Button>
+          ) : (
+            <Button size="sm" onClick={startSession} disabled={!ttsPreferenceLoaded}>
+              {ttsPreferenceLoaded ? tr('session.start') : tr('login.loading')}
+            </Button>
+          )}
+        </header>
+
+        <div className="relative z-10 mt-3 flex items-center gap-2 pl-11">
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: statusColor }} />
+          <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]">{statusText}</span>
+          {interrupted && (
+            <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
+          )}
+        </div>
+
+        <main className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-6 py-6 text-center">
+          <div
+            className="flex h-20 w-20 items-center justify-center rounded-full text-4xl font-semibold"
+            style={{
+              background: 'color-mix(in srgb, var(--theme-accent) 12%, transparent)',
+              color: 'var(--theme-accent)',
+            }}
+            aria-hidden="true"
+          >
+            M
+          </div>
+
+          <VoiceWaveform mode={waveformMode} label={statusText} level={voiceLevel ?? undefined} variant="stage" />
+
+          <div className="w-full max-w-[22rem] space-y-4">
+            <div>
+              <p className="mb-1 text-xs font-medium uppercase text-[var(--theme-text-muted)]">{tr('session.coach')}</p>
+              <p className="mx-auto max-h-28 overflow-y-auto text-xl font-medium leading-snug text-[var(--theme-text-primary)] quiet-scrollbar">
+                {latestAssistantMessage?.content ?? tr('session.subtitle_waiting_coach')}
+              </p>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium uppercase text-[var(--theme-text-muted)]">{tr('session.you')}</p>
+              <p className="mx-auto max-h-20 overflow-y-auto text-sm leading-relaxed text-[var(--theme-text-secondary)] quiet-scrollbar">
+                {latestUserMessage?.content ?? tr('session.subtitle_waiting_user')}
+              </p>
+            </div>
+          </div>
+
+          {messages.length === 0 && !isSessionActive && (
+            <p className="max-w-sm text-sm leading-relaxed text-[var(--theme-text-muted)]">
+              {scenarioDescription}
+            </p>
+          )}
+        </main>
+
+        {summary && (
+          <div className="relative z-10 mb-3 max-h-24 overflow-y-auto rounded-lg p-3 text-sm text-[var(--theme-text-secondary)] quiet-scrollbar" style={{ background: 'var(--theme-surface)' }}>
+            <p className="mb-1 font-semibold text-[var(--theme-accent)]">{tr('session.summary_title')}</p>
+            <p className="whitespace-pre-wrap">{summary}</p>
+          </div>
+        )}
+
+        <footer className="relative z-10 space-y-3">
+          {canContinue && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={continueSpeaking}
+                className="flex h-16 w-16 items-center justify-center rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--theme-accent)' }}
+                aria-label={tr('session.start_speaking')}
+              >
+                <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="7" y="2" width="6" height="10" rx="3" />
+                  <path d="M4 10a6 6 0 0012 0" />
+                  <line x1="10" y1="16" x2="10" y2="19" />
+                  <line x1="7" y1="19" x2="13" y2="19" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => openMobilePanel('corrections')}
+              className="rounded-lg border px-3 py-3 text-left"
+              style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}
+            >
+              <span className="block text-sm font-semibold text-[var(--theme-text-primary)]">{tr('session.corrections_tab')}</span>
+              <span className="mt-1 block text-xs text-[var(--theme-text-muted)]">{correctionSummary}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openMobilePanel('transcript')}
+              className="rounded-lg border px-3 py-3 text-left"
+              style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}
+            >
+              <span className="block text-sm font-semibold text-[var(--theme-text-primary)]">{tr('session.transcript_tab')}</span>
+              <span className="mt-1 block text-xs text-[var(--theme-text-muted)]">{transcriptSummary}</span>
+            </button>
+          </div>
+        </footer>
+
+        {mobilePanelOpen && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-[var(--theme-overlay)]"
+              onClick={() => setMobilePanelOpen(false)}
+              aria-label={tr('session.close_panel')}
+            />
+            <section
+              className="fixed inset-x-0 bottom-0 z-40 flex max-h-[78dvh] min-h-[45dvh] flex-col rounded-t-2xl border-t p-4 shadow-2xl"
+              style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}
+            >
+              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--theme-border)]" />
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
+                    {activeTab === 'corrections' ? tr('session.correction_tips') : tr('session.transcript')}
+                  </h2>
+                  <p className="text-xs text-[var(--theme-text-muted)]">
+                    {activeTab === 'corrections' ? correctionSummary : transcriptSummary}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobilePanelOpen(false)}
+                  className="rounded-full px-3 py-1 text-sm text-[var(--theme-text-secondary)] hover:bg-[var(--theme-surface)]"
+                >
+                  {tr('session.close_panel')}
+                </button>
+              </div>
+              {renderPanelTabs()}
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-[env(safe-area-inset-bottom)] quiet-scrollbar">
+                {renderLearningContent()}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+
+      <div className="hidden h-full max-w-6xl mx-auto p-6 lg:block">
+        <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div>
@@ -234,85 +475,19 @@ export function SessionPageClient() {
                 {activeTab === 'corrections' ? tr('session.correction_tips') : tr('session.transcript')}
               </h2>
               <p className="text-xs text-[var(--theme-text-muted)]">
-                {activeTab === 'corrections'
-                  ? corrections.length === 0
-                    ? tr('session.corrections_empty')
-                    : tr('session.corrections_count').replace('{count}', String(corrections.length))
-                  : messages.length === 0
-                    ? tr('session.transcript_empty')
-                    : tr('session.transcript_count').replace('{count}', String(messages.length))}
+                {activeTab === 'corrections' ? correctionSummary : transcriptSummary}
               </p>
             </div>
           </div>
 
-          <div className="mb-3 flex rounded-lg border p-1" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
-            <button
-              type="button"
-              className={tabButtonClass('corrections')}
-              onClick={() => setActiveTab('corrections')}
-            >
-              {tr('session.corrections_tab')}
-            </button>
-            <button
-              type="button"
-              className={tabButtonClass('transcript')}
-              onClick={() => setActiveTab('transcript')}
-            >
-              {tr('session.transcript_tab')}
-            </button>
-          </div>
+          {renderPanelTabs()}
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto quiet-scrollbar">
-            {activeTab === 'corrections' ? (
-              corrections.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
-                  {tr('session.corrections_live_hint')}
-                </div>
-              ) : corrections.map((c, i) => (
-                <div key={`${c.type}-${i}-${c.originalText}`} className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="status-badge warning">{correctionTypeLabel(c.type)}</span>
-                    <button
-                      type="button"
-                      onClick={() => playCorrection(c.suggestedText)}
-                      className="text-xs text-[var(--theme-accent)] hover:underline"
-                      title={tr('session.play_correction')}
-                    >
-                      {tr('session.play_correction')}
-                    </button>
-                  </div>
-                  <p className="text-xs text-[var(--theme-text-secondary)]">
-                    <span className="line-through text-[var(--theme-danger)]">{c.originalText}</span>
-                    {' -> '}
-                    <span className="text-[var(--theme-success)]">{c.suggestedText}</span>
-                  </p>
-                  <p className="text-xs leading-relaxed text-[var(--theme-text-muted)]">{c.explanation}</p>
-                </div>
-              ))
-            ) : messages.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4 text-xs text-[var(--theme-text-muted)]" style={{ borderColor: 'var(--theme-border)' }}>
-                {tr('session.transcript_empty')}
-              </div>
-            ) : (
-              <>
-                {messages.map((msg, i) => (
-                  <div
-                    key={`${msg.role}-${i}`}
-                    className="rounded-lg border p-3"
-                    style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}
-                  >
-                    <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">
-                      {msg.role === 'user' ? tr('session.you') : tr('session.coach')}
-                    </p>
-                    <p className="text-sm leading-relaxed text-[var(--theme-text-primary)]">{msg.content}</p>
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </>
-            )}
+            {renderLearningContent()}
           </div>
         </aside>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

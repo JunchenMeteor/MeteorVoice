@@ -15,6 +15,7 @@ type VoiceWaveformProps = {
   mode: VoiceWaveformMode
   level?: number
   label: string
+  variant?: 'panel' | 'stage'
 }
 
 type WaveformTone = {
@@ -104,7 +105,7 @@ function clampLevel(level: number | undefined) {
   return Math.min(1, Math.max(0, level))
 }
 
-export function VoiceWaveform({ mode, level, label }: VoiceWaveformProps): JSX.Element {
+export function VoiceWaveform({ mode, level, label, variant = 'panel' }: VoiceWaveformProps): JSX.Element {
   const tone = MODE_TONES[mode]
   const normalizedLevel = clampLevel(level)
   const levelScale = normalizedLevel == null
@@ -121,12 +122,15 @@ export function VoiceWaveform({ mode, level, label }: VoiceWaveformProps): JSX.E
 
   return (
     <div
-      className="voice-waveform flex w-full min-w-0 items-center gap-3 rounded-xl border px-3 py-2 sm:px-4"
+      className={`voice-waveform flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2 sm:px-4 ${
+        variant === 'panel' ? 'border' : 'flex-col border-0'
+      }`}
       data-mode={mode}
+      data-variant={variant}
       style={{
         ...rootStyle,
-        background: 'var(--theme-bg-card)',
-        borderColor: 'var(--theme-border)',
+        background: variant === 'panel' ? 'var(--theme-bg-card)' : 'transparent',
+        borderColor: variant === 'panel' ? 'var(--theme-border)' : 'transparent',
       }}
       aria-label={label}
       role="img"
@@ -171,6 +175,31 @@ export function VoiceWaveform({ mode, level, label }: VoiceWaveformProps): JSX.E
       <style jsx>{`
         .voice-waveform {
           box-shadow: 0 10px 30px -24px var(--voice-waveform-glow);
+        }
+
+        .voice-waveform[data-variant='stage'] {
+          box-shadow: none;
+        }
+
+        .voice-waveform[data-variant='stage'] .voice-waveform__bars {
+          width: min(82vw, 24rem);
+          height: 7rem;
+          gap: 0.375rem;
+        }
+
+        .voice-waveform[data-variant='stage'] .voice-waveform__bar {
+          width: 0.375rem;
+          min-height: 1.25rem;
+        }
+
+        .voice-waveform[data-variant='stage'] .voice-waveform__meter {
+          display: none;
+        }
+
+        .voice-waveform[data-variant='stage'] > div:last-child {
+          flex: none;
+          width: min(70vw, 18rem);
+          text-align: center;
         }
 
         .voice-waveform__bar {
