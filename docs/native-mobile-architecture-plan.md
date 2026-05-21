@@ -540,5 +540,6 @@ Native Mobile 架构升级完成时 MUST 满足：
 - PR 12 `Native Audio Hardening` 已在阶段分支实现：native audio adapter 增加互斥操作保护、前后台录音停止/播放暂停处理，并新增 `docs/mobile-audio-qa-checklist.md` 记录真机/模拟器音频 QA 项。
 - PR 13 `Mobile Local Build Runbook` 已在阶段分支实现：新增 `docs/mobile-local-build-runbook.md`，记录 Expo Go、`expo prebuild`、`expo run:ios`、免费 Apple ID 真机调试、环境变量和国内网络建议。
 - PR 14 `Native Mobile Completion Pass` 已在阶段分支实现：新增根目录 mobile workspace scripts 和 `docs/native-mobile-completion-status.md`，汇总 PR1-PR14 能力、验证命令、已知限制和剩余 PR15/PR16。
-- 下一步 SHOULD 执行 PR 15：`Move Web App to apps/web`。
+- PR 15 `Move Web App to apps/web` 已在阶段分支实现：根目录 Web app、components、Web-only lib、public assets 和 Next/PostCSS 配置迁入 `apps/web`，根目录 scripts 改为 workspace 调用，TS/Vitest aliases 指向 `apps/web`。
+- 下一步 SHOULD 执行 PR 16：`Deployment and Workspace Finalization`。
 - 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。
