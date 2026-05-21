@@ -32,6 +32,11 @@ export default function App() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([])
   const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const [ttsProvider, setTtsProvider] = useState('mock')
+  const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-probe'))
   const [activeTab, setActiveTab] = useState<SessionTab>('corrections')
@@ -113,8 +118,8 @@ export default function App() {
       const speech = await api.synthesizeSpeech({
         text: coachReply.text,
         accent: accent.name,
-        provider: undefined,
-        speed: 1,
+        provider: ttsProvider,
+        speed: ttsSpeed,
       })
 
       if (speech.audioUrl) {
@@ -200,6 +205,52 @@ export default function App() {
     } finally {
       setHistoryLoading(false)
     }
+  }
+
+  async function loadPreferences() {
+    if (settingsLoading) return
+
+    setSettingsLoading(true)
+    setSettingsMessage(null)
+    try {
+      const preferences = await api.getPreferences()
+      setTtsProvider(preferences.tts_provider ?? 'mock')
+      setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
+      setSettingsMessage('Preferences loaded')
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Preferences request failed'
+      setSettingsMessage(message)
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  async function saveProvider(provider: string) {
+    setTtsProvider(provider)
+    setSettingsLoading(true)
+    setSettingsMessage(null)
+    try {
+      const result = await api.updatePreferences({ tts_provider: provider })
+      setTtsProvider(result.tts_provider)
+      setSettingsMessage('Preferences saved')
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Preferences save failed'
+      setSettingsMessage(message)
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  function adjustSpeed(delta: number) {
+    setTtsSpeed(previous => Math.min(1.3, Math.max(0.7, Number((previous + delta).toFixed(1)))))
   }
 
   async function continueSession() {
@@ -459,6 +510,46 @@ export default function App() {
               </Text>
             </View>
           )}
+        </View>
+
+        <View style={styles.settingsPanel}>
+          <View style={styles.authHeader}>
+            <View>
+              <Text style={styles.label}>Settings</Text>
+              <Text style={styles.authHint}>
+                Voice {ttsProvider} · Speed {ttsSpeed.toFixed(1)}x · Default {scenario.name}
+              </Text>
+            </View>
+            <Pressable disabled={settingsLoading} onPress={loadPreferences} style={styles.smallButton}>
+              <Text style={styles.smallButtonText}>{settingsLoading ? 'Loading...' : 'Load'}</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.metaLabel}>TTS provider</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
+            {availableProviders.map(provider => {
+              const active = provider === ttsProvider
+              return (
+                <Pressable
+                  disabled={settingsLoading}
+                  key={provider}
+                  onPress={() => void saveProvider(provider)}
+                  style={[styles.providerChip, active && styles.optionCardActive]}
+                >
+                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{provider}</Text>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
+          <View style={styles.speedRow}>
+            <Pressable onPress={() => adjustSpeed(-0.1)} style={styles.smallButtonMuted}>
+              <Text style={styles.smallButtonMutedText}>Slower</Text>
+            </Pressable>
+            <Text style={styles.speedValue}>{ttsSpeed.toFixed(1)}x</Text>
+            <Pressable onPress={() => adjustSpeed(0.1)} style={styles.smallButtonMuted}>
+              <Text style={styles.smallButtonMutedText}>Faster</Text>
+            </Pressable>
+          </View>
+          {settingsMessage && <Text style={styles.authHint}>{settingsMessage}</Text>}
         </View>
 
         <View style={styles.section}>
@@ -745,6 +836,17 @@ const styles = StyleSheet.create({
     padding: 12,
     width: 168,
   },
+  providerChip: {
+    alignItems: 'center',
+    backgroundColor: '#f6f0e7',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
   optionCardActive: {
     backgroundColor: '#315f48',
     borderColor: '#315f48',
@@ -778,6 +880,14 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   historyPanel: {
+    backgroundColor: '#fffaf3',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  settingsPanel: {
     backgroundColor: '#fffaf3',
     borderColor: '#e1d8cb',
     borderRadius: 8,
@@ -852,6 +962,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     justifyContent: 'flex-end',
+  },
+  speedRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  speedValue: {
+    color: '#17211b',
+    fontSize: 16,
+    fontWeight: '800',
+    minWidth: 52,
+    textAlign: 'center',
   },
   stage: {
     alignItems: 'center',
