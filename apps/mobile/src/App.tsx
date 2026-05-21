@@ -12,6 +12,7 @@ import {
 import { createMeteorVoiceApiClient, MeteorVoiceApiError } from '@meteorvoice/api-client'
 import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
 
+import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
@@ -24,11 +25,19 @@ export default function App() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [status, setStatus] = useState('Ready')
   const [busy, setBusy] = useState(false)
+  const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const audio = useNativeSessionAudio(audioUrl)
+  const auth = useMobileAuth()
 
   const scenario = scenarios.find(item => item.key === 'small-talk') ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === 'american') ?? accentProfiles[0]
-  const api = useMemo(() => createMeteorVoiceApiClient({ baseUrl: apiBaseUrl.trim() }), [apiBaseUrl])
+  const api = useMemo(() => createMeteorVoiceApiClient({
+    baseUrl: apiBaseUrl.trim(),
+    headers: auth.getAuthHeaders,
+  }), [apiBaseUrl, auth.getAuthHeaders])
 
   async function runTurn() {
     const transcript = input.trim()
@@ -92,6 +101,39 @@ export default function App() {
     setStatus(started ? 'Native recording in progress' : 'Recording unavailable')
   }
 
+  async function submitAuth() {
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail || !password || auth.state === 'loading') return
+
+    const success = await auth.submit(authMode, normalizedEmail, password)
+    if (success) {
+      setStatus(authMode === 'sign-in' ? 'Mobile session signed in' : 'Mobile account submitted')
+      setPassword('')
+    }
+  }
+
+  async function createApiSession() {
+    if (auth.state !== 'signed-in' || busy) return
+
+    setBusy(true)
+    try {
+      setStatus('Creating mobile API session')
+      const session = await api.createSession()
+      const nextSessionId = typeof session.id === 'string' ? session.id : null
+      setApiSessionId(nextSessionId)
+      setStatus(nextSessionId ? 'Mobile API session ready' : 'Mobile API session created')
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Session request failed'
+      setStatus(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <SafeAreaView style={styles.shell}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -125,6 +167,86 @@ export default function App() {
             <Text style={styles.metaLabel}>Accent</Text>
             <Text style={styles.metaValue}>{accent.name}</Text>
           </View>
+        </View>
+
+        <View style={styles.authPanel}>
+          <View style={styles.authHeader}>
+            <View>
+              <Text style={styles.label}>Mobile API session</Text>
+              <Text style={styles.authHint}>
+                {auth.user?.email ?? auth.message ?? auth.state}
+              </Text>
+            </View>
+            {auth.state === 'signed-in' ? (
+              <View style={styles.signedInActions}>
+                <Pressable disabled={busy} onPress={createApiSession} style={styles.smallButton}>
+                  <Text style={styles.smallButtonText}>Create session</Text>
+                </Pressable>
+                <Pressable onPress={() => void auth.signOut()} style={styles.smallButtonMuted}>
+                  <Text style={styles.smallButtonMutedText}>Sign out</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.modeSwitch}>
+                <Pressable onPress={() => setAuthMode('sign-in')} style={[
+                  styles.modeButton,
+                  authMode === 'sign-in' && styles.modeButtonActive,
+                ]}>
+                  <Text style={[styles.modeButtonText, authMode === 'sign-in' && styles.modeButtonTextActive]}>
+                    Sign in
+                  </Text>
+                </Pressable>
+                <Pressable onPress={() => setAuthMode('sign-up')} style={[
+                  styles.modeButton,
+                  authMode === 'sign-up' && styles.modeButtonActive,
+                ]}>
+                  <Text style={[styles.modeButtonText, authMode === 'sign-up' && styles.modeButtonTextActive]}>
+                    Sign up
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+
+          {auth.state !== 'signed-in' && (
+            <View style={styles.authForm}>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                inputMode="email"
+                onChangeText={setEmail}
+                placeholder="email@example.com"
+                style={styles.input}
+                value={email}
+              />
+              <TextInput
+                autoCapitalize="none"
+                onChangeText={setPassword}
+                placeholder="Password"
+                secureTextEntry
+                style={styles.input}
+                value={password}
+              />
+              <Pressable
+                disabled={auth.state === 'loading'}
+                onPress={submitAuth}
+                style={({ pressed }) => [
+                  styles.smallButton,
+                  auth.state === 'loading' && styles.buttonDisabled,
+                  pressed && auth.state !== 'loading' && styles.buttonPressed,
+                ]}
+              >
+                <Text style={styles.smallButtonText}>
+                  {auth.state === 'loading' ? 'Loading...' : authMode === 'sign-in' ? 'Sign in' : 'Create account'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+          {apiSessionId && (
+            <Text style={styles.authHint} numberOfLines={1}>
+              API session: {apiSessionId}
+            </Text>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -293,6 +415,82 @@ const styles = StyleSheet.create({
     color: '#17211b',
     fontSize: 15,
     fontWeight: '700',
+  },
+  authPanel: {
+    backgroundColor: '#fffaf3',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  authHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  authHint: {
+    color: '#6f7f70',
+    fontSize: 12,
+    marginTop: 3,
+  },
+  authForm: {
+    gap: 10,
+  },
+  modeSwitch: {
+    backgroundColor: '#eee6da',
+    borderRadius: 8,
+    flexDirection: 'row',
+    padding: 3,
+  },
+  modeButton: {
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  modeButtonActive: {
+    backgroundColor: '#315f48',
+  },
+  modeButtonText: {
+    color: '#253128',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+  },
+  smallButton: {
+    alignItems: 'center',
+    backgroundColor: '#315f48',
+    borderRadius: 8,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  smallButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  smallButtonMuted: {
+    alignItems: 'center',
+    backgroundColor: '#e4dacc',
+    borderRadius: 8,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  smallButtonMutedText: {
+    color: '#253128',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  signedInActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-end',
   },
   stage: {
     alignItems: 'center',

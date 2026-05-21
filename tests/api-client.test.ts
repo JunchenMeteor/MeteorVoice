@@ -34,4 +34,19 @@ describe('MeteorVoiceApiClient', () => {
       status: 401,
     } satisfies Partial<MeteorVoiceApiError>)
   })
+
+  it('supports async headers for mobile auth sessions', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
+    const client = createMeteorVoiceApiClient({
+      fetch: async (input, init) => {
+        calls.push({ input, init })
+        return new Response(JSON.stringify({ tts_provider: 'mock' }), { status: 200 })
+      },
+      headers: async () => ({ Authorization: 'Bearer mobile-token' }),
+    })
+
+    await client.getPreferences()
+
+    expect(new Headers(calls[0].init?.headers).get('Authorization')).toBe('Bearer mobile-token')
+  })
 })

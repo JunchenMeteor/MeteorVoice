@@ -11,10 +11,11 @@
   "dependencies": {
     "@meteorvoice/api-client": "file:../../packages/api-client",
     "@meteorvoice/shared": "file:../../packages/shared",
+    "@supabase/supabase-js": "^2.106.1",
     "expo": "~55.0.0",
     "expo-audio": "~55.0.14",
+    "expo-secure-store": "^56.0.4",
     "react": "19.2.0",
     "react-native": "0.83.0"
-  },
-  "devDependencies": {}
+  }
 }

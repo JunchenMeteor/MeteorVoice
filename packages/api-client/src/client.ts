@@ -1,6 +1,9 @@
 import type {
   ApiClientOptions,
   ApiErrorBody,
+  ApiHeadersProvider,
+  CreateSessionRequest,
+  CreateSessionResponse,
   CreateTurnRequest,
   CreateTurnResponse,
   GenerateCoachReplyRequest,
@@ -13,6 +16,8 @@ import type {
   SynthesizeSpeechResponse,
   SyncSessionRequest,
   SyncSessionResponse,
+  UpdateSessionStatusRequest,
+  UpdateSessionStatusResponse,
   UpdatePreferencesRequest,
   UpdatePreferencesResponse,
 } from './types'
@@ -31,7 +36,7 @@ export class MeteorVoiceApiError extends Error {
 export class MeteorVoiceApiClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof fetch
-  private readonly headers?: HeadersInit
+  private readonly headers?: ApiHeadersProvider
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
@@ -71,6 +76,20 @@ export class MeteorVoiceApiClient {
     })
   }
 
+  createSession(input: CreateSessionRequest = {}) {
+    return this.request<CreateSessionResponse>('/api/session', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  updateSessionStatus(input: UpdateSessionStatusRequest) {
+    return this.request<UpdateSessionStatusResponse>('/api/session', {
+      method: 'PATCH',
+      body: input,
+    })
+  }
+
   generateSummary(input: GenerateSummaryRequest) {
     return this.request<GenerateSummaryResponse>('/api/summary', {
       method: 'POST',
@@ -90,7 +109,7 @@ export class MeteorVoiceApiClient {
   }
 
   private async request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
-    const headers = new Headers(this.headers)
+    const headers = new Headers(await this.resolveHeaders())
     if (init.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
@@ -113,6 +132,10 @@ export class MeteorVoiceApiClient {
   private toUrl(path: string) {
     if (/^https?:\/\//.test(path)) return path
     return `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`
+  }
+
+  private async resolveHeaders() {
+    return typeof this.headers === 'function' ? await this.headers() : this.headers
   }
 }
 
