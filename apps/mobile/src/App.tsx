@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { createMeteorVoiceApiClient, MeteorVoiceApiError } from '@meteorvoice/api-client'
+import { createMeteorVoiceApiClient, MeteorVoiceApiError, type HistorySession } from '@meteorvoice/api-client'
 import { createInitialSnapshot, transition, type WorkflowSnapshot } from '@meteorvoice/session-core'
 import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
 
@@ -28,6 +28,10 @@ export default function App() {
   const [status, setStatus] = useState('Ready')
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historySessions, setHistorySessions] = useState<HistorySession[]>([])
+  const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-probe'))
   const [activeTab, setActiveTab] = useState<SessionTab>('corrections')
@@ -174,6 +178,27 @@ export default function App() {
       setStatus(message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function loadHistory() {
+    if (historyLoading) return
+
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const result = await api.listHistory()
+      setHistorySessions(result.sessions)
+      setSelectedHistory(result.sessions[0] ?? null)
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'History request failed'
+      setHistoryError(message)
+    } finally {
+      setHistoryLoading(false)
     }
   }
 
@@ -387,6 +412,52 @@ export default function App() {
             <Text style={styles.authHint} numberOfLines={1}>
               API session: {apiSessionId}
             </Text>
+          )}
+        </View>
+
+        <View style={styles.historyPanel}>
+          <View style={styles.authHeader}>
+            <View>
+              <Text style={styles.label}>History and review</Text>
+              <Text style={styles.authHint}>
+                {selectedHistory ? `${selectedHistory.scenario} · ${selectedHistory.date}` : 'Load synced sessions'}
+              </Text>
+            </View>
+            <Pressable disabled={historyLoading} onPress={loadHistory} style={styles.smallButton}>
+              <Text style={styles.smallButtonText}>{historyLoading ? 'Loading...' : 'Load'}</Text>
+            </Pressable>
+          </View>
+          {historyError && <Text style={styles.audioError}>{historyError}</Text>}
+          {historySessions.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
+              {historySessions.map(item => {
+                const active = item.id === selectedHistory?.id
+                return (
+                  <Pressable
+                    key={String(item.id)}
+                    onPress={() => setSelectedHistory(item)}
+                    style={[styles.historyCard, active && styles.optionCardActive]}
+                  >
+                    <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.scenario}</Text>
+                    <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.accent}</Text>
+                    <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.date}</Text>
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          ) : (
+            <Text style={styles.empty}>No synced sessions loaded.</Text>
+          )}
+          {selectedHistory && (
+            <View style={styles.summaryBox}>
+              <Text style={styles.correctionType}>Review</Text>
+              <Text style={styles.correctionHint}>
+                {selectedHistory.summary ?? 'No summary saved for this session yet.'}
+              </Text>
+              <Text style={styles.optionMeta}>
+                Status: {String(selectedHistory.status)}
+              </Text>
+            </View>
           )}
         </View>
 
@@ -664,6 +735,16 @@ const styles = StyleSheet.create({
     padding: 12,
     width: 154,
   },
+  historyCard: {
+    backgroundColor: '#f6f0e7',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 5,
+    minHeight: 94,
+    padding: 12,
+    width: 168,
+  },
   optionCardActive: {
     backgroundColor: '#315f48',
     borderColor: '#315f48',
@@ -689,6 +770,14 @@ const styles = StyleSheet.create({
     color: '#dbe8db',
   },
   authPanel: {
+    backgroundColor: '#fffaf3',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  historyPanel: {
     backgroundColor: '#fffaf3',
     borderColor: '#e1d8cb',
     borderRadius: 8,
