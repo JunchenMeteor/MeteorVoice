@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 import {
   RecordingPresets,
@@ -40,6 +40,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
   const [phase, setPhase] = useState<NativeAudioPhase>('idle')
   const [lastRecordingUri, setLastRecordingUri] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const operationRef = useRef<Promise<unknown> | null>(null)
 
   const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
@@ -62,86 +63,113 @@ export function useNativeSessionAudio(audioUrl: string | null) {
     await setAudioModeAsync(recordingAudioMode)
   }, [])
 
-  const stopRecording = useCallback(async () => {
-    if (!recorderState.isRecording) {
-      return lastRecordingUri
-    }
-
-    try {
-      await recorder.stop()
-      const status = recorder.getStatus()
-      const recordingUri = status.url ?? recorder.uri ?? null
-      setLastRecordingUri(recordingUri)
-      setPhase(recordingUri ? 'recorded' : 'idle')
-      await configurePlayback()
-      return recordingUri
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Recording failed to stop'
-      setErrorMessage(message)
-      setPhase('error')
-      await configurePlayback().catch(() => {})
+  const runExclusive = useCallback(async <T,>(operation: () => Promise<T>) => {
+    if (operationRef.current) {
+      setPhase('blocked')
+      setErrorMessage('Audio operation already in progress.')
       return null
     }
-  }, [configurePlayback, lastRecordingUri, recorder, recorderState.isRecording])
+
+    const task = operation()
+    operationRef.current = task
+    try {
+      return await task
+    } finally {
+      if (operationRef.current === task) {
+        operationRef.current = null
+      }
+    }
+  }, [])
+
+  const stopRecording = useCallback(async () => {
+    return runExclusive(async () => {
+      if (!recorderState.isRecording) {
+        return lastRecordingUri
+      }
+
+      try {
+        await recorder.stop()
+        const status = recorder.getStatus()
+        const recordingUri = status.url ?? recorder.uri ?? null
+        setLastRecordingUri(recordingUri)
+        setPhase(recordingUri ? 'recorded' : 'idle')
+        await configurePlayback()
+        return recordingUri
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Recording failed to stop'
+        setErrorMessage(message)
+        setPhase('error')
+        await configurePlayback().catch(() => {})
+        return null
+      }
+    })
+  }, [configurePlayback, lastRecordingUri, recorder, recorderState.isRecording, runExclusive])
 
   const startRecording = useCallback(async () => {
-    if (playerStatus.playing) {
-      setPhase('blocked')
-      setErrorMessage('Wait until coach voice finishes before recording.')
-      return false
-    }
-
-    try {
-      setErrorMessage(null)
-      setPhase('requesting-permission')
-      const permissionResponse = await requestRecordingPermissionsAsync()
-
-      if (!permissionResponse.granted) {
-        setPermission('denied')
+    return runExclusive(async () => {
+      if (playerStatus.playing) {
         setPhase('blocked')
-        setErrorMessage('Microphone permission is required for native recording.')
-        await configurePlayback()
+        setErrorMessage('Wait until coach voice finishes before recording.')
         return false
       }
 
-      setPermission('granted')
-      setLastRecordingUri(null)
-      await configureRecording()
-      await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY)
-      recorder.record()
-      setPhase('recording')
-      return true
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Recording failed to start'
-      setErrorMessage(message)
-      setPhase('error')
-      await configurePlayback().catch(() => {})
-      return false
-    }
-  }, [configurePlayback, configureRecording, playerStatus.playing, recorder])
+      try {
+        setErrorMessage(null)
+        setPhase('requesting-permission')
+        const permissionResponse = await requestRecordingPermissionsAsync()
+
+        if (!permissionResponse.granted) {
+          setPermission('denied')
+          setPhase('blocked')
+          setErrorMessage('Microphone permission is required for native recording.')
+          await configurePlayback()
+          return false
+        }
+
+        setPermission('granted')
+        setLastRecordingUri(null)
+        await configureRecording()
+        await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY)
+        recorder.record()
+        setPhase('recording')
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Recording failed to start'
+        setErrorMessage(message)
+        setPhase('error')
+        await configurePlayback().catch(() => {})
+        return false
+      }
+    })
+  }, [configurePlayback, configureRecording, playerStatus.playing, recorder, runExclusive])
 
   const playReply = useCallback(async () => {
-    if (!audioUrl) return false
+    return runExclusive(async () => {
+      if (!audioUrl) return false
 
-    try {
-      setErrorMessage(null)
+      try {
+        setErrorMessage(null)
 
-      if (recorderState.isRecording) {
-        await stopRecording()
+        if (recorderState.isRecording) {
+          await recorder.stop()
+          const status = recorder.getStatus()
+          const recordingUri = status.url ?? recorder.uri ?? null
+          setLastRecordingUri(recordingUri)
+        }
+
+        await configurePlayback()
+        player.seekTo(0)
+        player.play()
+        setPhase('playing')
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Coach voice failed to play'
+        setErrorMessage(message)
+        setPhase('error')
+        return false
       }
-
-      await configurePlayback()
-      player.seekTo(0)
-      player.play()
-      setPhase('playing')
-      return true
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Coach voice failed to play'
-      setErrorMessage(message)
-      setPhase('error')
-      return false
-    }
-  }, [audioUrl, configurePlayback, player, recorderState.isRecording, stopRecording])
+    })
+  }, [audioUrl, configurePlayback, player, recorder, recorderState.isRecording, runExclusive])
 
   useEffect(() => {
     void configurePlayback().catch(() => {})
@@ -165,6 +193,10 @@ export function useNativeSessionAudio(audioUrl: string | null) {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active') return
 
+      if (playerStatus.playing) {
+        player.pause()
+      }
+
       if (recorder.getStatus().isRecording) {
         void stopRecording()
       }
@@ -173,7 +205,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
     })
 
     return () => subscription.remove()
-  }, [recorder, stopRecording])
+  }, [player, playerStatus.playing, recorder, stopRecording])
 
   return useMemo(() => ({
     durationMillis: recorderState.durationMillis,
