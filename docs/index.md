@@ -23,6 +23,8 @@
 
 - `docs/native-mobile-architecture-plan.md`
   - 最高优先级计划。定义双端架构升级、mobile 架构探针、长期分支策略和阶段 PR。
+- `docs/mobile-audio-qa-checklist.md`
+  - Native audio 真机/模拟器 QA checklist，覆盖播放、录音、权限、前后台和设备路由。
 
 ## 已完成计划
 
