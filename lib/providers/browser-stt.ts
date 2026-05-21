@@ -29,8 +29,9 @@ declare global {
   }
 }
 
-const SILENCE_TIMEOUT = 1500
-const MAX_DURATION = 15000
+const SILENCE_TIMEOUT = 3200
+const MAX_DURATION = 30000
+const RESTART_AFTER_BROWSER_END_DELAY = 120
 
 export function browserSTTSupported(): boolean {
   return !!(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition))
@@ -58,6 +59,7 @@ export function createBrowserSTT(): STTProvider {
         let silenceTimer: ReturnType<typeof setTimeout> | null = null
         let maxTimer: ReturnType<typeof setTimeout> | null = null
         let lastInterim = ''
+        let recognitionRunning = false
         const allResults: string[] = []
 
         function cleanupAbortListener() {
@@ -73,6 +75,7 @@ export function createBrowserSTT(): STTProvider {
           settled = true
           clearSilenceTimer()
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          recognitionRunning = false
           try { recognition.abort() } catch {}
           cleanupAbortListener()
           reject(new DOMException('Aborted', 'AbortError'))
@@ -83,6 +86,7 @@ export function createBrowserSTT(): STTProvider {
           settled = true
           clearSilenceTimer()
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
+          recognitionRunning = false
           try { recognition.abort() } catch {}
           cleanupAbortListener()
           const transcript = (allResults.join(' ').trim() || lastInterim.trim())
@@ -122,6 +126,7 @@ export function createBrowserSTT(): STTProvider {
           settled = true
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
           clearSilenceTimer()
+          recognitionRunning = false
           try { recognition.abort() } catch {}
           cleanupAbortListener()
 
@@ -137,9 +142,21 @@ export function createBrowserSTT(): STTProvider {
         }
 
         recognition.onend = () => {
-          if (!settled) {
-            setTimeout(() => { if (!settled) finalize() }, 300)
+          recognitionRunning = false
+          if (settled) return
+          if (allResults.length > 0 || lastInterim) {
+            window.setTimeout(() => {
+              if (settled || recognitionRunning) return
+              try {
+                recognition.start()
+                recognitionRunning = true
+              } catch {
+                if (!settled) finalize()
+              }
+            }, RESTART_AFTER_BROWSER_END_DELAY)
+            return
           }
+          setTimeout(() => { if (!settled) finalize() }, 300)
         }
 
         try {
@@ -149,6 +166,7 @@ export function createBrowserSTT(): STTProvider {
           }
           options?.signal?.addEventListener('abort', abort, { once: true })
           recognition.start()
+          recognitionRunning = true
         } catch (e: unknown) {
           settled = true
           if (maxTimer) { clearTimeout(maxTimer); maxTimer = null }
