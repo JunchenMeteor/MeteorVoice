@@ -10,21 +10,27 @@ import {
   View,
 } from 'react-native'
 import { createMeteorVoiceApiClient, MeteorVoiceApiError } from '@meteorvoice/api-client'
+import { createInitialSnapshot, transition, type WorkflowSnapshot } from '@meteorvoice/session-core'
 import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
+type SessionTab = 'corrections' | 'transcript'
 
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl)
   const [input, setInput] = useState('Hello, I want to practice small talk.')
   const [messages, setMessages] = useState<ConversationMessage[]>([])
-  const [response, setResponse] = useState<ConversationResponse | null>(null)
+  const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [status, setStatus] = useState('Ready')
+  const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [isSessionActive, setIsSessionActive] = useState(false)
+  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-probe'))
+  const [activeTab, setActiveTab] = useState<SessionTab>('corrections')
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -40,31 +46,64 @@ export default function App() {
     baseUrl: apiBaseUrl.trim(),
     headers: auth.getAuthHeaders,
   }), [apiBaseUrl, auth.getAuthHeaders])
+  const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
+  const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
+
+  function startSession() {
+    const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
+    const nextSnapshot = transition(createInitialSnapshot(nextSessionId), 'listening')
+    setSnapshot(nextSnapshot)
+    setMessages([])
+    setCorrectionHistory([])
+    setAudioUrl(null)
+    setSummary(null)
+    setIsSessionActive(true)
+    setStatus('Listening')
+  }
 
   async function runTurn() {
     const transcript = input.trim()
-    if (!transcript || busy || audio.isRecording) return
+    if (!transcript || busy || audio.isRecording || !isSessionActive || snapshot.state === 'session_ended') return
 
     const userMessage: ConversationMessage = { role: 'user', content: transcript }
     const nextMessages = [...messages, userMessage]
+    let nextSnapshot = transition(snapshot, snapshot.state === 'listening' ? 'transcribing' : 'listening', {
+      lastTranscript: transcript,
+      messages: nextMessages,
+    })
+    if (nextSnapshot.state === 'listening') {
+      nextSnapshot = transition(nextSnapshot, 'transcribing', {
+        lastTranscript: transcript,
+        messages: nextMessages,
+      })
+    }
+    setSnapshot(nextSnapshot)
     setMessages(nextMessages)
-    setResponse(null)
     setAudioUrl(null)
     setBusy(true)
 
     try {
       setStatus('Requesting coach reply')
+      nextSnapshot = transition(nextSnapshot, 'thinking')
+      setSnapshot(nextSnapshot)
       const coachReply = await api.generateCoachReply({
         messages: nextMessages,
         context: {
           scenario: { name: scenario.name, description: scenario.description },
           accentProfile: { name: accent.name, region: accent.region },
-          sessionId: 'mobile-probe',
+          sessionId: nextSnapshot.sessionId,
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
         },
       })
-      setResponse(coachReply)
-      setMessages([...nextMessages, { role: 'assistant', content: coachReply.text }])
+      const messagesWithReply: ConversationMessage[] = [...nextMessages, { role: 'assistant', content: coachReply.text }]
+      setMessages(messagesWithReply)
+      setCorrectionHistory(previous => [...previous, ...coachReply.corrections])
+      nextSnapshot = transition(nextSnapshot, 'speaking', {
+        lastResponse: coachReply.text,
+        lastCorrections: coachReply.corrections,
+        messages: messagesWithReply,
+      })
+      setSnapshot(nextSnapshot)
 
       setStatus('Requesting coach voice')
       const speech = await api.synthesizeSpeech({
@@ -80,6 +119,8 @@ export default function App() {
       } else {
         setStatus('Coach reply received without audio')
       }
+      const finalSnapshot = transition(nextSnapshot, 'correcting')
+      setSnapshot(finalSnapshot)
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -136,11 +177,62 @@ export default function App() {
     }
   }
 
+  async function continueSession() {
+    if (!isSessionActive || snapshot.state === 'session_ended') return
+    const nextSnapshot = snapshot.state === 'correcting' || snapshot.state === 'idle'
+      ? transition(snapshot, 'listening')
+      : snapshot
+    setSnapshot(nextSnapshot)
+    setStatus('Listening')
+  }
+
+  async function endSession() {
+    if (!isSessionActive || busy) return
+
+    setBusy(true)
+    try {
+      setStatus('Generating summary')
+      const userTurns = messages.filter(message => message.role === 'user').length
+      const result = await api.generateSummary({
+        sessionId: snapshot.sessionId,
+        scenario: scenario.name,
+        messages,
+        turnNumber: userTurns,
+      })
+      setSummary(result.summary)
+
+      await api.syncSession({
+        session_id: snapshot.sessionId,
+        scenario: scenario.name,
+        accent: accent.name,
+        turns: userTurns,
+        messages,
+        corrections: correctionHistory,
+      }).catch(() => undefined)
+
+      setSnapshot(transition(snapshot, 'session_ended'))
+      setIsSessionActive(false)
+      setStatus('Session ended')
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Summary request failed'
+      setStatus(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function selectScenario(key: string) {
     setSelectedScenarioKey(key)
     setMessages([])
-    setResponse(null)
+    setCorrectionHistory([])
     setAudioUrl(null)
+    setSummary(null)
+    setSnapshot(createInitialSnapshot('mobile-probe'))
+    setIsSessionActive(false)
     setStatus('Scenario selected')
   }
 
@@ -300,16 +392,40 @@ export default function App() {
 
         <View style={styles.section}>
           <Text style={styles.label}>Your line</Text>
+          <View style={styles.sessionControls}>
+            {!isSessionActive && snapshot.state !== 'session_ended' ? (
+              <Pressable onPress={startSession} style={styles.smallButton}>
+                <Text style={styles.smallButtonText}>Start session</Text>
+              </Pressable>
+            ) : (
+              <>
+                <Pressable
+                  disabled={busy || snapshot.state === 'session_ended'}
+                  onPress={continueSession}
+                  style={[styles.smallButton, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
+                >
+                  <Text style={styles.smallButtonText}>Continue</Text>
+                </Pressable>
+                <Pressable
+                  disabled={busy || snapshot.state === 'session_ended'}
+                  onPress={endSession}
+                  style={[styles.smallButtonMuted, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
+                >
+                  <Text style={styles.smallButtonMutedText}>End</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
           <TextInput
             multiline
             onChangeText={setInput}
             style={[styles.input, styles.textarea]}
             value={input}
           />
-          <Pressable disabled={busy || audio.isRecording} onPress={runTurn} style={({ pressed }) => [
+          <Pressable disabled={busy || audio.isRecording || !isSessionActive} onPress={runTurn} style={({ pressed }) => [
             styles.button,
-            (busy || audio.isRecording) && styles.buttonDisabled,
-            pressed && !busy && !audio.isRecording && styles.buttonPressed,
+            (busy || audio.isRecording || !isSessionActive) && styles.buttonDisabled,
+            pressed && !busy && !audio.isRecording && isSessionActive && styles.buttonPressed,
           ]}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send turn</Text>}
           </Pressable>
@@ -317,12 +433,17 @@ export default function App() {
 
         <View style={styles.stage}>
           <Text style={styles.status}>{status}</Text>
+          <Text style={styles.audioState}>Session: {snapshot.state} · Turn {snapshot.turnNumber}</Text>
           <Text style={styles.audioState}>
             Audio: {audio.phase} · Mic: {audio.permission} · {Math.round(audio.durationMillis / 1000)}s
           </Text>
           <Text style={styles.speaker}>Coach</Text>
           <Text style={styles.reply}>
-            {response?.text ?? 'The coach reply will appear here.'}
+            {latestAssistantMessage?.content ?? 'The coach reply will appear here.'}
+          </Text>
+          <Text style={styles.speaker}>You</Text>
+          <Text style={styles.userSubtitle}>
+            {latestUserMessage?.content ?? 'Start the session, then send your first line.'}
           </Text>
           <View style={styles.stageActions}>
             <Pressable
@@ -356,15 +477,51 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Corrections</Text>
-          {response?.corrections.length ? response.corrections.map((correction, index) => (
-            <View key={`${correction.type}-${index}`} style={styles.correction}>
-              <Text style={styles.correctionType}>{correction.type}</Text>
-              <Text style={styles.correctionText}>{correction.originalText} {'->'} {correction.suggestedText}</Text>
-              <Text style={styles.correctionHint}>{correction.explanation}</Text>
+          <View style={styles.tabs}>
+            <Pressable
+              onPress={() => setActiveTab('corrections')}
+              style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
+                Corrections
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab('transcript')}
+              style={[styles.tabButton, activeTab === 'transcript' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'transcript' && styles.tabTextActive]}>
+                Transcript
+              </Text>
+            </Pressable>
+          </View>
+
+          {activeTab === 'corrections' ? (
+            correctionHistory.length ? correctionHistory.map((correction, index) => (
+              <View key={`${correction.type}-${index}`} style={styles.correction}>
+                <Text style={styles.correctionType}>{correction.type}</Text>
+                <Text style={styles.correctionText}>{correction.originalText} {'->'} {correction.suggestedText}</Text>
+                <Text style={styles.correctionHint}>{correction.explanation}</Text>
+              </View>
+            )) : (
+              <Text style={styles.empty}>No corrections yet.</Text>
+            )
+          ) : (
+            messages.length ? messages.map((message, index) => (
+              <View key={`${message.role}-${index}`} style={styles.transcriptItem}>
+                <Text style={styles.correctionType}>{message.role === 'user' ? 'You' : 'Coach'}</Text>
+                <Text style={styles.correctionHint}>{message.content}</Text>
+              </View>
+            )) : (
+              <Text style={styles.empty}>No transcript yet.</Text>
+            )
+          )}
+
+          {summary && (
+            <View style={styles.summaryBox}>
+              <Text style={styles.correctionType}>Summary</Text>
+              <Text style={styles.correctionHint}>{summary}</Text>
             </View>
-          )) : (
-            <Text style={styles.empty}>No corrections yet.</Text>
           )}
         </View>
       </ScrollView>
@@ -423,6 +580,11 @@ const styles = StyleSheet.create({
   textarea: {
     minHeight: 88,
     textAlignVertical: 'top',
+  },
+  sessionControls: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   button: {
     alignItems: 'center',
@@ -632,6 +794,13 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     textAlign: 'center',
   },
+  userSubtitle: {
+    color: '#dbe8db',
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 23,
+    textAlign: 'center',
+  },
   secondaryButton: {
     borderColor: '#d6c486',
     borderRadius: 8,
@@ -664,6 +833,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  tabs: {
+    backgroundColor: '#eee6da',
+    borderRadius: 8,
+    flexDirection: 'row',
+    padding: 3,
+  },
+  tabButton: {
+    alignItems: 'center',
+    borderRadius: 6,
+    flex: 1,
+    minHeight: 38,
+    justifyContent: 'center',
+  },
+  tabButtonActive: {
+    backgroundColor: '#315f48',
+  },
+  tabText: {
+    color: '#253128',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
   correction: {
     backgroundColor: '#fffaf3',
     borderColor: '#e1d8cb',
@@ -691,5 +884,21 @@ const styles = StyleSheet.create({
   empty: {
     color: '#6f7f70',
     fontSize: 14,
+  },
+  transcriptItem: {
+    backgroundColor: '#fffaf3',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 12,
+  },
+  summaryBox: {
+    backgroundColor: '#eef5ef',
+    borderColor: '#c7d9ca',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 12,
   },
 })
