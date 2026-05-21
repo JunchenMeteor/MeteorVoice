@@ -27,6 +27,8 @@
   - Native audio 真机/模拟器 QA checklist，覆盖播放、录音、权限、前后台和设备路由。
 - `docs/mobile-local-build-runbook.md`
   - Native mobile 本地运行和编译说明，覆盖 Expo Go、development build、真机调试和国内网络建议。
+- `docs/native-mobile-completion-status.md`
+  - Native mobile PR1-PR14 completion pass 状态、当前验证命令和剩余 PR15/PR16 收尾。
 
 ## 已完成计划
 
