@@ -29,11 +29,13 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
+  const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
+  const [selectedAccentKey, setSelectedAccentKey] = useState('american')
   const audio = useNativeSessionAudio(audioUrl)
   const auth = useMobileAuth()
 
-  const scenario = scenarios.find(item => item.key === 'small-talk') ?? scenarios[0]
-  const accent = accentProfiles.find(item => item.key === 'american') ?? accentProfiles[0]
+  const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
+  const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
   const api = useMemo(() => createMeteorVoiceApiClient({
     baseUrl: apiBaseUrl.trim(),
     headers: auth.getAuthHeaders,
@@ -134,6 +136,20 @@ export default function App() {
     }
   }
 
+  function selectScenario(key: string) {
+    setSelectedScenarioKey(key)
+    setMessages([])
+    setResponse(null)
+    setAudioUrl(null)
+    setStatus('Scenario selected')
+  }
+
+  function selectAccent(key: string) {
+    setSelectedAccentKey(key)
+    setAudioUrl(null)
+    setStatus('Accent selected')
+  }
+
   return (
     <SafeAreaView style={styles.shell}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -158,15 +174,48 @@ export default function App() {
           />
         </View>
 
-        <View style={styles.metaRow}>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Scenario</Text>
-            <Text style={styles.metaValue}>{scenario.name}</Text>
+        <View style={styles.selectorPanel}>
+          <View style={styles.selectorHeader}>
+            <View>
+              <Text style={styles.label}>Practice setup</Text>
+              <Text style={styles.authHint}>{scenario.name} · {accent.name}</Text>
+            </View>
           </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Accent</Text>
-            <Text style={styles.metaValue}>{accent.name}</Text>
-          </View>
+
+          <Text style={styles.metaLabel}>Scenario</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
+            {scenarios.map(item => {
+              const active = item.key === scenario.key
+              return (
+                <Pressable
+                  key={item.key}
+                  onPress={() => selectScenario(item.key)}
+                  style={[styles.optionCard, active && styles.optionCardActive]}
+                >
+                  <Text style={styles.optionIcon}>{item.icon}</Text>
+                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.name}</Text>
+                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.difficulty}</Text>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
+
+          <Text style={styles.metaLabel}>Accent</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
+            {accentProfiles.map(item => {
+              const active = item.key === accent.key
+              return (
+                <Pressable
+                  key={item.key}
+                  onPress={() => selectAccent(item.key)}
+                  style={[styles.accentChip, active && styles.optionCardActive]}
+                >
+                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.name}</Text>
+                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.region}</Text>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
         </View>
 
         <View style={styles.authPanel}>
@@ -415,6 +464,67 @@ const styles = StyleSheet.create({
     color: '#17211b',
     fontSize: 15,
     fontWeight: '700',
+  },
+  selectorPanel: {
+    backgroundColor: '#fffaf3',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    padding: 12,
+  },
+  selectorHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  optionRow: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  optionCard: {
+    backgroundColor: '#f6f0e7',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    minHeight: 92,
+    padding: 12,
+    width: 144,
+  },
+  accentChip: {
+    backgroundColor: '#f6f0e7',
+    borderColor: '#e1d8cb',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 5,
+    minHeight: 68,
+    padding: 12,
+    width: 154,
+  },
+  optionCardActive: {
+    backgroundColor: '#315f48',
+    borderColor: '#315f48',
+  },
+  optionIcon: {
+    fontSize: 20,
+  },
+  optionTitle: {
+    color: '#17211b',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  optionTitleActive: {
+    color: '#fff',
+  },
+  optionMeta: {
+    color: '#6f7f70',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  optionMetaActive: {
+    color: '#dbe8db',
   },
   authPanel: {
     backgroundColor: '#fffaf3',
