@@ -10,7 +10,8 @@ export async function generateCoachReply(messages: ConversationMessage[], contex
     : []
   const errorTips = lastUserMsg ? findCommonErrors(lastUserMsg.content) : []
 
-  const ragMessages = [...messages]
+  const recentMessages = messages.slice(-8)
+  const ragMessages = [...recentMessages]
   if (retrievalContext.length > 0 || errorTips.length > 0) {
     const contextParts: string[] = []
     if (retrievalContext.length > 0) {
