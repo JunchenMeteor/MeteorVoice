@@ -9,6 +9,7 @@
 - 用一个 mobile 架构探针先验证业务架构是否合格，再扩大到完整 App。
 - 把可共享的业务契约沉淀到 `packages/*`，让 Web 和 Mobile 消费同一套类型、配置和 API client。
 - 让会话状态机逐步从 Web React provider 中抽离，形成平台无关的 session core。
+- 一口气完成 native mobile 的业务闭环：登录、场景选择、完整语音会话、纠错、历史、复习、设置和本地编译运行说明。
 
 ## 非目标
 
@@ -17,32 +18,33 @@
 - 本阶段不做 WebView 壳 App。
 - 本阶段不复制一套 mobile-only prompt、scenario、accent 或 correction 数据模型。
 - 本阶段不为了 monorepo 外观大规模搬迁无关代码。
+- 本阶段不保证所有 App Store 级边缘场景已经打磨完成，但 MUST 留下可继续硬化的 native app 结构和 QA runbook。
 
 ## 目标架构
 
 ```text
 MeteorVoice/
-  app/                         # 现有 Next.js App Router，短期保留
-  components/                  # 现有 Web UI，短期保留
-  lib/                         # 现有 Web/API/server/provider 代码，逐步抽共享层
   apps/
+    web/                       # Next.js Web app，架构升级后期迁入
     mobile/                    # Expo React Native native client
   packages/
     shared/                    # 跨端类型、scenario、accent、i18n key、基础校验
     api-client/                # typed API client，Web/Mobile 共用
     session-core/              # 平台无关会话状态机和 turn lifecycle
+    server/                    # 可选：后期承载 Web API/server-only orchestration
 ```
 
-短期允许 `app/`、`components/`、`lib/` 继续留在仓库根目录。只有当 mobile 探针证明共享边界稳定后，才 MAY 将 Web 迁入 `apps/web`。
+短期允许 `app/`、`components/`、`lib/` 继续留在仓库根目录。完整架构升级后期 MUST 将 Web 迁入 `apps/web`，但迁移必须在 mobile 业务闭环和 shared/session-core 边界稳定后单独执行，不能混入 session-core 或 native audio PR。
 
 ## 分层规则
 
 ### Web/API 层
 
-- `app/api/*` 继续作为现有 API 入口。
+- 迁移前 `app/api/*` 继续作为现有 API 入口；迁移后 `apps/web/app/api/*` 成为 API 入口。
 - API route SHOULD 调用 `lib/server/*` 或 provider/service helper，不应内联复杂业务。
 - Web UI MAY 继续使用 `components/VoiceSessionProvider.tsx`，但新增共享逻辑 SHOULD 优先进入 `packages/session-core`。
 - Secrets MUST 只存在 server-side 环境变量，禁止进入 mobile bundle。
+- Web 迁入 `apps/web` 时，Web-only UI、Next config、global CSS、public assets 和 route handlers MUST 一起迁移，禁止把 Web app 拆成半根目录半 `apps/web` 的状态长期保留。
 
 ### Mobile 层
 
@@ -188,6 +190,8 @@ dev/architecture/native-mobile
 
 ## 推荐实施切分
 
+本路线图目标是完成完整 native mobile 架构升级，不只停在 foundation v1。PR 1-6 建立架构基础；PR 7-14 补齐移动端业务闭环和本地运行可验证性。
+
 ### PR 1: Document Native Mobile Architecture
 
 范围：
@@ -288,6 +292,199 @@ dev/architecture/native-mobile
 - 录音权限、拒绝权限、app background/foreground 有明确状态。
 - TTS 播放期间不录音。
 
+### PR 7: Mobile Auth and API Session
+
+范围：
+
+- 为 Mobile 增加登录入口。
+- 优先复用现有 Supabase auth 能力；如果当前 Web auth 不适合 mobile，先补 API/session 契约。
+- API client 支持 auth token/session header 注入。
+- Mobile 持久保存必要的 auth session，禁止保存 server secrets。
+
+验收：
+
+- Mobile 可以登录、退出并在 app reload 后恢复登录态。
+- Mobile 调用需要身份的 history/session API 时不依赖 Web cookie/localStorage。
+- Web auth 不回退。
+
+### PR 8: Mobile Scenario and Accent Selection
+
+范围：
+
+- Mobile 增加 scenario/accent 选择页面或轻量入口。
+- 使用 `packages/shared` 的 scenario/accent 配置。
+- 支持默认场景、默认口音和用户偏好读取。
+- 选择结果传入 session core 和 API context。
+
+验收：
+
+- Mobile 可选择场景和口音后进入 session。
+- Web 和 Mobile 对同一个 scenario/accent key 的显示一致。
+- 不复制第二套 scenario/accent 数据。
+
+### PR 9: Mobile Full Voice Session UX
+
+范围：
+
+- 将 mobile probe 升级为完整 session screen。
+- 使用 `packages/session-core` 驱动状态和 turn lifecycle。
+- 实现 listening、transcribing、thinking、speaking、paused、ended 的移动端状态视图。
+- 展示当前用户字幕、AI 字幕、Corrections 和 Transcript。
+- 支持 start/end/continue、summary、route/app pause/resume。
+
+验收：
+
+- 一轮真实用户输入只触发一次 AI 回复。
+- TTS 播放期间不录音。
+- Corrections 不阻塞下一轮。
+- App 前后台切换有明确暂停/恢复状态。
+
+### PR 10: Mobile History and Review
+
+范围：
+
+- Mobile 增加历史列表和 session detail/review 页面。
+- 复用 `packages/api-client` 的 history/review API；缺口先补 API 契约。
+- 展示 session summary、turns、corrections。
+- 支持从历史进入复习视图。
+
+验收：
+
+- Mobile 能看到与 Web 一致的历史记录。
+- correction item 字段不暴露内部数据库列名。
+- 空状态、加载态、错误态可读。
+
+### PR 11: Mobile Settings and Preferences
+
+范围：
+
+- Mobile 增加设置页面。
+- 支持 interface language、TTS provider、TTS speed、默认 scenario/accent。
+- 偏好通过 API sync，必要时有本地 fallback。
+- 保持 Web 设置不回退。
+
+验收：
+
+- Mobile 设置更新后后续 session 生效。
+- Web/Mobile 对 TTS provider 和 speed 的语义一致。
+- Provider 未配置时有可理解错误或 fallback。
+
+### PR 12: Native Audio Hardening
+
+范围：
+
+- 加固 iOS/Android native audio 行为。
+- 明确麦克风权限 denied/restricted、录音中断、播放中断、蓝牙/听筒/扬声器路由、静音开关和系统音量提示。
+- 处理 app background/foreground、音频焦点、重复点击和并发播放。
+- 增加 native audio adapter 测试或手动 QA checklist。
+
+验收：
+
+- iOS 真机可完成连续多轮语音会话。
+- 权限拒绝不会卡死 session。
+- TTS 播放失败不静默进入下一轮 listening。
+- 同一时刻不会同时录音和播放 AI 音频。
+
+### PR 13: Mobile Local Build Runbook
+
+范围：
+
+- 增加 `docs/mobile-local-build-runbook.md`。
+- 记录不依赖 TestFlight 的本地编译方式：
+  - Expo Go 适用范围。
+  - `npx expo prebuild`。
+  - `npx expo run:ios`。
+  - 免费 Apple ID 真机调试限制。
+  - 国内网络下避开 EAS/tunnel 的建议。
+- 记录 `.env`、API base URL、Xcode、simulator、真机调试步骤。
+
+验收：
+
+- 产品负责人能按文档在本机尝试编译/运行 mobile app。
+- 文档明确哪些能力 Expo Go 不能验证。
+- 文档不包含真实 secrets。
+
+### PR 14: Native Mobile Completion Pass
+
+范围：
+
+- 汇总 PR 1-13 后的剩余差异。
+- 整理 docs 当前状态。
+- 补齐关键 lint/test/build 脚本。
+- 从 `dev/architecture/native-mobile` 向 `main` 提交完整架构升级 PR。
+- 暂不合入 `release`，除非产品负责人明确确认。
+
+验收：
+
+- `main` 包含完整 Web + Native Mobile 双端架构。
+- Web 现有功能通过回归验证。
+- Mobile 具备登录、选择、会话、纠错、历史/复习、设置和本地运行说明。
+- 所有后续未完成事项以 issue 或 docs TODO 明确记录，不靠聊天上下文记忆。
+
+### PR 15: Move Web App to apps/web
+
+范围：
+
+- 将当前根目录 Web app 迁移到 `apps/web`：
+  - `app/` -> `apps/web/app/`
+  - `components/` -> `apps/web/components/`
+  - Web-only `lib/` -> `apps/web/lib/` 或更明确的 `packages/server` / `packages/shared`
+  - `public/`、`app/globals.css`、Next config、PostCSS/Tailwind 配置按实际归属迁移。
+- 根目录保留 workspace 管理文件：
+  - `package.json`
+  - `package-lock.json`
+  - `tsconfig.base.json` 或共享 TS config
+  - `docs/`
+  - `packages/`
+  - `apps/`
+- 为 `apps/web` 增加自己的 `package.json` scripts：
+  - `dev`
+  - `build`
+  - `start`
+  - `lint` 如需要。
+- 根目录 scripts 改为 workspace 调用，例如：
+  - `npm --workspace @meteorvoice/web run build`
+  - `npm --workspace @meteorvoice/web run dev`
+  - `npm --workspace @meteorvoice/mobile run ios`
+- 修正 TS path、Next aliases、Vitest aliases 和 imports。
+- 更新 Vercel 部署说明和项目设置要求。
+
+禁止：
+
+- 不在此 PR 同时重写 Web UI 或 session 行为。
+- 不把 mobile 代码移动到 Web app 内。
+- 不把 server secrets 暴露到 `packages/shared` 或 mobile bundle。
+
+验收：
+
+- 根目录 `npm install` 可完成 workspace install。
+- 根目录 `npm test` 或新的等价命令能完成 Web tests + Web build。
+- `cd apps/web && npm run build` 通过。
+- Web imports 不再依赖根目录 `app/`、`components/` 位置。
+- Mobile app 仍能 import `packages/shared`、`packages/api-client`、`packages/session-core`。
+- Vercel Root Directory 可改为 `apps/web`，并记录在 docs 中。
+
+### PR 16: Deployment and Workspace Finalization
+
+范围：
+
+- 更新 Vercel 配置文档：
+  - Root Directory: `apps/web`
+  - Production Branch: `release`
+  - Install Command / Build Command 的最终值
+  - 环境变量迁移检查清单
+- 增加 `docs/deployment-runbook.md` 或更新现有部署文档。
+- 调整 GitHub ruleset/branch 流程说明，明确 `main`、`release`、`dev/architecture/native-mobile` 在迁移后的职责。
+- 从 `dev/architecture/native-mobile` 向 `main` 提最终架构升级 PR。
+- 暂不自动合入 `release`，除非产品负责人确认 Web 和 Mobile 本地验证完成。
+
+验收：
+
+- `main` 可以作为完整 monorepo 集成主线。
+- Vercel 能从 `apps/web` 构建 Web。
+- `release` 仍作为稳定发布/预发布分支。
+- 文档中不再把根目录描述为长期 Next.js app 根路径。
+
 ## 本地运行策略
 
 本阶段不依赖 TestFlight。
@@ -300,6 +497,20 @@ dev/architecture/native-mobile
 4. EAS Build 只在需要远程云构建或团队分发时再引入。
 
 国内网络下 SHOULD 优先使用本地 Xcode/development build，减少对 EAS 云构建和 tunnel 的依赖。
+
+## 完成定义
+
+Native Mobile 架构升级完成时 MUST 满足：
+
+- `main` 中存在可维护的 monorepo 结构：`apps/mobile`、`packages/shared`、`packages/api-client`、`packages/session-core`。
+- Web app 已迁入 `apps/web`，根目录只保留 workspace、docs、packages 和配置入口。
+- Web 和 Mobile 共享 scenario/accent、conversation/correction DTO、API client 和核心 session lifecycle。
+- Mobile 不依赖 WebView、不 import Web UI、不读取 Web browser storage。
+- Mobile 具备完整业务闭环：登录 -> 选择场景/口音 -> 语音会话 -> AI 语音回复 -> corrections -> summary/history/review -> settings。
+- Native audio adapter 能处理基础录音、播放、权限拒绝、播放失败和 app pause/resume。
+- 本地编译/运行 runbook 可供产品负责人按步骤尝试。
+- Vercel deployment runbook 已记录 `apps/web` Root Directory 迁移和发布流程。
+- 架构升级合入 `main` 后，`release` 是否跟进由产品负责人单独确认。
 
 ## AI Agent 执行规则
 
@@ -320,3 +531,4 @@ dev/architecture/native-mobile
 - PR 3 `Add API Client Package` 已在阶段分支实现：新增 `packages/api-client`，提供可传 `baseUrl` 的 typed fetch client。
 - PR 4 `Add Expo Mobile Probe` 已在阶段分支实现：新增 `apps/mobile`，提供可运行的 Expo session probe。
 - 下一步 SHOULD 执行 PR 5：`Extract Session Core`。
+- 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。
