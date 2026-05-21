@@ -8,11 +8,13 @@
    - 项目协作规则、issue/PR 规则、worktree/main 同步规则、测试要求、禁止项。
 2. `docs/session-immersive-ui-plan.md`
    - 会话页沉浸式语音 UI 的产品/工程执行计划。
-3. `docs/spec.md`
+3. `docs/mobile-session-stage-and-ios-audio-plan.md`
+   - 移动端全屏语音舞台改版和 iOS 音频播放可靠性方案。
+4. `docs/spec.md`
    - 产品目标、MVP 范围、核心数据模型、AI 应用分层。
-4. `docs/project-structure.md`
+5. `docs/project-structure.md`
    - 当前单仓库内的前后端式分层约定。
-5. `docs/tts-integration.md`
+6. `docs/tts-integration.md`
    - TTS provider、环境变量、口音能力映射和验证方式。
 
 ## 现有计划索引
@@ -21,6 +23,7 @@
 - `docs/product-optimization-plan.md`: 产品体验优化计划，包含 Corrections 面板、身份展示、本地化和可靠性。
 - `docs/persistent-session-localization-plan.md`: 持久语音会话、本地化、路由切换暂停/恢复、TTS 速度控制计划。
 - `docs/session-immersive-ui-plan.md`: 当前会话页沉浸式语音 UI 的执行入口。
+- `docs/mobile-session-stage-and-ios-audio-plan.md`: 移动端会话舞台重构和 iOS 音频播放可靠性方案。
 
 ## 当前执行状态
 
