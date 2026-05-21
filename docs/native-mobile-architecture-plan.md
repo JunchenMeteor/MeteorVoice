@@ -534,5 +534,6 @@ Native Mobile 架构升级完成时 MUST 满足：
 - PR 6 `Native Audio Integration` 已在阶段分支实现：Mobile probe 通过 `useNativeSessionAudio` 封装 native playback/recording adapter，配置 `expo-audio` 权限插件，覆盖录音权限、录音保存、TTS replay、前后台暂停和播放时禁止录音的基础约束。
 - PR 7 `Mobile Auth and API Session` 已在阶段分支实现：`packages/api-client` 支持动态 auth headers 和 `/api/session` 创建/更新方法；server Supabase client 支持 mobile bearer token；Mobile probe 增加 Supabase email/password 登录、SecureStore session 持久化和创建 API session 的验证入口。
 - PR 8 `Mobile Scenario and Accent Selection` 已在阶段分支实现：Mobile probe 使用 `packages/shared` 的 scenario/accent 配置渲染可选入口，选择结果进入 chat context 和 TTS accent，切换场景会清空当前探针对话状态。
-- 下一步 SHOULD 执行 PR 9：`Mobile Full Voice Session UX`。
+- PR 9 `Mobile Full Voice Session UX` 已在阶段分支实现：Mobile probe 消费 `packages/session-core` workflow snapshot，增加 start/end/continue、当前字幕、Corrections/Transcript tabs、summary 和 session sync，并保留 native audio adapter 与文本 turn probe。
+- 下一步 SHOULD 执行 PR 10：`Mobile History and Review`。
 - 完整 native mobile 架构升级目标扩展到 PR 16，包含 `apps/web` 迁移和 Vercel/workspace 收尾，不能停在 foundation v1。

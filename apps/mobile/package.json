@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@meteorvoice/api-client": "file:../../packages/api-client",
+    "@meteorvoice/session-core": "file:../../packages/session-core",
     "@meteorvoice/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "^2.106.1",
     "expo": "~55.0.0",
