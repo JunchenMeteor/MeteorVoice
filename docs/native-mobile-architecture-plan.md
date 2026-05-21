@@ -318,4 +318,5 @@ dev/architecture/native-mobile
 - Native Mobile 架构已开始。
 - PR 2 `Add Shared Package Skeleton` 已在阶段分支实现：新增 `packages/shared`，抽出跨端 locale、scenario、accent、conversation 和 speech DTO。
 - PR 3 `Add API Client Package` 已在阶段分支实现：新增 `packages/api-client`，提供可传 `baseUrl` 的 typed fetch client。
-- 下一步 SHOULD 执行 PR 4：`Add Expo Mobile Probe`。
+- PR 4 `Add Expo Mobile Probe` 已在阶段分支实现：新增 `apps/mobile`，提供可运行的 Expo session probe。
+- 下一步 SHOULD 执行 PR 5：`Extract Session Core`。
