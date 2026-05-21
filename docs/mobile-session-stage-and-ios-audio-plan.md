@@ -1,5 +1,7 @@
 # 移动端沉浸式会话舞台与 iOS 音频播放方案
 
+状态：已完成并合入 `main`。本文档作为 mobile Web 布局和 iOS Web audio fallback 的历史计划保留；它不是 native mobile 长期架构入口。
+
 本文档用于后续重构 `/session` 的移动端体验，并解决 iOS 浏览器上 AI 回复语音播放不稳定的问题。
 
 ## 背景问题

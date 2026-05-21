@@ -72,6 +72,15 @@ Closes #48
 - 禁止删除其他 agent 的工作分支、stash 或未提交文件。
 - 禁止在用户未要求时提交、push、创建 PR 或合并 PR。
 
+## 长期分支规则
+
+- `main` 是日常集成主线，功能、修复和架构升级里程碑最终 SHOULD 合入 `main`。
+- `release` 是长期稳定发布/预发布分支，SHOULD 只接收从 `main` 挑选或合入的已验证变更。
+- 禁止把 `release` 当作日常开发分支。
+- 发布版本 SHOULD 使用 tag 表达，例如 `v0.1.0`，不要为每个版本创建长期 release 分支。
+- 日期或版本分支 MAY 用于短期 hotfix 或候选发布，例如 `release/v0.1.1-rc`，完成后 SHOULD 删除。
+- `dev/architecture/native-mobile` 是 native mobile 架构升级长期集成分支，阶段分支 SHOULD 先合回该分支；可运行里程碑再合入 `main`。
+
 ## 多语言和文案规则
 
 - UI 文案 MUST 支持中文和英文，默认通过现有 i18n 机制集中管理。
