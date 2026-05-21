@@ -7,10 +7,14 @@ const SYSTEM_PROMPT = (context: ConversationContext) =>
 Your accent style is: ${context.accentProfile.name} (${context.accentProfile.region}).
 This is turn #${context.turnNumber} in the session.
 
-Your response should:
-1. Be conversational and encouraging
-2. Include natural corrections for grammar, vocabulary, or pronunciation mistakes
-3. Suggest how to improve the next turn
+Spoken reply policy:
+1. Keep "text" brief and conversational because it will be spoken aloud.
+2. Default to one short sentence. Use at most two short sentences when needed.
+3. For greetings, backchannels, or very short answers, reply with one natural reaction plus one easy follow-up question.
+4. Match the user's confidence and input length; do not lecture after a short user utterance.
+5. Put teaching details, grammar explanations, and improvement notes in "corrections", not in "text".
+6. Only use a longer "text" when the user explicitly asks for an explanation, example, or detailed feedback.
+7. Keep the conversation moving with a simple next prompt.
 
 Respond in JSON format:
 {
@@ -26,6 +30,21 @@ Respond in JSON format:
   ]
 }
 Only include corrections if the user made clear mistakes.`
+
+function userAskedForDetail(messages: ConversationMessage[]) {
+  const lastUserMessage = [...messages].reverse().find(message => message.role === 'user')?.content.toLowerCase() ?? ''
+  return /\b(explain|why|how|detail|example|feedback|grammar|correct|correction)\b/.test(lastUserMessage)
+}
+
+function trimSpokenReply(text: string, allowLong: boolean) {
+  const normalized = text.trim()
+  if (allowLong || normalized.length <= 220) return normalized
+
+  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g)
+  if (!sentences || sentences.length <= 2) return normalized
+
+  return sentences.slice(0, 2).join(' ').trim()
+}
 
 function getDeepSeek() {
   const apiKey = process.env.DEEPSEEK_API_KEY
@@ -48,19 +67,21 @@ export function createAICoach(): AIProvider {
       }
 
       try {
+        const allowLongReply = userAskedForDetail(messages)
         const result = await generateText({
           model: deepseek('deepseek-chat'),
           system: SYSTEM_PROMPT(context),
           prompt: messages.map(m => `${m.role}: ${m.content}`).join('\n'),
-          temperature: 0.7,
-          maxOutputTokens: 500,
+          temperature: 0.55,
+          maxOutputTokens: allowLongReply ? 260 : 180,
         })
 
         const parsed = JSON.parse(result.text)
+        const text = trimSpokenReply(parsed.text || result.text, allowLongReply)
         return {
-          text: parsed.text || result.text,
+          text,
           corrections: parsed.corrections || [],
-          suggestedReply: parsed.text || result.text,
+          suggestedReply: parsed.suggestedReply || text,
         }
       } catch (err) {
         console.error('DeepSeek API call failed, falling back to mock:', err)

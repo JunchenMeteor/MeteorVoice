@@ -2,36 +2,36 @@ import type { AIProvider, ConversationMessage, ConversationContext, Conversation
 
 const coachReplies: Record<string, string[]> = {
   interview: [
-    "That's a good start. Let's practice a common question: \"Tell me about yourself.\" Remember to keep it concise — about 45 seconds — and focus on your professional background.",
-    "When answering, use the STAR method: Situation, Task, Action, Result. Try again with more structure.",
-    'Good effort! Your vocabulary is solid. For the next round, try to sound more confident by pausing between key points.',
+    'Good start. Tell me about yourself in two sentences.',
+    'Nice. Try one answer using situation, action, and result.',
+    'Good effort. Say it again with one confident pause.',
   ],
   travel: [
-    "Welcome to travel practice! Imagine you're checking in at a hotel. The receptionist asks: \"Do you have a reservation?\" How would you respond?",
-    "Good! Now let's try asking for directions. Remember to say \"Could you tell me how to get to...\" instead of just \"Where is...\" to sound more polite.",
-    'Nice job navigating that situation. Your pronunciation of location names was clear.',
+    'Great. You are checking in at a hotel; what do you say?',
+    'Good. Now ask for directions politely.',
+    'Nice job. Where would you like to go next?',
   ],
   'small-talk': [
-    "Let's practice casual conversation. Someone says: \"How was your weekend?\" What would you say to keep the conversation going?",
-    "Good! Remember to ask follow-up questions. If someone mentions their hobby, ask \"How long have you been doing that?\" or \"What got you into it?\"",
-    'Your small talk is improving! Try to sound more natural by adding short reactions like "Oh, that sounds fun!" or "Really? Tell me more."',
+    'Hi! How was your weekend?',
+    'Good. Ask me one follow-up question.',
+    'Nice. Try adding a short reaction.',
   ],
   restaurant: [
-    "You're at a restaurant and the waiter approaches. \"Good evening! Are you ready to order, or do you need a few more minutes?\"",
-    "Good ordering! When specifying preferences, use \"I'd like\" instead of \"I want\" — it's more polite in dining situations.",
-    "Let's practice handling a special request. Imagine you need to ask about allergens or dietary restrictions.",
+    'Good evening. Are you ready to order?',
+    "Nice. Try ordering with \"I'd like\".",
+    'Good. Ask about one special request.',
   ],
   workplace: [
-    "You're in a team meeting. Your manager asks: \"Can you give us an update on the project status?\" Practice a clear, brief update.",
-    "Your project update was clear! For meetings, structure updates as: achieved, in-progress, blockers, next steps.",
-    "Let's practice disagreeing politely. Instead of \"That won't work,\" try \"I see your point, but have we considered...\"",
+    'Good. Give me a brief project update.',
+    'Clear answer. What is your next step?',
+    'Nice. Try disagreeing politely.',
   ],
 }
 
 const defaultReplies = [
-  "Let's start our conversation practice. I'll be your coach today. Try to speak naturally, and I'll give tips along the way.",
-  "Good try! Let me give you some feedback. Try speaking a bit more slowly — it helps with clarity and gives you time to think.",
-  "That was great! Your English is improving. Let's continue with a new topic.",
+  'Hi! What would you like to talk about?',
+  'Good try. Say one more sentence.',
+  "Nice. Let's continue with a new topic.",
 ]
 
 const mockCorrections: ConversationResponse['corrections'] = [
@@ -45,7 +45,7 @@ let globalTurnCount = 0
 export function createMockAI(): AIProvider {
   return {
     async generateReply(_messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
-      await sleep(300 + Math.random() * 600)
+      await sleep(80 + Math.random() * 140)
       globalTurnCount++
 
       const scenarioKey = context.scenario.name.toLowerCase().replace(/\s+/g, '-')
