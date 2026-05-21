@@ -10,6 +10,13 @@ import {
   type Scenario,
 } from '@/lib/scenarios'
 import { createInitialSnapshot, transition, type WorkflowSnapshot, type WorkflowState } from '@/lib/conversation-workflow'
+import {
+  canContinueListening as canContinueCurrentTurn,
+  canSampleListeningLevel,
+  canSamplePlaybackLevel,
+  shouldPauseForRouteExit,
+  shouldResumeListeningOnRoute,
+} from '@meteorvoice/session-core'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -543,10 +550,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const requestId = voiceLevelRequestRef.current
     void createMicLevelSampler(level => {
       if (
-        activeSessionRef.current &&
-        activeTurnRef.current === turnId &&
-        canListenOnRouteRef.current &&
-        snapshotRef.current.state === 'listening'
+        canSampleListeningLevel({
+          activeSession: activeSessionRef.current,
+          activeTurnId: activeTurnRef.current,
+          currentTurnId: turnId,
+          canListenOnRoute: canListenOnRouteRef.current,
+          workflowState: snapshotRef.current.state,
+        })
       ) {
         setVoiceLevel(level)
       }
@@ -554,10 +564,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       if (!stop) return
       if (
         voiceLevelRequestRef.current !== requestId ||
-        !activeSessionRef.current ||
-        activeTurnRef.current !== turnId ||
-        !canListenOnRouteRef.current ||
-        snapshotRef.current.state !== 'listening'
+        !canSampleListeningLevel({
+          activeSession: activeSessionRef.current,
+          activeTurnId: activeTurnRef.current,
+          currentTurnId: turnId,
+          canListenOnRoute: canListenOnRouteRef.current,
+          workflowState: snapshotRef.current.state,
+        })
       ) {
         stop()
         return
@@ -588,7 +601,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     canListenOnRouteRef.current = false
     routePausedRef.current = true
     setIsRoutePaused(true)
-    if (snapshotRef.current.state === 'listening') {
+    if (shouldPauseForRouteExit({ activeSession: activeSessionRef.current, workflowState: snapshotRef.current.state })) {
       cancelCurrentTurn()
       applyTransition('idle')
     }
@@ -606,11 +619,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
   const speakText = useCallback(async (text: string, accentName: string) => {
     const updatePlaybackLevel = (level: number | null) => {
-      if (
-        activeSessionRef.current &&
-        canListenOnRouteRef.current &&
-        snapshotRef.current.state === 'speaking'
-      ) {
+      if (canSamplePlaybackLevel({
+        activeSession: activeSessionRef.current,
+        activeTurnId: activeTurnRef.current,
+        currentTurnId: activeTurnRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        workflowState: snapshotRef.current.state,
+      })) {
         setVoiceLevel(level)
       }
     }
@@ -665,7 +680,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     canListenOnRouteRef.current = true
     routePausedRef.current = false
     setIsRoutePaused(false)
-    if (snapshotRef.current.state === 'idle' || snapshotRef.current.state === 'correcting') {
+    if (shouldResumeListeningOnRoute({ activeSession: activeSessionRef.current, workflowState: snapshotRef.current.state })) {
       startNextTurn()
     }
   }, [startNextTurn])
@@ -798,7 +813,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
-    const canContinueListening = () => isCurrentTurn() && canListenOnRouteRef.current
+    const canContinueListening = () => canContinueCurrentTurn({
+      activeSession: activeSessionRef.current,
+      activeTurnId: activeTurnRef.current,
+      currentTurnId: turnId,
+      canListenOnRoute: canListenOnRouteRef.current,
+      workflowState: snapshotRef.current.state,
+    })
 
     setInterrupted(false)
     setStatusText(tr('session.listening'))
