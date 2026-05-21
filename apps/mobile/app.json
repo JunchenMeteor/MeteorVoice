@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "MeteorVoice",
+    "slug": "meteorvoice-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "meteorvoice",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jcmeteor.meteorvoice",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions."
+      }
+    },
+    "android": {
+      "package": "com.jcmeteor.meteorvoice"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "MeteorVoice uses the microphone for voice practice sessions.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": ""
+    }
+  }
+}

@@ -1,11 +1,4 @@
-/**
- * LangGraph-backed conversation workflow for English Conversation Coach.
- *
- * States: idle -> listening -> transcribing -> thinking -> speaking -> correcting -> idle
- * End state: session_ended
- */
-
-import type { ConversationMessage, ConversationResponse } from './providers/types'
+import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
 
 export type WorkflowState =
   | 'idle'
@@ -28,13 +21,13 @@ export interface WorkflowSnapshot {
 }
 
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
-  idle:            ['listening', 'session_ended'],
-  listening:       ['transcribing', 'idle', 'session_ended'],
-  transcribing:    ['thinking', 'idle', 'session_ended'],
-  thinking:        ['speaking', 'idle', 'session_ended'],
-  speaking:        ['correcting', 'listening', 'idle', 'session_ended'],
-  correcting:      ['listening', 'session_ended'],
-  session_ended:   [],
+  idle: ['listening', 'session_ended'],
+  listening: ['transcribing', 'idle', 'session_ended'],
+  transcribing: ['thinking', 'idle', 'session_ended'],
+  thinking: ['speaking', 'idle', 'session_ended'],
+  speaking: ['correcting', 'listening', 'idle', 'session_ended'],
+  correcting: ['listening', 'session_ended'],
+  session_ended: [],
 }
 
 export function createInitialSnapshot(sessionId: string): WorkflowSnapshot {
@@ -59,7 +52,13 @@ export function transition(
   if (!allowed.includes(to)) {
     return { ...from, error: `Invalid transition: ${from.state} -> ${to}` }
   }
-  return { ...from, ...patch, state: to, error: null, turnNumber: to === 'listening' ? from.turnNumber + 1 : from.turnNumber }
+  return {
+    ...from,
+    ...patch,
+    state: to,
+    error: null,
+    turnNumber: to === 'listening' ? from.turnNumber + 1 : from.turnNumber,
+  }
 }
 
 export function snapshotSummary(snapshot: WorkflowSnapshot) {

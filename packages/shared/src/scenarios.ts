@@ -1,6 +1,4 @@
-import type { Locale } from './i18n'
-
-type LocalizedText = Record<Locale, string>
+import type { Locale, LocalizedText } from './locale'
 
 export interface Scenario {
   key: string
