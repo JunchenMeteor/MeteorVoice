@@ -1,4 +1,6 @@
-export type Locale = 'en' | 'zh'
+export type { Locale } from '@meteorvoice/shared'
+
+import type { Locale } from '@meteorvoice/shared'
 
 export const t: Record<Locale, Record<string, string>> = {
   en: {

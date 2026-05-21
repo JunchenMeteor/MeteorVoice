@@ -19,6 +19,8 @@
       }
     ],
     "paths": {
+      "@meteorvoice/shared": ["./packages/shared/src/index.ts"],
+      "@meteorvoice/shared/*": ["./packages/shared/src/*"],
       "@/*": ["./*"]
     }
   },

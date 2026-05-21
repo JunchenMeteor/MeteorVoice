@@ -1,0 +1,13 @@
+{
+  "name": "@meteorvoice/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./conversation": "./src/conversation.ts",
+    "./locale": "./src/locale.ts",
+    "./scenarios": "./src/scenarios.ts",
+    "./speech": "./src/speech.ts"
+  }
+}
