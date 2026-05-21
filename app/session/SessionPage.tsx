@@ -206,7 +206,7 @@ export function SessionPageClient() {
           background: 'radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--theme-accent) 14%, transparent), transparent 38%)',
         }} />
 
-        <header className="relative z-10 flex items-start justify-between gap-3 pl-11">
+        <header className="relative z-10 flex min-h-10 items-start justify-between gap-3 pl-[4.5rem]">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-[var(--theme-text-primary)]">
               {scenario.icon} {scenarioLabel}
@@ -224,7 +224,7 @@ export function SessionPageClient() {
           )}
         </header>
 
-        <div className="relative z-10 mt-3 flex items-center gap-2 pl-11">
+        <div className="relative z-10 mt-3 flex items-center gap-2 pl-[4.5rem]">
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: statusColor }} />
           <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]">{statusText}</span>
           {interrupted && (
@@ -396,20 +396,23 @@ export function SessionPageClient() {
             )}
           </div>
 
-          {summary && (
-            <div className="shrink-0 mb-4 p-4 rounded-xl border" style={{
-              background: 'var(--theme-bg-card)',
-              borderColor: 'var(--theme-accent)',
-            }}>
-              <h3 className="text-sm font-semibold text-[var(--theme-accent)] mb-2">{tr('session.summary_title')}</h3>
-              <p className="text-sm text-[var(--theme-text-secondary)] whitespace-pre-wrap">{summary}</p>
-            </div>
-          )}
-
-          <div className="flex-1 min-h-0 data-panel flex flex-col items-center justify-center gap-5 overflow-hidden p-5 text-center md:p-8">
+          <div className="relative flex-1 min-h-0 data-panel flex flex-col items-center justify-center gap-7 overflow-hidden p-8 text-center">
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background: 'radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--theme-accent) 12%, transparent), transparent 42%)',
+              }}
+            />
             {messages.length === 0 && !isSessionActive && (
-              <div className="text-[var(--theme-text-muted)]">
-                <p className="text-4xl mb-4">{scenario.icon}</p>
+              <div className="relative z-10 text-[var(--theme-text-muted)]">
+                <div
+                  className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full text-5xl"
+                  style={{
+                    background: 'color-mix(in srgb, var(--theme-accent) 10%, transparent)',
+                  }}
+                >
+                  {scenario.icon}
+                </div>
                 <p className="text-lg font-medium text-[var(--theme-text-primary)]">{scenarioLabel}</p>
                 <p className="text-sm mt-2">{scenarioDescription}</p>
                 <p className="text-xs mt-4">
@@ -423,13 +426,23 @@ export function SessionPageClient() {
 
             {(messages.length > 0 || isSessionActive) && (
               <>
-                <VoiceWaveform mode={waveformMode} label={statusText} level={voiceLevel ?? undefined} />
+                <div
+                  className="relative z-10 flex h-28 w-28 items-center justify-center rounded-full text-5xl font-semibold"
+                  style={{
+                    background: 'color-mix(in srgb, var(--theme-accent) 10%, transparent)',
+                    color: 'var(--theme-accent)',
+                  }}
+                  aria-hidden="true"
+                >
+                  M
+                </div>
 
-                <div className="w-full max-w-3xl space-y-3 rounded-lg border p-4 text-left" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-surface)' }}>
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
-                      {tr('session.current_subtitles')}
-                    </h2>
+                <div className="relative z-10">
+                  <VoiceWaveform mode={waveformMode} label={statusText} level={voiceLevel ?? undefined} variant="stage" />
+                </div>
+
+                <div className="relative z-10 w-full max-w-4xl space-y-5 text-center">
+                  <div className="flex items-center justify-center gap-3">
                     <button
                       type="button"
                       onClick={() => setActiveTab('transcript')}
@@ -439,16 +452,16 @@ export function SessionPageClient() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="min-h-[5.5rem] rounded-lg border p-3" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
-                      <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">{tr('session.you')}</p>
-                      <p className="text-base leading-relaxed text-[var(--theme-text-primary)]">
+                  <div className="grid gap-8 md:grid-cols-2">
+                    <div className="min-h-[6rem]">
+                      <p className="mb-2 text-xs font-medium uppercase text-[var(--theme-text-muted)]">{tr('session.you')}</p>
+                      <p className="mx-auto max-h-28 overflow-y-auto text-xl font-medium leading-snug text-[var(--theme-text-primary)] quiet-scrollbar">
                         {latestUserMessage?.content ?? tr('session.subtitle_waiting_user')}
                       </p>
                     </div>
-                    <div className="min-h-[5.5rem] rounded-lg border p-3" style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}>
-                      <p className="mb-2 text-xs font-medium text-[var(--theme-text-muted)]">{tr('session.coach')}</p>
-                      <p className="text-base leading-relaxed text-[var(--theme-text-primary)]">
+                    <div className="min-h-[6rem]">
+                      <p className="mb-2 text-xs font-medium uppercase text-[var(--theme-text-muted)]">{tr('session.coach')}</p>
+                      <p className="mx-auto max-h-28 overflow-y-auto text-xl font-medium leading-snug text-[var(--theme-text-primary)] quiet-scrollbar">
                         {latestAssistantMessage?.content ?? tr('session.subtitle_waiting_coach')}
                       </p>
                     </div>
@@ -502,6 +515,13 @@ export function SessionPageClient() {
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto quiet-scrollbar">
             {renderLearningContent()}
           </div>
+
+          {summary && (
+            <div className="mt-4 shrink-0 border-t pt-4" style={{ borderColor: 'var(--theme-border)' }}>
+              <h3 className="text-sm font-semibold text-[var(--theme-accent)] mb-2">{tr('session.summary_title')}</h3>
+              <p className="max-h-32 overflow-y-auto text-sm text-[var(--theme-text-secondary)] whitespace-pre-wrap quiet-scrollbar">{summary}</p>
+            </div>
+          )}
         </aside>
         </div>
       </div>
