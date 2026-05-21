@@ -19,6 +19,8 @@
       }
     ],
     "paths": {
+      "@meteorvoice/api-client": ["./packages/api-client/src/index.ts"],
+      "@meteorvoice/api-client/*": ["./packages/api-client/src/*"],
       "@meteorvoice/shared": ["./packages/shared/src/index.ts"],
       "@meteorvoice/shared/*": ["./packages/shared/src/*"],
       "@/*": ["./*"]

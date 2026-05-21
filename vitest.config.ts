@@ -7,6 +7,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@meteorvoice/api-client': path.resolve(__dirname, 'packages/api-client/src/index.ts'),
+      '@meteorvoice/api-client/types': path.resolve(__dirname, 'packages/api-client/src/types.ts'),
       '@meteorvoice/shared': path.resolve(__dirname, 'packages/shared/src/index.ts'),
       '@meteorvoice/shared/conversation': path.resolve(__dirname, 'packages/shared/src/conversation.ts'),
       '@meteorvoice/shared/locale': path.resolve(__dirname, 'packages/shared/src/locale.ts'),
