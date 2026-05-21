@@ -1,5 +1,7 @@
 # Persistent Voice Session and Localization Plan
 
+Status: Completed as a Web/session foundation plan. Keep this document as historical context and regression guidance; use `docs/native-mobile-architecture-plan.md` for future native mobile architecture work.
+
 ## Goals
 
 - Keep an active voice conversation's state alive while users navigate between app pages.

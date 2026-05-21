@@ -1,5 +1,7 @@
 # MeteorVoice Product Optimization Plan
 
+Status: Mostly completed or superseded by later session/mobile Web work. Keep this document as background for product intent; do not treat it as the active execution plan unless a new task explicitly references it.
+
 ## Goals
 
 Make MeteorVoice feel like a real learning product rather than a technical demo.

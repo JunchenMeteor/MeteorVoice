@@ -1,5 +1,7 @@
 # English Conversation Coach Plan
 
+Status: Original MVP plan. Keep as product and stack background; current execution rules live in `docs/development-rules.md`, `docs/project-structure.md`, and `docs/native-mobile-architecture-plan.md`.
+
 ## Summary
 
 Build the first runnable version as a cloud-accessible MVP with auth, scenario selection, active voice session lifecycle, mockable speech/AI providers, a replaceable AI streaming layer, a LangGraph-backed conversation workflow, theme tokens, and synced user preferences. DeepSeek is the current default conversation model, but the model slot must stay replaceable.

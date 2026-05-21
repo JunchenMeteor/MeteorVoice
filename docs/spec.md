@@ -1,5 +1,7 @@
 # English Conversation Coach Spec
 
+Status: Product reference. This remains useful for business scope and data model intent, but current implementation plans are tracked in the active docs listed by `docs/index.md`.
+
 ## Product Goal
 
 Build a one-to-one English conversation coach that uses voice input and voice output, keeps the conversation natural and playful, supports real-world scenarios, adapts to global accents, and helps the user learn through live correction and post-turn feedback.

@@ -164,8 +164,6 @@ type SessionCoreEvent =
 - route pause、app background、permission denied、playback failure MUST 显式进入可恢复状态。
 - Web adapter 负责 browser STT/TTS/audio unlock；Mobile adapter 负责 native recording/playback。
 
-## 推荐实施切分
-
 ## 长期分支策略
 
 Native Mobile 架构升级 SHOULD 使用长期集成分支：
@@ -187,6 +185,8 @@ dev/architecture/native-mobile
 - 长期分支需要定期从 `main` 非破坏性同步，优先使用 merge 或 rebase，禁止 `reset --hard` 覆盖他人改动。
 - 所有阶段 PR body MUST 写明 base branch 是 `dev/architecture/native-mobile` 还是 `main`。
 - 如果用户明确要求某个小修直接进 `main`，该修复 SHOULD 独立分支处理，不要混入长期架构分支。
+
+## 推荐实施切分
 
 ### PR 1: Document Native Mobile Architecture
 
