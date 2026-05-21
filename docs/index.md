@@ -6,15 +6,17 @@
 
 1. `docs/development-rules.md`
    - 项目协作规则、issue/PR 规则、worktree/main 同步规则、测试要求、禁止项。
-2. `docs/session-immersive-ui-plan.md`
+2. `docs/native-mobile-architecture-plan.md`
+   - Web + Native Mobile 双端架构升级、mobile 探针、共享包和 session core 落地计划。
+3. `docs/session-immersive-ui-plan.md`
    - 会话页沉浸式语音 UI 的产品/工程执行计划。
-3. `docs/mobile-session-stage-and-ios-audio-plan.md`
+4. `docs/mobile-session-stage-and-ios-audio-plan.md`
    - 移动端全屏语音舞台改版和 iOS 音频播放可靠性方案。
-4. `docs/spec.md`
+5. `docs/spec.md`
    - 产品目标、MVP 范围、核心数据模型、AI 应用分层。
-5. `docs/project-structure.md`
+6. `docs/project-structure.md`
    - 当前单仓库内的前后端式分层约定。
-6. `docs/tts-integration.md`
+7. `docs/tts-integration.md`
    - TTS provider、环境变量、口音能力映射和验证方式。
 
 ## 现有计划索引
@@ -24,16 +26,14 @@
 - `docs/persistent-session-localization-plan.md`: 持久语音会话、本地化、路由切换暂停/恢复、TTS 速度控制计划。
 - `docs/session-immersive-ui-plan.md`: 当前会话页沉浸式语音 UI 的执行入口。
 - `docs/mobile-session-stage-and-ios-audio-plan.md`: 移动端会话舞台重构和 iOS 音频播放可靠性方案。
+- `docs/native-mobile-architecture-plan.md`: Web + Native Mobile 双端架构升级和 mobile 架构探针执行方案。
 
 ## 当前执行状态
 
-- 会话页沉浸式语音 UI 当前即将进入 `dev/feature/session-immersive-experience` 集成开发。
-- 本次集成目标 MUST 限定为 Phase 1 + Phase 4 基础版：状态驱动 waveform、当前字幕、`Corrections` / `Transcript` tabs、多语言文案、桌面/移动布局。
-- 本次集成 MUST 不接入真实麦克风频谱，MUST 不接入真实 AI 播放音频频谱，MUST 不改 STT/TTS turn loop。
-- Phase 2/3 的真实音频频谱能力 SHOULD 作为后续增强独立评估和开发，不属于本次代码范围，也不作为本次验收阻塞项。
-- `dev/feature/audio-driven-session-waveforms` 用于后续增强 #52：在不改变 STT/TTS turn loop 的前提下，为 listening/speaking waveform 接入真实音频音量采样，并保留状态驱动 fallback。
-- `docs/session-immersive-ui-plan.md` 已定义 Phase 1-4 的范围、禁止项、agent 分工和本次集成验收标准。
-- 文档体系最终整理 SHOULD 在代码阶段完成后再做一次，以记录已完成范围、未完成风险和后续规则。
+- 会话页沉浸式语音 UI、移动端 full-screen stage、P2/P3 音频驱动 waveform、AI 回复长度/速度优化、iOS Web audio unlock/fallback 已完成并合入 `main`。
+- iOS Web audio unlock 是移动 Web 的可靠性修复，不是 native mobile 长期架构替代。
+- 下一阶段 SHOULD 以 `docs/native-mobile-architecture-plan.md` 为最高优先级计划，执行 Web + Native Mobile 双端架构升级。
+- Native Mobile 第一阶段目标是 mobile 架构探针：验证 API 契约、共享类型、会话状态机边界和业务闭环，而不是证明原生音频能力本身。
 
 ## 历史交接资料
 
