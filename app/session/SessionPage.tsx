@@ -61,10 +61,12 @@ export function SessionPageClient() {
     accentBanner,
     ttsPreferenceLoaded,
     voiceLevel,
+    playbackBlocked,
     configureSession,
     startSession,
     endSession,
     continueSpeaking,
+    playBlockedReply,
     playCorrection,
   } = useVoiceSession()
 
@@ -274,6 +276,14 @@ export function SessionPageClient() {
         )}
 
         <footer className="relative z-10 space-y-3">
+          {playbackBlocked && (
+            <div className="flex justify-center">
+              <Button size="lg" onClick={playBlockedReply}>
+                {tr('session.play_reply')}
+              </Button>
+            </div>
+          )}
+
           {canContinue && (
             <div className="flex justify-center">
               <button
@@ -464,6 +474,13 @@ export function SessionPageClient() {
                   <line x1="7" y1="19" x2="13" y2="19" />
                 </svg>
               </button>
+            </div>
+          )}
+          {playbackBlocked && (
+            <div className="shrink-0 flex justify-center py-4">
+              <Button size="lg" onClick={playBlockedReply}>
+                {tr('session.play_reply')}
+              </Button>
             </div>
           )}
         </section>

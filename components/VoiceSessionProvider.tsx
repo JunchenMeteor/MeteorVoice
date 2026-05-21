@@ -20,6 +20,7 @@ const mockTTS = createMockTTS()
 const activeSessionStorageKey = 'meteorvoice-active-session'
 const voiceSessionStateStorageKey = 'meteorvoice-session-state'
 const postPlaybackListenDelayMs = 900
+const silentAudioUrl = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA=='
 
 type AudioLevelStop = () => void
 
@@ -27,6 +28,26 @@ type AudioLevelSource = {
   analyser: AnalyserNode
   audioContext: AudioContext
   stopSource?: () => void
+  closeOnStop?: boolean
+}
+
+type PlaybackAudioNodes = {
+  audioContext: AudioContext
+  analyser: AnalyserNode
+  source: MediaElementAudioSourceNode
+}
+
+type PendingPlayback = {
+  audioUrl: string
+  onLevel?: (level: number | null) => void
+  resolve: () => void
+}
+
+class PlaybackBlockedError extends Error {
+  constructor(readonly audioUrl: string) {
+    super('Audio playback requires a user gesture')
+    this.name = 'PlaybackBlockedError'
+  }
 }
 
 declare global {
@@ -119,7 +140,9 @@ function sampleAudioLevel(source: AudioLevelSource, onLevel: (level: number | nu
     window.cancelAnimationFrame(frame)
     source.stopSource?.()
     onLevel(null)
-    void source.audioContext.close().catch(() => {})
+    if (source.closeOnStop !== false) {
+      void source.audioContext.close().catch(() => {})
+    }
   }
 }
 
@@ -161,10 +184,50 @@ async function createMicLevelSampler(onLevel: (level: number | null) => void): P
   }
 }
 
-function playAudioToEnd(audioUrl: string, onLevel?: (level: number | null) => void) {
+function getPlaybackLevelSource(
+  audio: HTMLAudioElement,
+  nodesRef: { current: PlaybackAudioNodes | null },
+  onLevel: (level: number | null) => void,
+): AudioLevelSource | null {
+  try {
+    if (!nodesRef.current) {
+      const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
+      if (!AudioContextCtor) return null
+      const audioContext = new AudioContextCtor()
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.7
+      const source = audioContext.createMediaElementSource(audio)
+      source.connect(analyser)
+      analyser.connect(audioContext.destination)
+      nodesRef.current = { audioContext, analyser, source }
+    }
+    void nodesRef.current.audioContext.resume().catch(() => {})
+    return {
+      analyser: nodesRef.current.analyser,
+      audioContext: nodesRef.current.audioContext,
+      closeOnStop: false,
+    }
+  } catch {
+    onLevel(null)
+    return null
+  }
+}
+
+function playAudioToEnd(
+  audioUrl: string,
+  options?: {
+    audio?: HTMLAudioElement
+    playbackNodesRef?: { current: PlaybackAudioNodes | null }
+    onLevel?: (level: number | null) => void
+  },
+) {
   return new Promise<void>((resolve, reject) => {
-    const audio = new Audio(audioUrl)
+    const audio = options?.audio ?? new Audio()
     audio.crossOrigin = 'anonymous'
+    audio.preload = 'auto'
+    audio.setAttribute('playsinline', 'true')
+    audio.src = audioUrl
     let settled = false
     let timeout: number | null = null
     let stopLevelSampler: AudioLevelStop | null = null
@@ -202,24 +265,20 @@ function playAudioToEnd(audioUrl: string, onLevel?: (level: number | null) => vo
     audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
 
     armTimeout(45000)
-    if (onLevel) {
-      try {
-        const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
-        if (AudioContextCtor) {
-          const audioContext = new AudioContextCtor()
-          const analyser = audioContext.createAnalyser()
-          analyser.fftSize = 256
-          analyser.smoothingTimeConstant = 0.7
-          const source = audioContext.createMediaElementSource(audio)
-          source.connect(analyser)
-          analyser.connect(audioContext.destination)
-          stopLevelSampler = sampleAudioLevel({ analyser, audioContext }, onLevel)
-        }
-      } catch {
-        onLevel(null)
+    if (options?.onLevel && options.playbackNodesRef) {
+      const levelSource = getPlaybackLevelSource(audio, options.playbackNodesRef, options.onLevel)
+      if (levelSource) {
+        stopLevelSampler = sampleAudioLevel(levelSource, options.onLevel)
       }
     }
-    audio.play().catch(error => settle(() => reject(error)))
+    audio.load()
+    audio.play().catch(error => {
+      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+        settle(() => reject(new PlaybackBlockedError(audioUrl)))
+        return
+      }
+      settle(() => reject(error))
+    })
   })
 }
 
@@ -237,10 +296,12 @@ interface VoiceSessionContextValue {
   accentBanner: string | null
   ttsPreferenceLoaded: boolean
   voiceLevel: number | null
+  playbackBlocked: boolean
   configureSession: (scenarioKey: string, accentKey: string) => void
   startSession: () => void
   endSession: () => Promise<void>
   continueSpeaking: () => void
+  playBlockedReply: () => void
   playCorrection: (text: string) => void
 }
 
@@ -272,6 +333,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
+  const [playbackBlocked, setPlaybackBlocked] = useState(false)
 
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
@@ -294,6 +356,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
   const voiceLevelRequestRef = useRef(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
+  const audioUnlockedRef = useRef(false)
+  const pendingPlaybackRef = useRef<PendingPlayback | null>(null)
 
   useEffect(() => {
     snapshotRef.current = snapshot
@@ -395,6 +461,83 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setVoiceLevel(null)
   }, [])
 
+  const getSessionAudio = useCallback(() => {
+    if (!audioRef.current) {
+      const audio = new Audio()
+      audio.crossOrigin = 'anonymous'
+      audio.preload = 'auto'
+      audio.setAttribute('playsinline', 'true')
+      audioRef.current = audio
+    }
+    return audioRef.current
+  }, [])
+
+  const unlockSessionAudio = useCallback(() => {
+    if (audioUnlockedRef.current) return
+    const audio = getSessionAudio()
+    audio.muted = true
+    audio.src = silentAudioUrl
+    audio.load()
+    const levelSource = getPlaybackLevelSource(audio, playbackNodesRef, () => {})
+    if (levelSource) {
+      void levelSource.audioContext.resume().catch(() => {})
+    }
+    void audio.play()
+      .then(() => {
+        audio.pause()
+        audio.currentTime = 0
+        audio.muted = false
+        audioUnlockedRef.current = true
+        if (playbackNodesRef.current) {
+          void playbackNodesRef.current.audioContext.resume().catch(() => {})
+        }
+      })
+      .catch(() => {
+        audio.muted = false
+        audioUnlockedRef.current = false
+      })
+  }, [getSessionAudio])
+
+  const resolvePendingPlayback = useCallback(() => {
+    pendingPlaybackRef.current?.resolve()
+    pendingPlaybackRef.current = null
+    setPlaybackBlocked(false)
+  }, [])
+
+  const closePlaybackAudioContext = useCallback(() => {
+    const playbackNodes = playbackNodesRef.current
+    playbackNodesRef.current = null
+    if (playbackNodes) {
+      void playbackNodes.audioContext.close().catch(() => {})
+    }
+  }, [])
+
+  const waitForBlockedPlayback = useCallback((audioUrl: string, onLevel?: (level: number | null) => void) => {
+    setPlaybackBlocked(true)
+    return new Promise<void>(resolve => {
+      pendingPlaybackRef.current = { audioUrl, onLevel, resolve }
+    })
+  }, [])
+
+  const playBlockedReply = useCallback(() => {
+    const pending = pendingPlaybackRef.current
+    if (!pending) return
+    setPlaybackBlocked(false)
+    void playAudioToEnd(pending.audioUrl, {
+      audio: getSessionAudio(),
+      playbackNodesRef,
+      onLevel: pending.onLevel,
+    })
+      .then(resolvePendingPlayback)
+      .catch(error => {
+        if (error instanceof PlaybackBlockedError) {
+          setPlaybackBlocked(true)
+          return
+        }
+        resolvePendingPlayback()
+      })
+  }, [getSessionAudio, resolvePendingPlayback])
+
   const startListeningLevelSampling = useCallback((turnId: number) => {
     stopVoiceLevelSampling()
     const requestId = voiceLevelRequestRef.current
@@ -424,15 +567,21 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [stopVoiceLevelSampling])
 
   useEffect(() => {
-    return () => stopVoiceLevelSampling()
-  }, [stopVoiceLevelSampling])
+    return () => {
+      stopVoiceLevelSampling()
+      resolvePendingPlayback()
+      audioRef.current?.pause()
+      closePlaybackAudioContext()
+    }
+  }, [closePlaybackAudioContext, resolvePendingPlayback, stopVoiceLevelSampling])
 
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
     abortListeningRef.current = null
     activeTurnRef.current += 1
     stopVoiceLevelSampling()
-  }, [stopVoiceLevelSampling])
+    resolvePendingPlayback()
+  }, [resolvePendingPlayback, stopVoiceLevelSampling])
 
   const pauseListeningForNavigation = useCallback(() => {
     if (!activeSessionRef.current) return
@@ -481,7 +630,20 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       })
       const result = await res.json() as { audioUrl?: string }
       if (result.audioUrl) {
-        await playAudioToEnd(result.audioUrl, updatePlaybackLevel)
+        try {
+          await playAudioToEnd(result.audioUrl, {
+            audio: getSessionAudio(),
+            playbackNodesRef,
+            onLevel: updatePlaybackLevel,
+          })
+        } catch (error) {
+          if (error instanceof PlaybackBlockedError) {
+            setStatusText(tr('session.playback_blocked'))
+            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel)
+            return
+          }
+          throw error
+        }
       }
     } catch {
       setVoiceLevel(null)
@@ -489,7 +651,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     } finally {
       setVoiceLevel(null)
     }
-  }, [])
+  }, [getSessionAudio, tr, waitForBlockedPlayback])
 
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
@@ -529,6 +691,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [])
 
   const startSession = useCallback(() => {
+    unlockSessionAudio()
     if (!ttsPreferenceLoaded) {
       setStatusText(tr('session.loading_voice'))
       return
@@ -550,7 +713,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setSummary(null)
     setInterrupted(false)
     startNextTurn()
-  }, [startNextTurn, tr, ttsPreferenceLoaded])
+  }, [startNextTurn, tr, ttsPreferenceLoaded, unlockSessionAudio])
 
   const endSession = useCallback(async () => {
     activeSessionRef.current = false
@@ -620,13 +783,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
 
   const continueSpeaking = useCallback(() => {
+    unlockSessionAudio()
     activeSessionRef.current = true
     if (!canListenOnRouteRef.current) {
       setStatusText(tr('session.paused'))
       return
     }
     startNextTurn()
-  }, [startNextTurn, tr])
+  }, [startNextTurn, tr, unlockSessionAudio])
 
   const playCorrection = useCallback((text: string) => {
     void speakText(text, accentRef.current.name)
@@ -763,10 +927,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     accentBanner,
     ttsPreferenceLoaded,
     voiceLevel,
+    playbackBlocked,
     configureSession,
     startSession,
     endSession,
     continueSpeaking,
+    playBlockedReply,
     playCorrection,
   }), [
     accent,
@@ -779,6 +945,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     isRoutePaused,
     isSessionActive,
     messages,
+    playbackBlocked,
+    playBlockedReply,
     playCorrection,
     scenario,
     snapshot,
