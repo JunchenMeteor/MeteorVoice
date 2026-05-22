@@ -1,125 +1,269 @@
 # MeteorVoice
 
 <p align="center">
-  <strong>一个支持语音对话、实时纠错、口音轮换和跨设备同步的英语陪练应用</strong>
+  <strong>以语音为核心的英语对话陪练，支持实时纠错、口音适配和跨设备同步</strong>
 </p>
 
 <p align="center">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=nextdotjs" />
+  <img alt="Expo" src="https://img.shields.io/badge/Expo-55-000020?style=for-the-badge&logo=expo&logoColor=white" />
+  <img alt="Supabase" src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" />
+  <img alt="AI" src="https://img.shields.io/badge/AI-DeepSeek-4B7BFF?style=for-the-badge" />
+  <br />
+  <a href="https://github.com/JunchenMeteor/MeteorVoice/issues"><img alt="Issues" src="https://img.shields.io/badge/Links-Issues-1F6FEB" /></a>
+  <br />
   <a href="README.md"><img alt="Docs English" src="https://img.shields.io/badge/Docs-English-black" /></a>
   <a href="README.zh-CN.md"><img alt="Docs 中文" src="https://img.shields.io/badge/Docs-%E4%B8%AD%E6%96%87-red" /></a>
 </p>
 
+MeteorVoice 是一个以语音为核心的英语对话陪练工具。用户选择场景后开始对话，自然说话，AI 教练实时纠错并用适配口音回复。会话记录通过 Supabase 跨设备同步。
+
 ## 目录
 
-- [概览](#概览)
+- [维护者](#维护者)
+- [背景](#背景)
 - [核心能力](#核心能力)
 - [系统架构](#系统架构)
-- [仓库结构](#仓库结构)
-- [安装](#安装)
-- [登录](#登录)
-- [存储](#存储)
-- [TTS](#tts)
 - [项目结构](#项目结构)
+- [安装](#安装)
 - [运行](#运行)
+- [移动端](#移动端)
+- [TTS 服务商](#tts-服务商)
 - [验证](#验证)
+- [Roadmap](#roadmap)
 
-## 概览
+## 维护者
 
-MeteorVoice 是一个以语音为主的英语对话陪练工具。用户进入场景后开始会话，边说边被纠错，AI 用不同口音回复，用户可继续或结束。
+MeteorVoice 由 **Meteor** 发起并维护。
 
-这个仓库是单体 Next.js 全栈结构，页面、API 路由、共享逻辑和 Supabase 辅助代码都在同一个代码库里。
+项目专注于通过自然 AI 对话进行英语口语练习，核心目标是语音质量和对话自然度，而不是语法题库。用户应该真的想继续说下去，而不是完成任务。
+
+## 背景
+
+大多数英语学习应用都陷入两个误区：
+
+- 本质是阅读或写作工具，只是套了语音输入的壳。
+- 有语音输入，但 TTS 回复机械，沉浸感立刻破坏。
+
+MeteorVoice 从相反的方向出发：语音质量和对话自然度优先。纠错不打断对话，以非阻塞方式显示在旁边。AI 教练跟随用户说的内容回应，而不是把话题引向固定脚本。
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant App as MeteorVoice
+    participant AI as AI 教练
+
+    User->>App: 开始会话，选择场景
+    App->>User: 教练开场
+    User->>App: 说话
+    App->>AI: 转录 + 生成回复
+    AI->>App: 回复文本 + 纠错项
+    App->>User: 用口音 TTS 播放回复
+    App->>User: 非阻塞显示纠错建议
+    User->>App: 继续或结束会话
+    App->>App: 同步会话记录到 Supabase
+```
 
 ## 核心能力
 
-- 一对一英语练习
-- 场景式对话开场
-- 轮次内实时纠错和轮后反馈
-- 会话级口音轮换
+- 与 AI 教练一对一语音对话
+- 场景式对话开场（面试、旅行、餐厅、职场、日常闲聊）
+- 实时纠错，涵盖语法、词汇、流利度和发音
+- 会话级口音适配（美式、英式、印度、澳洲等）
+- 非阻塞纠错面板——纠错建议不打断对话
 - 对话区外支持中英双语 UI
-- 使用 CSS 变量做全局主题切换
-- 通过 Supabase 管理登录、历史和偏好同步
-- 提供 mock AI/STT/TTS，方便本地开发
+- 基于 CSS 自定义属性的全局主题切换
+- 通过 Supabase 管理登录、历史记录和偏好同步
+- 提供 mock AI/STT/TTS，无需 API Key 即可本地开发
+- 基于 Expo React Native 的原生移动端（iOS/Android）
 
 ## 系统架构
 
-- **框架**：Next.js + TypeScript
-- **UI**：shadcn/ui + Tailwind CSS
-- **AI 流**：Vercel AI SDK
-- **对话流程**：LangGraph 作为应用内工作流层
-- **数据库/认证**：Supabase
-- **语音**：浏览器语音能力 + Provider 适配层
+```mermaid
+flowchart TB
+    Web[MeteorVoice Web<br/>Next.js]
+    Mobile[MeteorVoice Mobile<br/>Expo React Native]
 
-## 仓库结构
+    subgraph Platform[后端]
+        API[Next.js API Routes<br/>TTS / Chat / Session / Turns]
+        Supabase[Supabase<br/>Auth / DB / 偏好]
+        AI[AI Provider<br/>DeepSeek via Vercel AI SDK]
+        TTS[TTS 服务商<br/>讯飞 / 火山 / 腾讯]
+    end
 
-- `app/` - 页面和 API 路由
-- `components/` - 可复用 UI 组件
-- `lib/` - 共享 provider、workflow 和工具
-- `supabase/` - 数据库 migration
-- `docs/` - 产品和实施文档
+    subgraph Shared[packages/]
+        SharedPkg[shared<br/>类型 / i18n / provider 接口]
+        SessionCore[session-core<br/>轮次生命周期 / 工作流]
+        APIClient[api-client<br/>类型化 API 调用]
+    end
 
-## 安装
-
-```bash
-cd MeteorVoice
-npm ci
-cp .env.local.example .env.local
+    Web --> API
+    Mobile --> APIClient
+    APIClient --> API
+    API --> Supabase
+    API --> AI
+    API --> TTS
+    Web --> Shared
+    Mobile --> Shared
 ```
 
-### Supabase
+职责边界：
 
-1. 创建 Supabase 项目
-2. 执行 `supabase/migrations/001_init.sql`
-3. 执行 `supabase/migrations/002_rls.sql`
-4. 把项目 URL 和 anon key 写入 `.env.local`
-5. 配置本地开发的 Authentication redirect URLs
-
-## 登录
-
-MeteorVoice 采用 MeteorTest 的账号输入方式。
-
-- 一个输入框同时支持 `username`、`phone` 或邮箱
-- `username` 会先转换成内部邮箱别名，再走 Supabase Auth
-- `phone` 直接走 Supabase phone auth
-- 对用户可见的仍然是 username 或 phone，别名只在内部使用
-
-## 存储
-
-Supabase 用来保存 session、turn、纠错项、主题偏好和学习记录。
-
-当前 migration 状态：
-
-- `001_init.sql` 创建 schema 和 seed 数据
-- `002_rls.sql` 启用 RLS 和按用户隔离的策略
-- `003_tts_preferences.sql` 增加用户级 TTS 服务商偏好
-
-## TTS
-
-国内用户优先使用讯飞、火山引擎和腾讯云。Google Cloud TTS 保留为海外或未来可选方案。
-
-用户选择的语音服务商会保存到 Supabase。服务商密钥只放在服务端环境变量中，不存数据库。
-
-详见 `docs/tts-integration.md` 和 `docs/supabase-setup.md`。
+- `apps/web`：Next.js 全栈应用——UI、API 路由、服务端 TTS/AI 编排。
+- `apps/mobile`：Expo React Native 原生客户端——语音会话 UI、原生音频、后台保活。
+- `packages/shared`：跨端类型、i18n 文案、provider 接口、TTS 能力表。
+- `packages/session-core`：平台无关的轮次生命周期和工作流状态机。
+- `packages/api-client`：Web 和 Mobile 共用的类型化 API 客户端。
 
 ## 项目结构
 
-详见 `docs/project-structure.md`。这里描述了当前仓库如何通过分层让结构看起来像前后端分离。
+```text
+MeteorVoice/
+├── apps/
+│   ├── web/                  Next.js Web 应用
+│   │   ├── app/              页面和 API 路由
+│   │   ├── components/       可复用 UI 组件
+│   │   └── lib/
+│   │       ├── providers/    TTS / STT / AI 适配层
+│   │       └── server/       服务端业务逻辑
+│   └── mobile/               Expo React Native 应用
+├── packages/
+│   ├── shared/               类型、i18n、provider 接口
+│   ├── session-core/         轮次生命周期和工作流
+│   └── api-client/           类型化 API 客户端
+├── supabase/migrations/      按序执行的 SQL 迁移文件
+└── docs/                     产品和架构文档
+```
+
+分层规则和架构决策详见 `docs/project-structure.md`。
+
+## 安装
+
+### 1. 安装依赖
+
+```bash
+npm install
+```
+
+### 2. 创建 Supabase 项目
+
+在 [supabase.com](https://supabase.com) 创建免费项目，然后在 SQL Editor 中按顺序执行：
+
+```text
+supabase/migrations/001_init.sql
+supabase/migrations/002_rls.sql
+supabase/migrations/003_tts_preferences.sql
+```
+
+### 3. 配置环境变量
+
+```bash
+cd apps/web
+cp .env.local.example .env.local
+```
+
+填入：
+
+```text
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+DEEPSEEK_API_KEY=your-deepseek-api-key        # 可选，不填则使用 mock AI
+```
+
+TTS 服务商密钥（均可选，不填则使用 mock TTS）：
+
+```text
+XUNFEI_APP_ID=
+XUNFEI_API_KEY=
+XUNFEI_API_SECRET=
+VOLCENGINE_ACCESS_KEY=
+VOLCENGINE_SECRET_KEY=
+TENCENT_SECRET_ID=
+TENCENT_SECRET_KEY=
+```
+
+### 4. 配置 Supabase 认证
+
+在 Supabase 控制台 Authentication → URL Configuration 中：
+
+- Site URL：`http://127.0.0.1:3001`
+- Redirect URLs：`http://127.0.0.1:3001/**`
 
 ## 运行
 
 ```bash
+cd apps/web
 npm run dev
 ```
 
 打开 `http://127.0.0.1:3001`
 
+不配置任何 API Key 也能以 mock 模式完整运行。真实 AI 回复需要 `DEEPSEEK_API_KEY`，真实语音输出需要至少一个 TTS 服务商密钥。
+
+## 移动端
+
+移动端基于 Expo React Native，支持 iOS 和 Android。
+
+### 本地构建（需要 Mac + Xcode）
+
+```bash
+cd apps/mobile
+npx expo run:ios
+```
+
+### EAS 云端构建
+
+```bash
+npm install -g eas-cli
+eas login
+cd apps/mobile
+eas build --platform ios --profile preview
+```
+
+`preview` profile 生成可通过 Xcode → Devices 直接安装的 `.ipa`，无需提交 App Store。
+
+后台音频保活已在 `app.json` 中启用（`UIBackgroundModes: audio`）。此功能需要 EAS 构建或本地 Xcode 构建，Expo Go 中无法测试。
+
+在 `apps/mobile/app.json` 中配置 API 地址：
+
+```json
+"extra": {
+  "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
+  "apiBaseUrlPreview": "https://meteorvoice-pre.jcmeteor.com"
+}
+```
+
+## TTS 服务商
+
+国内用户推荐使用以下服务商：
+
+| 服务商 | Key | 说明 |
+|--------|-----|------|
+| 讯飞 | `xunfei` | 推荐首选 |
+| 火山引擎 | `volcengine` | 字节跳动 TTS |
+| 腾讯云 | `tencent` | 备选方案 |
+| Mock / 浏览器 | `mock` | 默认，无需密钥 |
+
+用户选择的服务商保存在 Supabase 中，服务商密钥只存在服务端环境变量里。
+
+详见 `docs/tts-integration.md`。
+
 ## 验证
 
 ```bash
-npm run build
-npm test
+npx vitest run   # 单元测试
+npm run build    # 生产构建检查
 ```
 
-## 说明
+## Roadmap
 
-- `DEEPSEEK_API_KEY` 可选。
-- 没有真实 AI 或语音密钥时，mock provider 也能运行。
+```mermaid
+flowchart LR
+    MVP[MVP<br/>语音循环 / 纠错 / TTS / Web + 移动端]
+    Polish[打磨<br/>语音质量 / 对话自然度 / 会话体验]
+    Distribution[分发<br/>TestFlight 内测 / EAS 正式构建]
+    Growth[增长<br/>更多场景 / 留存功能 / 社交]
+
+    MVP --> Polish --> Distribution --> Growth
+```

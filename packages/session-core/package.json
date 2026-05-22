@@ -1,0 +1,14 @@
+{
+  "name": "@meteorvoice/session-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./turn-guard": "./src/turn-guard.ts",
+    "./workflow": "./src/workflow.ts"
+  },
+  "dependencies": {
+    "@meteorvoice/shared": "file:../shared"
+  }
+}
