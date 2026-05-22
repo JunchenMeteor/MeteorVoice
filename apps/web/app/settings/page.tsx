@@ -5,7 +5,7 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
-import type { Locale } from '@/lib/i18n'
+import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
 

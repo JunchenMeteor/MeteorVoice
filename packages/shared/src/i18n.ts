@@ -1,6 +1,4 @@
-export type { Locale } from '@meteorvoice/shared'
-
-import type { Locale } from '@meteorvoice/shared'
+import type { Locale } from './locale'
 
 export const t: Record<Locale, Record<string, string>> = {
   en: {
