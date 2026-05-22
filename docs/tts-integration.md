@@ -16,7 +16,7 @@ The app supports runtime provider switching:
 
 - Settings page: choose `Mock / Browser`, `Xunfei`, `Volcengine`, or `Tencent Cloud`
 - Server route: `POST /api/tts`
-- Provider factory: `lib/providers/server-tts.ts`
+- Provider adapters: `apps/web/lib/providers/*`
 - User preference storage: `theme_preferences.tts_provider`
 
 Provider keys stay on the server. The browser only sends the selected provider name.
@@ -138,6 +138,12 @@ Current conservative mapping:
 | Xunfei | American only |
 | Volcengine | American only |
 | Tencent Cloud | American only |
+
+## Future Accent Direction
+
+Provider voice IDs SHOULD be hidden behind product-level voice profiles. The long-term voice profile model is tracked in `docs/architecture-productization-roadmap.md`.
+
+Do not expose provider voice IDs directly in UI. A user should choose a meaningful profile such as American coach, British interview, or Australian casual, while the app maps that choice to provider-specific capabilities.
 
 Open additional accents only after the exact provider voice IDs are confirmed and tested.
 
