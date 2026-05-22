@@ -207,6 +207,7 @@ export function VoiceWaveform({ mode, level, label, variant = 'panel' }: VoiceWa
           background: var(--voice-waveform-color);
           opacity: var(--voice-waveform-opacity);
           transform-origin: center;
+          will-change: transform;
           transition:
             height 180ms ease,
             opacity 180ms ease,

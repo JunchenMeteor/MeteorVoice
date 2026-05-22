@@ -204,6 +204,7 @@ export function SessionPageClient() {
       <div className="lg:hidden relative flex min-h-[100dvh] flex-col overflow-hidden px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4">
         <div className="pointer-events-none absolute inset-0" style={{
           background: 'radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--theme-accent) 14%, transparent), transparent 38%)',
+          willChange: 'transform',
         }} />
 
         <header className="relative z-10 flex min-h-10 items-start justify-between gap-3 pl-[4.5rem]">
