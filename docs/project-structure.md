@@ -4,7 +4,7 @@
 
 Keep the repository in one product workspace while making Web, API, shared business contracts, and future native mobile code clearly separated.
 
-The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `packages/*`. Future native mobile and Web changes SHOULD follow `docs/native-mobile-architecture-plan.md`.
+The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `packages/*`. Future native mobile and Web productization changes SHOULD follow `docs/architecture-productization-roadmap.md`.
 
 ## Layering Rules
 
@@ -40,12 +40,25 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
 
 - Page components should not hold provider logic.
 - API routes should call provider and persistence helpers, not inline heavy logic.
-- Keep AI orchestration in `lib/server/*`, not inside route handlers.
-- Shared data contracts should live in `lib/shared` or current shared modules.
+- Keep AI orchestration in `apps/web/lib/server/*`, not inside route handlers.
+- Shared data contracts should live in `packages/shared`, `packages/api-client`, or `packages/session-core`.
 - Frontend settings should read/write through API routes, not direct database access.
 - Secrets stay server-side only.
 - Native mobile code must not import Web UI, Next route handlers, server-only providers, DOM APIs, or browser storage helpers.
-- Cross-client code should move toward `packages/shared`, `packages/api-client`, and `packages/session-core` instead of being copied into `apps/mobile`.
+- Cross-client code should live in `packages/shared`, `packages/api-client`, and `packages/session-core` instead of being copied into `apps/mobile`.
+
+## Productization Backlog
+
+The current architecture skeleton is complete, but productization is not finished. Use `docs/architecture-productization-roadmap.md` for the next execution plan.
+
+Highest-priority improvements:
+
+- Clean remaining historical docs so only current paths guide AI work.
+- Add workspace scripts for Web lint/build, Mobile config/typecheck, and package tests.
+- Stabilize API DTOs for scenarios, accents, preferences, history, session turns, and review.
+- Move more platform-neutral session transition rules into `packages/session-core`.
+- Harden native mobile speech input, native playback, preferences sync, and audio QA.
+- Upgrade accent support from provider labels to explicit voice profiles and capability matrix.
 
 ## Architecture Decisions and Future Directions
 
@@ -61,13 +74,15 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
 - Do not create a WebView shell as the mobile app; it would preserve the browser/WebKit limitations that native mobile is meant to avoid.
 - Do not move Web files back to the repository root after the `apps/web` migration.
 
-## Migration Strategy
+## Migration Status
 
-The clean path is incremental:
+The Web migration is complete on `main`. The historical incremental path was:
 
 1. Add `packages/shared` for stable types/config that have no React/Next/server dependency.
 2. Add `packages/api-client` so Mobile can call existing Next APIs without depending on Web internals.
 3. Add `apps/mobile` as an Expo React Native native client probe.
 4. Add `packages/session-core` and move platform-neutral turn lifecycle rules out of `VoiceSessionProvider`.
-5. Move `app/`, `components/`, `lib/`, Web config, and public assets to `apps/web`.
+5. Move `app/`, `components/`, `lib/`, Web config, and public assets to `apps/web`. Completed.
 6. Keep Supabase migrations in place until the backend is fully replaced or intentionally extracted.
+
+New work MUST not recreate root-level Web app directories. Use `docs/architecture-productization-roadmap.md` for the next productization phases.

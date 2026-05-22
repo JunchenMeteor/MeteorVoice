@@ -14,13 +14,24 @@
 
 参考 `docs/project-structure.md`。核心约束如下：
 
-- `app/` MUST 只放页面和 route handlers。
-- `components/` MUST 只放可复用 UI。
-- `lib/server/` MUST 放 server-only 业务逻辑、provider orchestration 和请求处理辅助逻辑。
-- `lib/shared/` SHOULD 放前后端共享类型、常量和校验。
-- `lib/providers/` MUST 隔离 STT/TTS/AI provider 适配逻辑。
+- `apps/web/app/` MUST 只放 Web 页面和 route handlers。
+- `apps/web/components/` MUST 只放 Web 可复用 UI。
+- `apps/web/lib/server/` MUST 放 server-only 业务逻辑、provider orchestration 和请求处理辅助逻辑。
+- `packages/shared/` SHOULD 放跨端共享类型、常量、i18n 和基础校验。
+- `apps/web/lib/providers/` MUST 隔离 Web/API 侧 STT/TTS/AI provider 适配逻辑。
 - `docs/` MUST 只放产品、实施和协作资料。
 - Secrets MUST 只存在 server-side 环境变量中，禁止进入客户端代码或文档示例中的真实值。
+
+当前 monorepo 路径约束：
+
+- Web 页面和 route handlers MUST 放在 `apps/web/app/`。
+- Web reusable UI MUST 放在 `apps/web/components/`。
+- Web server-only 业务逻辑 MUST 放在 `apps/web/lib/server/`。
+- Web provider adapters MUST 放在 `apps/web/lib/providers/`。
+- Native mobile code MUST 放在 `apps/mobile/`，禁止 import `apps/web/*`。
+- 跨端 i18n、scenario、accent、speech capability 和基础类型 SHOULD 放在 `packages/shared/`。
+- 跨端 API client SHOULD 放在 `packages/api-client/`。
+- 平台无关 session/turn lifecycle SHOULD 放在 `packages/session-core/`。
 
 ## Issue 规则
 
@@ -79,11 +90,11 @@ Closes #48
 - 禁止把 `release` 当作日常开发分支。
 - 发布版本 SHOULD 使用 tag 表达，例如 `v0.1.0`，不要为每个版本创建长期 release 分支。
 - 日期或版本分支 MAY 用于短期 hotfix 或候选发布，例如 `release/v0.1.1-rc`，完成后 SHOULD 删除。
-- `dev/architecture/native-mobile` 是 native mobile 架构升级长期集成分支，阶段分支 SHOULD 先合回该分支；可运行里程碑再合入 `main`。
+- `dev/architecture/native-mobile` 曾用于 native mobile 架构升级长期集成。当前双端架构骨架已合入 `main`，新的产品化阶段 SHOULD 以 `docs/architecture-productization-roadmap.md` 为准；如用户要求重启长期架构分支，再按任务创建。
 
 ## 多语言和文案规则
 
-- UI 文案 MUST 支持中文和英文，默认通过现有 i18n 机制集中管理。
+- UI 文案 MUST 支持中文和英文，默认通过 `packages/shared/src/i18n.ts` 集中管理。
 - 会话内容 MAY 以英语为主，因为产品目标是英语口语练习；导航、状态、错误和设置文案 MUST 可本地化。
 - Scenario、accent、difficulty、status、correction type、provider label SHOULD 使用本地化 helper 渲染，不直接暴露 raw enum。
 - 禁止向用户展示内部 UUID、relation id、内部邮箱别名或数据库字段名。
