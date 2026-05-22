@@ -1,8 +1,8 @@
 'use client'
 
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import type { Locale } from '@/lib/i18n'
-import { t } from '@/lib/i18n'
+import type { Locale } from '@meteorvoice/shared'
+import { t } from '@meteorvoice/shared'
 
 const LangContext = createContext<{
   locale: Locale

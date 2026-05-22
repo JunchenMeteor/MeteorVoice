@@ -31,10 +31,9 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
 - Provider adapters:
   - `apps/web/lib/providers/*`
 - Shared surface:
-  - `packages/shared/*`
+  - `packages/shared/*` (includes i18n, locale, scenarios, speech, conversation types)
   - `packages/api-client/*`
   - `packages/session-core/*`
-  - `apps/web/lib/i18n.ts`
   - `apps/web/lib/auth/*`
 
 ## Keep It Looking Split
@@ -47,6 +46,12 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
 - Secrets stay server-side only.
 - Native mobile code must not import Web UI, Next route handlers, server-only providers, DOM APIs, or browser storage helpers.
 - Cross-client code should move toward `packages/shared`, `packages/api-client`, and `packages/session-core` instead of being copied into `apps/mobile`.
+
+## Architecture Decisions and Future Directions
+
+- **TTS/STT provider interfaces**: `TTSProvider`, `STTProvider`, `ttsProviderCapabilities`, and `supportsAccent` live in `packages/shared/src/speech.ts` and are available to both Web and Mobile. Concrete adapters (Tencent, Volcengine, Xunfei) remain in `apps/web/lib/providers/` as server-side implementations; Mobile calls them via API. To add a native or offline TTS implementation on Mobile, implement `TTSProvider` from `@meteorvoice/shared` directly in `apps/mobile` — no architecture change needed.
+- **Background audio keep-alive**: iOS `AVAudioSession` management and Android `ForegroundService` are platform-specific and MUST live in `apps/mobile` only. Do not add background lifecycle logic to `packages/session-core` — that package stays platform-neutral.
+- **i18n**: All UI string translations live in `packages/shared/src/i18n.ts` and are shared by Web and Mobile. Do not add translation strings directly in `apps/web` or `apps/mobile`.
 
 ## What Not to Do
 
