@@ -10,7 +10,10 @@ import type {
   GenerateCoachReplyResponse,
   GenerateSummaryRequest,
   GenerateSummaryResponse,
+  ListAccentsResponse,
   ListHistoryResponse,
+  ListScenariosResponse,
+  ListSessionTurnsResponse,
   PreferencesResponse,
   SynthesizeSpeechRequest,
   SynthesizeSpeechResponse,
@@ -62,6 +65,19 @@ export class MeteorVoiceApiClient {
     })
   }
 
+  listScenarios(locale?: 'en' | 'zh') {
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : ''
+    return this.request<ListScenariosResponse>(`/api/scenarios${query}`)
+  }
+
+  listAccents(input: { locale?: 'en' | 'zh'; provider?: string } = {}) {
+    const params = new URLSearchParams()
+    if (input.locale) params.set('locale', input.locale)
+    if (input.provider) params.set('provider', input.provider)
+    const query = params.toString()
+    return this.request<ListAccentsResponse>(`/api/accents${query ? `?${query}` : ''}`)
+  }
+
   synthesizeSpeech(input: SynthesizeSpeechRequest) {
     return this.request<SynthesizeSpeechResponse>('/api/tts', {
       method: 'POST',
@@ -99,6 +115,10 @@ export class MeteorVoiceApiClient {
 
   listHistory() {
     return this.request<ListHistoryResponse>('/api/history')
+  }
+
+  listSessionTurns(sessionId: string) {
+    return this.request<ListSessionTurnsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/turns`)
   }
 
   createTurn(input: CreateTurnRequest) {

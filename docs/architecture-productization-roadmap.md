@@ -14,6 +14,15 @@
 
 当前状态不是临时拼接，但还不是完整移动端产品化。后续目标是把 mobile 从“业务探针”推进到“可持续迭代的 native client”，同时让 Web/API/session-core 的边界更加稳定。
 
+## 当前实施进度
+
+- Phase A 文档收口已完成：当前入口指向 monorepo 路径，已完成计划移动到 `docs/archive/plans/`。
+- Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`。
+- Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
+- Phase D session-core 已完成第一轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session 和 playback block 规则。
+- Phase E mobile 产品化已完成第一轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。
+- Phase F 尚未开始，按用户要求暂不做。
+
 ## 优先级顺序
 
 后续工作 SHOULD 按以下顺序推进，除非用户明确要求先处理线上 bug：

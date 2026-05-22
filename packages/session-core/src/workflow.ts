@@ -69,3 +69,70 @@ export function snapshotSummary(snapshot: WorkflowSnapshot) {
     hasPendingCorrections: snapshot.lastCorrections.length > 0,
   }
 }
+
+export type SessionNextAction =
+  | 'wait_for_start'
+  | 'listen'
+  | 'transcribe'
+  | 'request_reply'
+  | 'play_reply'
+  | 'show_corrections'
+  | 'ended'
+  | 'blocked'
+
+export function getNextSessionAction(input: {
+  activeSession: boolean
+  canListenOnRoute: boolean
+  workflowState: WorkflowState
+}): SessionNextAction {
+  if (input.workflowState === 'session_ended') return 'ended'
+  if (!input.activeSession) return 'wait_for_start'
+  if (!input.canListenOnRoute && input.workflowState === 'listening') return 'blocked'
+
+  switch (input.workflowState) {
+    case 'idle':
+      return input.canListenOnRoute ? 'listen' : 'blocked'
+    case 'correcting':
+      return 'show_corrections'
+    case 'listening':
+      return 'transcribe'
+    case 'transcribing':
+      return 'request_reply'
+    case 'thinking':
+      return 'request_reply'
+    case 'speaking':
+      return 'play_reply'
+    default:
+      return 'blocked'
+  }
+}
+
+export function canAcceptUserTranscript(input: {
+  activeSession: boolean
+  canListenOnRoute: boolean
+  workflowState: WorkflowState
+  transcript?: string | null
+}) {
+  return Boolean(
+    input.activeSession &&
+    input.canListenOnRoute &&
+    input.transcript?.trim() &&
+    (input.workflowState === 'listening' || input.workflowState === 'idle' || input.workflowState === 'correcting'),
+  )
+}
+
+export function shouldIgnoreNoSpeech(input: {
+  activeSession: boolean
+  workflowState: WorkflowState
+  transcript?: string | null
+}) {
+  return input.activeSession && input.workflowState === 'listening' && !input.transcript?.trim()
+}
+
+export function shouldRestoreListeningAfterPlayback(input: {
+  activeSession: boolean
+  canListenOnRoute: boolean
+  workflowState: WorkflowState
+}) {
+  return input.activeSession && input.canListenOnRoute && input.workflowState === 'speaking'
+}

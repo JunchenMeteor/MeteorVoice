@@ -61,3 +61,12 @@ npm run mobile:android
   - session-core 继续抽离。
   - Mobile 语音闭环产品化。
   - 口音与语音能力专项。
+
+## 产品化推进记录
+
+- 已补齐第一轮 workspace 验证脚本和 Mobile typecheck 配置。
+- 已新增 API DTO/routes：scenarios、accents、session turn detail。
+- Preferences API 已扩展 locale、默认 scenario/accent 和 TTS speed，并配套 Supabase migration。
+- Mobile 已接入新增 API，用于远端场景/口音能力、默认练习设置保存和历史 turn detail 查看。
+- session-core 已新增平台无关 next action、no-speech、playback restore 和 end-session 判断。
+- 口音与语音能力专项仍未开始。

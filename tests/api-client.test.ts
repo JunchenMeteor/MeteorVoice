@@ -49,4 +49,41 @@ describe('MeteorVoiceApiClient', () => {
 
     expect(new Headers(calls[0].init?.headers).get('Authorization')).toBe('Bearer mobile-token')
   })
+
+  it('lists productized scenarios and accents with query parameters', async () => {
+    const calls: string[] = []
+    const client = createMeteorVoiceApiClient({
+      baseUrl: 'https://example.com',
+      fetch: async input => {
+        calls.push(String(input))
+        return new Response(JSON.stringify({ scenarios: [], accents: [], provider: 'mock', available_providers: ['mock'] }), {
+          status: 200,
+        })
+      },
+    })
+
+    await client.listScenarios('zh')
+    await client.listAccents({ locale: 'en', provider: 'mock' })
+
+    expect(calls).toEqual([
+      'https://example.com/api/scenarios?locale=zh',
+      'https://example.com/api/accents?locale=en&provider=mock',
+    ])
+  })
+
+  it('loads turn details through a stable session route', async () => {
+    const calls: string[] = []
+    const client = createMeteorVoiceApiClient({
+      baseUrl: 'https://example.com',
+      fetch: async input => {
+        calls.push(String(input))
+        return new Response(JSON.stringify({ session_id: 's 1', turns: [] }), { status: 200 })
+      },
+    })
+
+    const result = await client.listSessionTurns('s 1')
+
+    expect(result.turns).toEqual([])
+    expect(calls[0]).toBe('https://example.com/api/sessions/s%201/turns')
+  })
 })

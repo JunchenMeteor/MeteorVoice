@@ -37,3 +37,17 @@ export function shouldPauseForRouteExit(input: {
 }) {
   return input.activeSession && input.workflowState === 'listening'
 }
+
+export function shouldBlockUserInputDuringPlayback(input: {
+  activeSession: boolean
+  workflowState: WorkflowState
+}) {
+  return input.activeSession && input.workflowState === 'speaking'
+}
+
+export function canEndSession(input: {
+  activeSession: boolean
+  workflowState: WorkflowState
+}) {
+  return input.activeSession && input.workflowState !== 'session_ended'
+}
