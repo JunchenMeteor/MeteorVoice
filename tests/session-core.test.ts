@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canAcceptUserTranscript,
   canContinueListening,
+  canEndSession,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
+  getNextSessionAction,
+  shouldBlockUserInputDuringPlayback,
+  shouldIgnoreNoSpeech,
   shouldPauseForRouteExit,
+  shouldRestoreListeningAfterPlayback,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
 
@@ -78,5 +84,48 @@ describe('session-core turn guard helpers', () => {
     expect(shouldResumeListeningOnRoute({ activeSession: true, workflowState: 'idle' })).toBe(true)
     expect(shouldResumeListeningOnRoute({ activeSession: true, workflowState: 'correcting' })).toBe(true)
     expect(shouldResumeListeningOnRoute({ activeSession: true, workflowState: 'speaking' })).toBe(false)
+  })
+
+  it('describes next session actions from workflow state', () => {
+    expect(getNextSessionAction({ activeSession: false, canListenOnRoute: true, workflowState: 'idle' })).toBe('wait_for_start')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'idle' })).toBe('listen')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'listening' })).toBe('transcribe')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'thinking' })).toBe('request_reply')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'speaking' })).toBe('play_reply')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'correcting' })).toBe('show_corrections')
+    expect(getNextSessionAction({ activeSession: true, canListenOnRoute: true, workflowState: 'session_ended' })).toBe('ended')
+  })
+
+  it('accepts real transcripts only in input-ready states', () => {
+    expect(canAcceptUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'listening',
+      transcript: 'hello',
+    })).toBe(true)
+
+    expect(canAcceptUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'speaking',
+      transcript: 'hello',
+    })).toBe(false)
+
+    expect(shouldIgnoreNoSpeech({
+      activeSession: true,
+      workflowState: 'listening',
+      transcript: '   ',
+    })).toBe(true)
+  })
+
+  it('blocks user input during playback and restores listening after playback', () => {
+    expect(shouldBlockUserInputDuringPlayback({ activeSession: true, workflowState: 'speaking' })).toBe(true)
+    expect(shouldRestoreListeningAfterPlayback({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'speaking',
+    })).toBe(true)
+    expect(canEndSession({ activeSession: true, workflowState: 'speaking' })).toBe(true)
+    expect(canEndSession({ activeSession: true, workflowState: 'session_ended' })).toBe(false)
   })
 })

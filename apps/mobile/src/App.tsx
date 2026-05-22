@@ -9,8 +9,22 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { createMeteorVoiceApiClient, MeteorVoiceApiError, type HistorySession } from '@meteorvoice/api-client'
-import { createInitialSnapshot, transition, type WorkflowSnapshot } from '@meteorvoice/session-core'
+import {
+  createMeteorVoiceApiClient,
+  MeteorVoiceApiError,
+  type AccentDto,
+  type HistorySession,
+  type ScenarioDto,
+  type SessionTurnDto,
+} from '@meteorvoice/api-client'
+import {
+  canAcceptUserTranscript,
+  canEndSession,
+  createInitialSnapshot,
+  getNextSessionAction,
+  transition,
+  type WorkflowSnapshot,
+} from '@meteorvoice/session-core'
 import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
@@ -32,10 +46,13 @@ export default function App() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([])
   const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
+  const [selectedHistoryTurns, setSelectedHistoryTurns] = useState<SessionTurnDto[]>([])
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [remoteScenarios, setRemoteScenarios] = useState<ScenarioDto[]>([])
+  const [remoteAccents, setRemoteAccents] = useState<AccentDto[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-probe'))
@@ -57,6 +74,11 @@ export default function App() {
   }), [apiBaseUrl, auth.getAuthHeaders])
   const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
   const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
+  const sessionAction = getNextSessionAction({
+    activeSession: isSessionActive,
+    canListenOnRoute: true,
+    workflowState: snapshot.state,
+  })
 
   function startSession() {
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
@@ -72,7 +94,16 @@ export default function App() {
 
   async function runTurn() {
     const transcript = input.trim()
-    if (!transcript || busy || audio.isRecording || !isSessionActive || snapshot.state === 'session_ended') return
+    if (
+      busy ||
+      audio.isRecording ||
+      !canAcceptUserTranscript({
+        activeSession: isSessionActive,
+        canListenOnRoute: true,
+        workflowState: snapshot.state,
+        transcript,
+      })
+    ) return
 
     const userMessage: ConversationMessage = { role: 'user', content: transcript }
     const nextMessages = [...messages, userMessage]
@@ -195,6 +226,7 @@ export default function App() {
       const result = await api.listHistory()
       setHistorySessions(result.sessions)
       setSelectedHistory(result.sessions[0] ?? null)
+      setSelectedHistoryTurns([])
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -207,6 +239,22 @@ export default function App() {
     }
   }
 
+  async function selectHistorySession(item: HistorySession) {
+    setSelectedHistory(item)
+    setSelectedHistoryTurns([])
+    try {
+      const result = await api.listSessionTurns(item.id)
+      setSelectedHistoryTurns(result.turns)
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Turn detail request failed'
+      setHistoryError(message)
+    }
+  }
+
   async function loadPreferences() {
     if (settingsLoading) return
 
@@ -216,6 +264,15 @@ export default function App() {
       const preferences = await api.getPreferences()
       setTtsProvider(preferences.tts_provider ?? 'mock')
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
+      setTtsSpeed(preferences.tts_speed ?? 1)
+      if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
+      if (preferences.default_accent_key) setSelectedAccentKey(preferences.default_accent_key)
+      const [scenarioResult, accentResult] = await Promise.all([
+        api.listScenarios(preferences.locale ?? 'en'),
+        api.listAccents({ locale: preferences.locale ?? 'en', provider: preferences.tts_provider ?? 'mock' }),
+      ])
+      setRemoteScenarios(scenarioResult.scenarios)
+      setRemoteAccents(accentResult.accents)
       setSettingsMessage('Preferences loaded')
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
@@ -234,9 +291,40 @@ export default function App() {
     setSettingsLoading(true)
     setSettingsMessage(null)
     try {
-      const result = await api.updatePreferences({ tts_provider: provider })
+      const result = await api.updatePreferences({
+        tts_provider: provider,
+        default_scenario_key: selectedScenarioKey,
+        default_accent_key: selectedAccentKey,
+        tts_speed: ttsSpeed,
+      })
       setTtsProvider(result.tts_provider)
+      setTtsSpeed(result.tts_speed)
       setSettingsMessage('Preferences saved')
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error
+          ? error.message
+          : 'Preferences save failed'
+      setSettingsMessage(message)
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  async function savePracticePreferences() {
+    setSettingsLoading(true)
+    setSettingsMessage(null)
+    try {
+      const result = await api.updatePreferences({
+        tts_provider: ttsProvider,
+        default_scenario_key: selectedScenarioKey,
+        default_accent_key: selectedAccentKey,
+        tts_speed: ttsSpeed,
+      })
+      setTtsProvider(result.tts_provider)
+      setTtsSpeed(result.tts_speed)
+      setSettingsMessage('Practice defaults saved')
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -263,7 +351,7 @@ export default function App() {
   }
 
   async function endSession() {
-    if (!isSessionActive || busy) return
+    if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
 
     setBusy(true)
     try {
@@ -353,6 +441,7 @@ export default function App() {
           <Text style={styles.metaLabel}>Scenario</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
             {scenarios.map(item => {
+              const remoteScenario = remoteScenarios.find(remote => remote.key === item.key)
               const active = item.key === scenario.key
               return (
                 <Pressable
@@ -361,7 +450,9 @@ export default function App() {
                   style={[styles.optionCard, active && styles.optionCardActive]}
                 >
                   <Text style={styles.optionIcon}>{item.icon}</Text>
-                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.name}</Text>
+                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
+                    {remoteScenario?.label ?? item.name}
+                  </Text>
                   <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.difficulty}</Text>
                 </Pressable>
               )
@@ -371,6 +462,7 @@ export default function App() {
           <Text style={styles.metaLabel}>Accent</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
             {accentProfiles.map(item => {
+              const remoteAccent = remoteAccents.find(remote => remote.key === item.key)
               const active = item.key === accent.key
               return (
                 <Pressable
@@ -378,8 +470,12 @@ export default function App() {
                   onPress={() => selectAccent(item.key)}
                   style={[styles.accentChip, active && styles.optionCardActive]}
                 >
-                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.name}</Text>
-                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.region}</Text>
+                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
+                    {remoteAccent?.label ?? item.name}
+                  </Text>
+                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>
+                    {remoteAccent?.supported === false ? 'Unavailable' : item.region}
+                  </Text>
                 </Pressable>
               )
             })}
@@ -486,7 +582,7 @@ export default function App() {
                 return (
                   <Pressable
                     key={String(item.id)}
-                    onPress={() => setSelectedHistory(item)}
+                    onPress={() => void selectHistorySession(item)}
                     style={[styles.historyCard, active && styles.optionCardActive]}
                   >
                     <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.scenario}</Text>
@@ -508,6 +604,11 @@ export default function App() {
               <Text style={styles.optionMeta}>
                 Status: {String(selectedHistory.status)}
               </Text>
+              {selectedHistoryTurns.length > 0 && (
+                <Text style={styles.optionMeta}>
+                  Turns: {selectedHistoryTurns.length} · Latest {selectedHistoryTurns[selectedHistoryTurns.length - 1].speaker}
+                </Text>
+              )}
             </View>
           )}
         </View>
@@ -547,6 +648,9 @@ export default function App() {
             <Text style={styles.speedValue}>{ttsSpeed.toFixed(1)}x</Text>
             <Pressable onPress={() => adjustSpeed(0.1)} style={styles.smallButtonMuted}>
               <Text style={styles.smallButtonMutedText}>Faster</Text>
+            </Pressable>
+            <Pressable disabled={settingsLoading} onPress={savePracticePreferences} style={styles.smallButton}>
+              <Text style={styles.smallButtonText}>Save setup</Text>
             </Pressable>
           </View>
           {settingsMessage && <Text style={styles.authHint}>{settingsMessage}</Text>}
@@ -595,7 +699,7 @@ export default function App() {
 
         <View style={styles.stage}>
           <Text style={styles.status}>{status}</Text>
-          <Text style={styles.audioState}>Session: {snapshot.state} · Turn {snapshot.turnNumber}</Text>
+          <Text style={styles.audioState}>Session: {snapshot.state} · Next {sessionAction} · Turn {snapshot.turnNumber}</Text>
           <Text style={styles.audioState}>
             Audio: {audio.phase} · Mic: {audio.permission} · {Math.round(audio.durationMillis / 1000)}s
           </Text>

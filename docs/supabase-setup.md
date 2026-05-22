@@ -5,6 +5,7 @@
 - `supabase/migrations/001_init.sql` creates the core schema and seed data.
 - `supabase/migrations/002_rls.sql` enables row-level security and user-owned access policies.
 - `supabase/migrations/003_tts_preferences.sql` adds the per-user TTS provider preference.
+- `supabase/migrations/004_productized_preferences.sql` adds locale, default scenario/accent, and TTS speed preferences for Web/Mobile sync.
 - The app uses Supabase Auth with a MeteorTest-style username/phone account input.
 
 ## Username + Phone Login Mode
@@ -39,8 +40,9 @@ This gives you a single login surface with two formal account types:
 2. Run `001_init.sql`.
 3. Run `002_rls.sql`.
 4. Run `003_tts_preferences.sql`.
-5. Copy the project URL and anon key into `.env.local`.
-6. Set Authentication redirect URLs for local development.
+5. Run `004_productized_preferences.sql`.
+6. Copy the project URL and anon key into `.env.local`.
+7. Set Authentication redirect URLs for local development.
 
 ## What the RLS Policies Do
 
@@ -48,6 +50,7 @@ This gives you a single login surface with two formal account types:
 - Turns and correction items are only accessible through the owner session.
 - Learning history and theme preferences are user-scoped.
 - The selected TTS provider is stored on `theme_preferences.tts_provider` and protected by the same user-owned policy.
+- Locale, default scenario/accent, and TTS speed are stored on `theme_preferences` and protected by the same user-owned policy.
 - Accent profiles and scenarios are readable by authenticated users.
 
 ## Notes on Admin Accounts
