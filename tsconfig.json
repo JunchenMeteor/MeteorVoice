@@ -19,15 +19,21 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@meteorvoice/api-client": ["./packages/api-client/src/index.ts"],
+      "@meteorvoice/api-client/*": ["./packages/api-client/src/*"],
+      "@meteorvoice/session-core": ["./packages/session-core/src/index.ts"],
+      "@meteorvoice/session-core/*": ["./packages/session-core/src/*"],
+      "@meteorvoice/shared": ["./packages/shared/src/index.ts"],
+      "@meteorvoice/shared/*": ["./packages/shared/src/*"],
+      "@/*": ["./apps/web/*"]
     }
   },
   "include": [
-    "next-env.d.ts",
+    "apps/web/next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
+    "apps/web/.next/types/**/*.ts",
+    "apps/web/.next/dev/types/**/*.ts",
     "**/*.mts"
   ],
   "exclude": ["node_modules"]

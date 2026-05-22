@@ -1,0 +1,13 @@
+{
+  "name": "@meteorvoice/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@meteorvoice/shared": "file:../shared"
+  }
+}
