@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -29,6 +29,7 @@ import { accentProfiles, scenarios, type ConversationMessage, type ConversationR
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
+import { useNativeSpeech } from './nativeSpeech'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
 type SessionTab = 'corrections' | 'transcript'
@@ -92,8 +93,8 @@ export default function App() {
     setStatus('Listening')
   }
 
-  async function runTurn() {
-    const transcript = input.trim()
+  const submitTurn = useCallback(async (sourceTranscript: string) => {
+    const transcript = sourceTranscript.trim()
     if (
       busy ||
       audio.isRecording ||
@@ -146,16 +147,16 @@ export default function App() {
       setSnapshot(nextSnapshot)
 
       setStatus('Requesting coach voice')
-      const speech = await api.synthesizeSpeech({
+      const voice = await api.synthesizeSpeech({
         text: coachReply.text,
         accent: accent.name,
         provider: ttsProvider,
         speed: ttsSpeed,
       })
 
-      if (speech.audioUrl) {
+      if (voice.audioUrl) {
         setStatus('Playing coach reply')
-        setAudioUrl(speech.audioUrl)
+        setAudioUrl(voice.audioUrl)
       } else {
         setStatus('Coach reply received without audio')
       }
@@ -171,6 +172,51 @@ export default function App() {
     } finally {
       setBusy(false)
     }
+  }, [
+    accent.name,
+    accent.region,
+    api,
+    audio.isRecording,
+    busy,
+    isSessionActive,
+    messages,
+    scenario.description,
+    scenario.name,
+    snapshot,
+    ttsProvider,
+    ttsSpeed,
+  ])
+
+  const handleNativeFinalTranscript = useCallback((finalTranscript: string) => {
+    const transcript = finalTranscript.trim()
+    if (!transcript) return
+
+    setInput(transcript)
+
+    if (!isSessionActive) {
+      setStatus('Speech captured. Start a session to send it.')
+      return
+    }
+
+    void submitTurn(transcript)
+  }, [isSessionActive, submitTurn])
+
+  const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
+
+  async function runTurn() {
+    await submitTurn(input)
+  }
+
+  async function toggleNativeSpeech() {
+    if (speech.isListening) {
+      speech.stopListening()
+      setStatus('Finalizing speech')
+      return
+    }
+
+    if (busy || audio.isPlaying || audio.isRecording) return
+    const started = await speech.startListening()
+    setStatus(started ? 'Listening with native speech' : 'Native speech unavailable')
   }
 
   async function toggleRecording() {
@@ -695,6 +741,25 @@ export default function App() {
           ]}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send turn</Text>}
           </Pressable>
+          <Pressable
+            disabled={busy || audio.isPlaying || audio.isRecording}
+            onPress={toggleNativeSpeech}
+            style={({ pressed }) => [
+              styles.secondaryInputButton,
+              speech.isListening && styles.nativeSpeechButtonActive,
+              (busy || audio.isPlaying || audio.isRecording) && styles.buttonDisabled,
+              pressed && !busy && !audio.isPlaying && !audio.isRecording && styles.buttonPressed,
+            ]}
+          >
+            <Text style={styles.secondaryInputButtonText}>
+              {speech.isListening ? 'Stop native speech' : 'Speak instead'}
+            </Text>
+          </Pressable>
+          {(speech.partialTranscript || speech.finalTranscript || speech.errorMessage) && (
+            <Text style={speech.errorMessage ? styles.audioError : styles.authHint}>
+              {speech.errorMessage ?? speech.partialTranscript ?? speech.finalTranscript}
+            </Text>
+          )}
         </View>
 
         <View style={styles.stage}>
@@ -702,6 +767,9 @@ export default function App() {
           <Text style={styles.audioState}>Session: {snapshot.state} · Next {sessionAction} · Turn {snapshot.turnNumber}</Text>
           <Text style={styles.audioState}>
             Audio: {audio.phase} · Mic: {audio.permission} · {Math.round(audio.durationMillis / 1000)}s
+          </Text>
+          <Text style={styles.audioState}>
+            Speech: {speech.phase} · Permission: {speech.permission}
           </Text>
           <Text style={styles.speaker}>Coach</Text>
           <Text style={styles.reply}>
@@ -869,6 +937,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+  secondaryInputButton: {
+    alignItems: 'center',
+    borderColor: '#315f48',
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 46,
+    justifyContent: 'center',
+  },
+  secondaryInputButtonText: {
+    color: '#315f48',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  nativeSpeechButtonActive: {
+    backgroundColor: '#e4dacc',
   },
   metaRow: {
     flexDirection: 'row',

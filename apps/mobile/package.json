@@ -17,6 +17,7 @@
     "expo": "~55.0.0",
     "expo-audio": "~55.0.14",
     "expo-secure-store": "^56.0.4",
+    "expo-speech-recognition": "^56.0.0",
     "react": "19.2.0",
     "react-native": "0.83.0"
   }
