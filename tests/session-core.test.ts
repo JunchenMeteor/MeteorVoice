@@ -17,6 +17,7 @@ import {
   shouldRestoreListeningAfterPlayback,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
+import { splitSpokenText } from '@meteorvoice/shared'
 
 describe('session-core turn guard helpers', () => {
   it('allows a current active turn to continue listening on route', () => {
@@ -146,5 +147,14 @@ describe('session-core turn guard helpers', () => {
   it('detects Chinese words inside mixed English input', () => {
     expect(containsChineseText('I want to 预约 a table')).toBe(true)
     expect(containsChineseText('I want to reserve a table')).toBe(false)
+  })
+
+  it('splits spoken coach text into sentence-sized TTS segments', () => {
+    expect(splitSpokenText('Hello! Try this: I would like a coffee. Then ask for the price.')).toEqual([
+      'Hello! Try this: I would like a coffee.',
+      'Then ask for the price.',
+    ])
+    expect(splitSpokenText('你好。Say it again? Great!', { maxCharsPerSegment: 8 })).toEqual(['你好。', 'Say it again?', 'Great!'])
+    expect(splitSpokenText('First. Second. Third.', { maxCharsPerSegment: 7, maxSegments: 2 })).toEqual(['First.', 'Second. Third.'])
   })
 })

@@ -17,6 +17,7 @@ import {
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
+import { splitSpokenText } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -638,13 +639,15 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         await mockTTS.synthesize(text, { accent: accentName, speed })
         return
       }
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, accent: accentName, provider, speed }),
-      })
-      const result = await res.json() as { audioUrl?: string }
-      if (result.audioUrl) {
+      const playTTS = async (speechText: string) => {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed }),
+        })
+        const result = await res.json() as { audioUrl?: string }
+        if (!result.audioUrl) return
+
         try {
           await playAudioToEnd(result.audioUrl, {
             audio: getSessionAudio(),
@@ -659,6 +662,20 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           }
           throw error
         }
+      }
+
+      const segments = splitSpokenText(text)
+      if (segments.length <= 1) {
+        await playTTS(text)
+        return
+      }
+
+      try {
+        for (const segment of segments) {
+          await playTTS(segment)
+        }
+      } catch {
+        await playTTS(text)
       }
     } catch {
       setVoiceLevel(null)

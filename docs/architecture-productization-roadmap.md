@@ -17,10 +17,10 @@
 ## 当前实施进度
 
 - Phase A 文档收口已完成：当前入口指向 monorepo 路径，已完成计划移动到 `docs/archive/plans/`。
-- Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`。
+- Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`；CI workflow 已补齐基础 lint/typecheck/config/test/build。
 - Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
 - Phase D session-core 已完成第一轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session 和 playback block 规则。
-- Phase E mobile 产品化已完成第一轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。
+- Phase E mobile 产品化已完成第一轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进。
 - Phase F 尚未开始，按用户要求暂不做。
 
 ## 优先级顺序
@@ -195,17 +195,21 @@ PR 3: TTS sentence pipeline.
 
 - Scope:
   - Keep AI spoken replies short.
-  - Split assistant reply into playable sentence segments.
-  - Start TTS for the first segment as soon as possible, then prepare remaining segments in order.
+  - Split assistant reply into playable sentence segments through `packages/shared/src/speech.ts`.
+  - Web SHOULD synthesize/play the first segment before requesting later segments as one long audio file, so audible feedback starts earlier for multi-sentence replies.
+  - Mobile SHOULD synthesize the first segment first, enqueue later segment audio URLs, and advance the queue only after native playback reports completion.
   - Preserve one-speaker-at-a-time playback; no overlapping TTS.
   - Keep existing full-response TTS as fallback when segmentation fails.
+  - CI SHOULD run on pull requests and pushes to `main` with lint, mobile typecheck/config, test, and web build.
 - Out of scope:
   - True streaming TTS over server audio chunks.
   - New paid provider infrastructure.
   - Phase F voice profiles.
 - Validation:
+  - `splitSpokenText` tests cover English and Chinese punctuation plus max segment merging.
   - Playback starts earlier for multi-sentence replies in local/manual testing.
   - Existing Web and Mobile session behavior remains compatible.
+  - GitHub Actions checks pass before merge.
 
 优先补齐：
 

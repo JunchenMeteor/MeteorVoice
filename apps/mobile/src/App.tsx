@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -25,7 +25,7 @@ import {
   transition,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
-import { accentProfiles, scenarios, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
+import { accentProfiles, scenarios, splitSpokenText, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
@@ -40,6 +40,7 @@ export default function App() {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioQueue, setAudioQueue] = useState<string[]>([])
   const [status, setStatus] = useState('Ready')
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -64,6 +65,7 @@ export default function App() {
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
+  const lastFinishedAudioUrlRef = useRef<string | null>(null)
   const audio = useNativeSessionAudio(audioUrl)
   const auth = useMobileAuth()
 
@@ -88,10 +90,48 @@ export default function App() {
     setMessages([])
     setCorrectionHistory([])
     setAudioUrl(null)
+    setAudioQueue([])
     setSummary(null)
     setIsSessionActive(true)
     setStatus('Listening')
   }
+
+  const synthesizeCoachSpeech = useCallback(async (text: string) => {
+    return api.synthesizeSpeech({
+      text,
+      accent: accent.name,
+      provider: ttsProvider,
+      speed: ttsSpeed,
+    })
+  }, [accent.name, api, ttsProvider, ttsSpeed])
+
+  useEffect(() => {
+    if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
+    if (lastFinishedAudioUrlRef.current === audioUrl && audioQueue.length === 0) return
+
+    let cancelled = false
+    const advanceQueue = () => {
+      if (cancelled) return
+
+      lastFinishedAudioUrlRef.current = audioUrl
+      const [nextAudioUrl, ...remainingAudioUrls] = audioQueue
+
+      if (nextAudioUrl) {
+        setAudioQueue(remainingAudioUrls)
+        setStatus('Playing coach reply')
+        setAudioUrl(nextAudioUrl)
+        return
+      }
+
+      setStatus('Coach reply played')
+    }
+
+    const timeout = setTimeout(advanceQueue, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [audio.didJustFinish, audio.isPlaying, audioQueue, audioUrl])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const transcript = sourceTranscript.trim()
@@ -121,6 +161,7 @@ export default function App() {
     setSnapshot(nextSnapshot)
     setMessages(nextMessages)
     setAudioUrl(null)
+    setAudioQueue([])
     setBusy(true)
 
     try {
@@ -147,16 +188,33 @@ export default function App() {
       setSnapshot(nextSnapshot)
 
       setStatus('Requesting coach voice')
-      const voice = await api.synthesizeSpeech({
-        text: coachReply.text,
-        accent: accent.name,
-        provider: ttsProvider,
-        speed: ttsSpeed,
-      })
+      const segments = splitSpokenText(coachReply.text)
+      const playableSegments = segments.length > 1 ? segments : [coachReply.text]
+      const [firstSegment, ...remainingSegments] = playableSegments
+      if (!firstSegment) {
+        setStatus('Coach reply received without text')
+        return
+      }
+      const voice = await synthesizeCoachSpeech(firstSegment)
 
       if (voice.audioUrl) {
         setStatus('Playing coach reply')
+        lastFinishedAudioUrlRef.current = null
         setAudioUrl(voice.audioUrl)
+        if (remainingSegments.length) {
+          void Promise.all(remainingSegments.map(segment => synthesizeCoachSpeech(segment)))
+            .then(results => {
+              const audioUrls = results.map(result => result.audioUrl).filter((url): url is string => Boolean(url))
+              setAudioQueue(audioUrls)
+            })
+            .catch(() => {
+              void synthesizeCoachSpeech(coachReply.text)
+                .then(result => {
+                  if (result.audioUrl) setAudioQueue([result.audioUrl])
+                })
+                .catch(() => undefined)
+            })
+        }
       } else {
         setStatus('Coach reply received without audio')
       }
@@ -183,8 +241,7 @@ export default function App() {
     scenario.description,
     scenario.name,
     snapshot,
-    ttsProvider,
-    ttsSpeed,
+    synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback((finalTranscript: string) => {
@@ -440,6 +497,7 @@ export default function App() {
     setMessages([])
     setCorrectionHistory([])
     setAudioUrl(null)
+    setAudioQueue([])
     setSummary(null)
     setSnapshot(createInitialSnapshot('mobile-probe'))
     setIsSessionActive(false)
@@ -449,6 +507,7 @@ export default function App() {
   function selectAccent(key: string) {
     setSelectedAccentKey(key)
     setAudioUrl(null)
+    setAudioQueue([])
     setStatus('Accent selected')
   }
 
