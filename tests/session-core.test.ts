@@ -3,6 +3,11 @@ import {
   canAcceptUserTranscript,
   canContinueListening,
   canEndSession,
+  containsChineseText,
+  DEFAULT_SILENCE_FINALIZE_MS,
+  endsWithThinkingFiller,
+  FILLER_GRACE_FINALIZE_MS,
+  getSilenceFinalizeDelay,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
   getNextSessionAction,
@@ -127,5 +132,19 @@ describe('session-core turn guard helpers', () => {
     })).toBe(true)
     expect(canEndSession({ activeSession: true, workflowState: 'speaking' })).toBe(true)
     expect(canEndSession({ activeSession: true, workflowState: 'session_ended' })).toBe(false)
+  })
+
+  it('uses short silence finalization with filler grace', () => {
+    expect(getSilenceFinalizeDelay('I would like to book a table')).toBe(DEFAULT_SILENCE_FINALIZE_MS)
+    expect(getSilenceFinalizeDelay('I would like to, um')).toBe(FILLER_GRACE_FINALIZE_MS)
+    expect(getSilenceFinalizeDelay('我想 um')).toBe(FILLER_GRACE_FINALIZE_MS)
+    expect(getSilenceFinalizeDelay('我想 嗯')).toBe(FILLER_GRACE_FINALIZE_MS)
+    expect(endsWithThinkingFiller('I think uh')).toBe(true)
+    expect(endsWithThinkingFiller('I think this is useful')).toBe(false)
+  })
+
+  it('detects Chinese words inside mixed English input', () => {
+    expect(containsChineseText('I want to 预约 a table')).toBe(true)
+    expect(containsChineseText('I want to reserve a table')).toBe(false)
   })
 })

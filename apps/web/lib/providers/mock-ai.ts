@@ -44,9 +44,25 @@ let globalTurnCount = 0
 
 export function createMockAI(): AIProvider {
   return {
-    async generateReply(_messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
+    async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
       await sleep(80 + Math.random() * 140)
       globalTurnCount++
+
+      const lastUserMessage = [...messages].reverse().find(message => message.role === 'user')?.content ?? ''
+      const mixedChineseText = lastUserMessage.match(/[\u3400-\u9fff]+/)?.[0]
+      if (mixedChineseText) {
+        return {
+          text: `You can say "book" or "reserve" for "${mixedChineseText}". Now tell me one more detail.`,
+          corrections: [{
+            type: 'vocabulary',
+            originalText: mixedChineseText,
+            suggestedText: 'book / reserve',
+            explanation: 'Use "book" or "reserve" when you mean arranging something in advance.',
+            severity: 'minor',
+          }],
+          suggestedReply: `You can say "book" or "reserve" for "${mixedChineseText}".`,
+        }
+      }
 
       const scenarioKey = context.scenario.name.toLowerCase().replace(/\s+/g, '-')
       const replies = coachReplies[scenarioKey as keyof typeof coachReplies] ?? defaultReplies

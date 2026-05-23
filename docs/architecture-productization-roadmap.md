@@ -157,6 +157,56 @@
 
 目标：把 mobile 从 native probe 推进到可持续迭代的 native voice app。
 
+### Next Three PRs
+
+PR 1: Low-latency turn rules and mixed-language coaching.
+
+- Scope:
+  - Web silence finalize target SHOULD be 1.3-1.5 seconds for normal English utterances.
+  - If the latest transcript ends with filler words such as `um`, `uh`, `er`, `hmm`, `嗯`, `啊`, or `呃`, the turn SHOULD get a short grace window instead of finalizing immediately.
+  - English utterances that contain Chinese words MUST remain valid input, not be discarded as recognition noise.
+  - The AI spoken reply MUST briefly explain the Chinese word or phrase in natural spoken English, not only put that explanation in corrections.
+  - Corrections SHOULD still include a vocabulary item with the original Chinese text and a concise English replacement.
+- Out of scope:
+  - Native mobile speech recognition.
+  - TTS streaming or sentence-pipeline playback.
+  - Phase F voice profile work.
+- Validation:
+  - session-core tests cover normal silence timeout, filler grace, and mixed Chinese detection.
+  - Web lint/build and package tests pass.
+
+PR 2: Mobile native speech adapter.
+
+- Scope:
+  - Use a maintained React Native native speech library first, wrapped behind `apps/mobile/src/nativeSpeech.ts`.
+  - Business UI MUST depend on the MeteorVoice adapter, not directly on the third-party library.
+  - Adapter API SHOULD cover availability, permission request, start, stop, cancel, partial transcript, final transcript, and error state.
+  - Mobile session flow becomes native STT transcript -> `/api/chat` -> `/api/tts` -> native playback.
+  - Text input remains as fallback.
+- Out of scope:
+  - Custom Expo native module unless the library is blocked.
+  - Backend STT streaming infrastructure.
+  - Phase F voice profiles.
+- Validation:
+  - Mobile typecheck passes.
+  - iOS development build can complete one spoken turn on a real device or simulator where native speech is available.
+
+PR 3: TTS sentence pipeline.
+
+- Scope:
+  - Keep AI spoken replies short.
+  - Split assistant reply into playable sentence segments.
+  - Start TTS for the first segment as soon as possible, then prepare remaining segments in order.
+  - Preserve one-speaker-at-a-time playback; no overlapping TTS.
+  - Keep existing full-response TTS as fallback when segmentation fails.
+- Out of scope:
+  - True streaming TTS over server audio chunks.
+  - New paid provider infrastructure.
+  - Phase F voice profiles.
+- Validation:
+  - Playback starts earlier for multi-sentence replies in local/manual testing.
+  - Existing Web and Mobile session behavior remains compatible.
+
 优先补齐：
 
 - Native speech input route：
