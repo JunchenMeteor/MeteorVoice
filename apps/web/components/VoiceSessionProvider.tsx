@@ -11,9 +11,15 @@ import {
 } from '@/lib/scenarios'
 import { createInitialSnapshot, transition, type WorkflowSnapshot, type WorkflowState } from '@/lib/conversation-workflow'
 import {
+  acceptTranscriptTurn,
   canContinueListening as canContinueCurrentTurn,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
+  completeCoachPlayback,
+  pauseSessionForRoute,
+  receiveCoachReply,
+  recoverSessionError,
+  requestCoachReply,
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
@@ -604,11 +610,11 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setIsRoutePaused(true)
     if (shouldPauseForRouteExit({ activeSession: activeSessionRef.current, workflowState: snapshotRef.current.state })) {
       cancelCurrentTurn()
-      applyTransition('idle')
+      updateSnapshot(current => pauseSessionForRoute(current).snapshot)
     }
     setStatusText(tr('session.paused'))
     stopVoiceLevelSampling()
-  }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
+  }, [cancelCurrentTurn, stopVoiceLevelSampling, tr, updateSnapshot])
 
   const rotateAccent = useCallback((): AccentProfile => {
     const next = pickRandomAccent()
@@ -857,7 +863,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         stopVoiceLevelSampling()
         if (!canContinueListening()) return
         setStatusText(tr('session.waiting_for_speech'))
-        applyTransition('idle')
+        updateSnapshot(current => recoverSessionError({
+          snapshot: current,
+          reason: 'no_speech',
+          activeSession: activeSessionRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+        }).snapshot)
         window.setTimeout(() => {
           if (activeSessionRef.current && canListenOnRouteRef.current && snapshotRef.current.state === 'idle') {
             startNextTurn()
@@ -870,19 +881,25 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       stopVoiceLevelSampling()
       if (!canContinueListening()) return
       setStatusText(tr('session.stt_unavailable'))
-      applyTransition('idle')
+      updateSnapshot(current => recoverSessionError({
+        snapshot: current,
+        reason: 'stt_unavailable',
+        activeSession: activeSessionRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+      }).snapshot)
       return
     }
     abortListeningRef.current = null
     stopVoiceLevelSampling()
 
     setStatusText(tr('session.transcribing'))
-    applyTransition('transcribing', { lastTranscript: transcript })
-
-    const userMsg: ConversationMessage = { role: 'user', content: transcript }
-    const snapshotBeforeUserMessage = snapshotRef.current
-    const messagesWithUser = [...snapshotBeforeUserMessage.messages, userMsg]
-    updateSnapshot(prev => ({ ...prev, messages: messagesWithUser }))
+    const acceptedTurn = acceptTranscriptTurn({
+      snapshot: snapshotRef.current,
+      transcript,
+      messages: snapshotRef.current.messages,
+    })
+    snapshotRef.current = acceptedTurn.snapshot
+    setSnapshot(acceptedTurn.snapshot)
 
     const currentSnapshot = snapshotRef.current
     const currentAccent = accentRef.current
@@ -890,14 +907,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const currentScenario = scenarioRef.current
 
     setStatusText(tr('session.thinking'))
-    applyTransition('thinking')
+    updateSnapshot(current => requestCoachReply(current))
     let response: ConversationResponse
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: messagesWithUser,
+          messages: acceptedTurn.messages,
           context: {
             scenario: { name: currentScenario.name, description: currentScenario.description },
             accentProfile: { name: newAccent.name, region: newAccent.region },
@@ -911,27 +928,39 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     } catch {
       if (!isCurrentTurn()) return
       setStatusText(canListenOnRouteRef.current ? tr('session.tap_mic') : tr('session.paused'))
-      applyTransition('idle')
+      updateSnapshot(current => recoverSessionError({
+        snapshot: current,
+        reason: 'coach_reply_failed',
+        activeSession: activeSessionRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+      }).snapshot)
       return
     }
 
     if (!isCurrentTurn()) return
 
     setStatusText(tr('session.speaking'))
-    applyTransition('speaking', { lastResponse: response.text })
+    const coachTurn = receiveCoachReply({
+      snapshot: snapshotRef.current,
+      messages: acceptedTurn.messages,
+      responseText: response.text,
+      corrections: response.corrections,
+    })
+    snapshotRef.current = coachTurn.snapshot
+    setSnapshot(coachTurn.snapshot)
     setVoiceLevel(null)
     await speakText(response.text, newAccent.name)
     await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
 
-    const assistantMsg: ConversationMessage = { role: 'assistant', content: response.text }
-    updateSnapshot(prev => ({ ...prev, messages: [...prev.messages, assistantMsg] }))
-
     if (response.corrections.length > 0) {
       correctionHistoryRef.current = [...correctionHistoryRef.current, ...response.corrections]
       setCorrections(correctionHistoryRef.current)
-      applyTransition('correcting', { lastCorrections: response.corrections })
     }
+    updateSnapshot(current => completeCoachPlayback({
+      snapshot: current,
+      corrections: response.corrections,
+    }).snapshot)
 
     window.setTimeout(() => {
       if (canContinueListening()) {

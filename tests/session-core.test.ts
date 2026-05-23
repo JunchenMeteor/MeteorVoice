@@ -6,15 +6,22 @@ import {
   containsChineseText,
   acceptTranscriptTurn,
   advancePlaybackQueue,
+  completeCoachPlayback,
   continueListening,
   createPlaybackQueueSnapshot,
   DEFAULT_SILENCE_FINALIZE_MS,
+  endActiveSession,
   endsWithThinkingFiller,
   FILLER_GRACE_FINALIZE_MS,
   getSilenceFinalizeDelay,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
   getNextSessionAction,
+  getPlaybackCompletionEffects,
+  pauseSessionForRoute,
+  receiveCoachReply,
+  recoverSessionError,
+  requestCoachReply,
   shouldBlockUserInputDuringPlayback,
   shouldIgnoreNoSpeech,
   shouldPauseForRouteExit,
@@ -175,6 +182,89 @@ describe('session-core turn guard helpers', () => {
     expect(continueListening(correcting).state).toBe('listening')
   })
 
+  it('orchestrates coach reply request, receive, playback completion, pause, and end', () => {
+    const listening = startListeningSession('session-core')
+    const accepted = acceptTranscriptTurn({
+      snapshot: listening,
+      transcript: 'Hello coach',
+      messages: [],
+    })
+    expect(accepted.effects).toEqual(['request_coach_reply'])
+
+    const thinking = requestCoachReply(accepted.snapshot)
+    expect(thinking.state).toBe('thinking')
+
+    const received = receiveCoachReply({
+      snapshot: thinking,
+      messages: accepted.messages,
+      responseText: 'Try: Hello, nice to meet you.',
+      corrections: [{ type: 'grammar', originalText: 'hello', suggestedText: 'Hello', explanation: 'Capitalize the greeting.', severity: 'minor' }],
+    })
+    expect(received.snapshot.state).toBe('speaking')
+    expect(received.messages).toHaveLength(2)
+    expect(received.effects).toEqual(['play_coach_reply'])
+
+    const completed = completeCoachPlayback({
+      snapshot: received.snapshot,
+      corrections: received.snapshot.lastCorrections,
+    })
+    expect(completed.snapshot.state).toBe('correcting')
+    expect(completed.effects).toEqual(['show_corrections'])
+
+    const paused = pauseSessionForRoute(continueListening(completed.snapshot))
+    expect(paused.snapshot.state).toBe('idle')
+    expect(paused.effects).toEqual(['pause_listening'])
+
+    expect(completeCoachPlayback({
+      snapshot: received.snapshot,
+      corrections: [],
+      shouldAutoRestoreListening: true,
+    }).effects).toEqual(['restore_listening'])
+
+    const ended = endActiveSession(completed.snapshot)
+    expect(ended.snapshot.state).toBe('session_ended')
+    expect(ended.effects).toEqual(['end_session'])
+  })
+
+  it('maps shared error recovery without platform-specific work', () => {
+    const listening = startListeningSession('errors')
+    const accepted = acceptTranscriptTurn({
+      snapshot: listening,
+      transcript: 'Hello',
+      messages: [],
+    })
+    const thinking = requestCoachReply(accepted.snapshot)
+
+    const recovered = recoverSessionError({
+      snapshot: thinking,
+      reason: 'coach_reply_failed',
+      activeSession: true,
+      canListenOnRoute: true,
+    })
+    expect(recovered.snapshot.state).toBe('idle')
+    expect(recovered.effects).toEqual(['show_error', 'recover_to_idle', 'restore_listening'])
+    expect(recovered.recoverable).toBe(true)
+
+    const routePaused = recoverSessionError({
+      snapshot: thinking,
+      reason: 'stt_unavailable',
+      activeSession: true,
+      canListenOnRoute: false,
+    })
+    expect(routePaused.snapshot.state).toBe('idle')
+    expect(routePaused.effects).toEqual(['show_error', 'recover_to_idle'])
+    expect(routePaused.recoverable).toBe(false)
+
+    const inactive = recoverSessionError({
+      snapshot: thinking,
+      reason: 'unknown',
+      activeSession: false,
+      canListenOnRoute: true,
+    })
+    expect(inactive.snapshot).toBe(thinking)
+    expect(inactive.effects).toEqual(['show_error'])
+  })
+
   it('advances playback queue without overlapping audio', () => {
     const initial = createPlaybackQueueSnapshot()
     expect(initial.status).toBe('idle')
@@ -200,6 +290,8 @@ describe('session-core turn guard helpers', () => {
     })
     expect(finished.status).toBe('finished')
     expect(finished.currentAudioUrl).toBe('second.mp3')
+    expect(getPlaybackCompletionEffects(next)).toEqual(['play_next_audio'])
+    expect(getPlaybackCompletionEffects(finished)).toEqual(['show_corrections'])
   })
 
   it('splits spoken coach text into sentence-sized TTS segments', () => {
