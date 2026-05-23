@@ -4,6 +4,10 @@ import {
   canContinueListening,
   canEndSession,
   containsChineseText,
+  acceptTranscriptTurn,
+  advancePlaybackQueue,
+  continueListening,
+  createPlaybackQueueSnapshot,
   DEFAULT_SILENCE_FINALIZE_MS,
   endsWithThinkingFiller,
   FILLER_GRACE_FINALIZE_MS,
@@ -16,6 +20,8 @@ import {
   shouldPauseForRouteExit,
   shouldRestoreListeningAfterPlayback,
   shouldResumeListeningOnRoute,
+  startListeningSession,
+  startPlaybackQueue,
 } from '@meteorvoice/session-core'
 import { splitSpokenText } from '@meteorvoice/shared'
 
@@ -147,6 +153,53 @@ describe('session-core turn guard helpers', () => {
   it('detects Chinese words inside mixed English input', () => {
     expect(containsChineseText('I want to 预约 a table')).toBe(true)
     expect(containsChineseText('I want to reserve a table')).toBe(false)
+  })
+
+  it('centralizes mobile turn lifecycle transitions', () => {
+    const listening = startListeningSession('mobile-session')
+    expect(listening.state).toBe('listening')
+    expect(listening.turnNumber).toBe(1)
+
+    const accepted = acceptTranscriptTurn({
+      snapshot: listening,
+      transcript: 'Hello coach',
+      messages: [],
+    })
+    expect(accepted.snapshot.state).toBe('transcribing')
+    expect(accepted.messages).toEqual([{ role: 'user', content: 'Hello coach' }])
+
+    const correcting = {
+      ...accepted.snapshot,
+      state: 'correcting' as const,
+    }
+    expect(continueListening(correcting).state).toBe('listening')
+  })
+
+  it('advances playback queue without overlapping audio', () => {
+    const initial = createPlaybackQueueSnapshot()
+    expect(initial.status).toBe('idle')
+
+    const queue = startPlaybackQueue('first.mp3', ['second.mp3'])
+    expect(queue.status).toBe('playing')
+
+    const next = advancePlaybackQueue({
+      queue,
+      finishedAudioUrl: 'first.mp3',
+      didJustFinish: true,
+      isPlaying: false,
+    })
+    expect(next.currentAudioUrl).toBe('second.mp3')
+    expect(next.queuedAudioUrls).toEqual([])
+    expect(next.status).toBe('playing')
+
+    const finished = advancePlaybackQueue({
+      queue: next,
+      finishedAudioUrl: 'second.mp3',
+      didJustFinish: true,
+      isPlaying: false,
+    })
+    expect(finished.status).toBe('finished')
+    expect(finished.currentAudioUrl).toBe('second.mp3')
   })
 
   it('splits spoken coach text into sentence-sized TTS segments', () => {

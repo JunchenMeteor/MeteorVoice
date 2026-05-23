@@ -20,6 +20,13 @@ export interface WorkflowSnapshot {
   error: string | null
 }
 
+export interface PlaybackQueueSnapshot {
+  currentAudioUrl: string | null
+  queuedAudioUrls: string[]
+  lastFinishedAudioUrl: string | null
+  status: 'idle' | 'playing' | 'finished'
+}
+
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   idle: ['listening', 'session_ended'],
   listening: ['transcribing', 'idle', 'session_ended'],
@@ -43,6 +50,10 @@ export function createInitialSnapshot(sessionId: string): WorkflowSnapshot {
   }
 }
 
+export function startListeningSession(sessionId: string): WorkflowSnapshot {
+  return transition(createInitialSnapshot(sessionId), 'listening')
+}
+
 export function transition(
   from: WorkflowSnapshot,
   to: WorkflowState,
@@ -61,12 +72,90 @@ export function transition(
   }
 }
 
+export function acceptTranscriptTurn(input: {
+  snapshot: WorkflowSnapshot
+  transcript: string
+  messages: ConversationMessage[]
+}): { snapshot: WorkflowSnapshot; messages: ConversationMessage[]; userMessage: ConversationMessage } {
+  const userMessage: ConversationMessage = { role: 'user', content: input.transcript }
+  const messages = [...input.messages, userMessage]
+  let nextSnapshot = transition(input.snapshot, input.snapshot.state === 'listening' ? 'transcribing' : 'listening', {
+    lastTranscript: input.transcript,
+    messages,
+  })
+
+  if (nextSnapshot.state === 'listening') {
+    nextSnapshot = transition(nextSnapshot, 'transcribing', {
+      lastTranscript: input.transcript,
+      messages,
+    })
+  }
+
+  return { snapshot: nextSnapshot, messages, userMessage }
+}
+
+export function continueListening(snapshot: WorkflowSnapshot): WorkflowSnapshot {
+  if (snapshot.state === 'correcting' || snapshot.state === 'idle') {
+    return transition(snapshot, 'listening')
+  }
+
+  return snapshot
+}
+
 export function snapshotSummary(snapshot: WorkflowSnapshot) {
   return {
     state: snapshot.state,
     turnNumber: snapshot.turnNumber,
     messageCount: snapshot.messages.length,
     hasPendingCorrections: snapshot.lastCorrections.length > 0,
+  }
+}
+
+export function createPlaybackQueueSnapshot(): PlaybackQueueSnapshot {
+  return {
+    currentAudioUrl: null,
+    queuedAudioUrls: [],
+    lastFinishedAudioUrl: null,
+    status: 'idle',
+  }
+}
+
+export function startPlaybackQueue(firstAudioUrl: string | null, queuedAudioUrls: string[] = []): PlaybackQueueSnapshot {
+  return {
+    currentAudioUrl: firstAudioUrl,
+    queuedAudioUrls,
+    lastFinishedAudioUrl: null,
+    status: firstAudioUrl ? 'playing' : 'idle',
+  }
+}
+
+export function enqueuePlaybackAudio(
+  queue: PlaybackQueueSnapshot,
+  audioUrls: string[],
+): PlaybackQueueSnapshot {
+  return {
+    ...queue,
+    queuedAudioUrls: [...queue.queuedAudioUrls, ...audioUrls.filter(Boolean)],
+  }
+}
+
+export function advancePlaybackQueue(input: {
+  queue: PlaybackQueueSnapshot
+  finishedAudioUrl: string | null
+  didJustFinish: boolean
+  isPlaying: boolean
+}): PlaybackQueueSnapshot {
+  const { queue, finishedAudioUrl } = input
+  if (!finishedAudioUrl || !input.didJustFinish || input.isPlaying) return queue
+  if (queue.lastFinishedAudioUrl === finishedAudioUrl && queue.queuedAudioUrls.length === 0) return queue
+
+  const [nextAudioUrl, ...remainingAudioUrls] = queue.queuedAudioUrls
+
+  return {
+    currentAudioUrl: nextAudioUrl ?? queue.currentAudioUrl,
+    queuedAudioUrls: remainingAudioUrls,
+    lastFinishedAudioUrl: finishedAudioUrl,
+    status: nextAudioUrl ? 'playing' : 'finished',
   }
 }
 

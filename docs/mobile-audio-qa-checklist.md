@@ -1,6 +1,12 @@
 # Mobile Audio QA Checklist
 
-Use this checklist for native mobile development builds. Expo config validation is not enough for PR12; real device or simulator QA should record observed behavior here or in the PR notes.
+Use this checklist for native mobile development builds. Expo config validation is not enough for mobile audio sign-off; real device or simulator QA should record observed behavior here or in the PR notes.
+
+## Current QA Status
+
+- Automated checks cover TypeScript, Expo public config, lint, tests, and Web build.
+- Manual native-device QA is still required before treating Mobile audio as production-ready.
+- iOS Safari/Chrome Web playback limitations are not the primary Mobile path anymore; the native app must be validated through a development build that includes `expo-audio` and `expo-speech-recognition`.
 
 ## Setup
 
@@ -35,6 +41,13 @@ Use this checklist for native mobile development builds. Expo config validation 
 - Start native speech while coach TTS is playing; speech should be blocked until playback finishes.
 - Use text input fallback after a native speech error; the session should continue without restarting.
 
+## TTS Sentence Playback
+
+- Send a multi-sentence coach reply and confirm the first sentence starts playback before the full reply would normally finish synthesizing.
+- Confirm later sentence audio plays in order without overlapping the first sentence.
+- Interrupt by backgrounding the app during queued playback; playback should pause/recover without starting two voices.
+- Tap replay after queued playback finishes; only the current reply should replay.
+
 ## Session Flow
 
 - Complete at least three consecutive turns with TTS playback and native mic test between turns.
@@ -48,6 +61,25 @@ Use this checklist for native mobile development builds. Expo config validation 
 - Test with Bluetooth audio connected.
 - Test with headphones connected.
 - On iOS, confirm audio does not incorrectly route through the earpiece during playback.
+
+## Execution Record Template
+
+Copy this block into PR notes after a real-device run:
+
+```md
+### Mobile Audio QA
+
+- Build: iOS simulator / iOS device / Android emulator / Android device
+- Device and OS:
+- API base URL:
+- Auth tested: yes/no
+- Native speech short sentence: pass/fail, notes
+- Native speech mixed English-Chinese: pass/fail, notes
+- TTS sentence queue: pass/fail, notes
+- Playback during silent switch / background / Bluetooth: pass/fail, notes
+- Corrections + Transcript after 3 turns: pass/fail, notes
+- Known device-specific issues:
+```
 
 ## Known Follow-Ups
 
