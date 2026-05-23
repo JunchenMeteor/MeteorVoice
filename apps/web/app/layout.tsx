@@ -9,6 +9,9 @@ import ActiveSessionBar from '@/components/ActiveSessionBar'
 export const metadata: Metadata = {
   title: 'MeteorVoice',
   description: 'Practice spoken English through voice conversation with an AI coach. Scenario-based learning with real-time corrections and accent adaptation.',
+  icons: {
+    icon: '/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

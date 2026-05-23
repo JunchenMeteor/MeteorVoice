@@ -91,7 +91,7 @@ export default function SettingsPage() {
                 onClick={() => setTheme(th.key)}
                 className={`chip-action ${th.key === theme ? 'is-active' : ''}`}
               >
-                {th.label}
+                {t(th.labelKey)}
               </button>
             ))}
           </div>

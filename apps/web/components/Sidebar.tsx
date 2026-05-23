@@ -53,7 +53,16 @@ export default function Sidebar() {
       {/* Header: branding */}
       <div className="flex items-center gap-2 h-12 px-3 shrink-0">
         <span className="text-lg shrink-0">🗣️</span>
-        {!collapsed && <span className="font-semibold text-sm text-[var(--theme-text-primary)]">MeteorVoice</span>}
+        {!collapsed && (
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-sm leading-4 text-[var(--theme-text-primary)]">
+              MeteorVoice
+            </span>
+            <span className="block truncate text-[10px] font-medium leading-3 text-[var(--theme-text-muted)]">
+              {t('nav.brand_subtitle')}
+            </span>
+          </span>
+        )}
         {isMobile && (
           <button
             onClick={() => setMobileOpen(false)}

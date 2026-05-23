@@ -38,7 +38,7 @@ import {
   type PlaybackQueueSnapshot,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
-import { accentProfiles, scenarios, splitSpokenText, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
+import { accentProfiles, scenarios, splitSpokenText, t, type ConversationMessage, type ConversationResponse, type Locale } from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
@@ -55,6 +55,7 @@ export default function App() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueueSnapshot>(() => createPlaybackQueueSnapshot())
   const [status, setStatus] = useState('Ready')
+  const [locale, setLocale] = useState<Locale>('en')
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -94,6 +95,10 @@ export default function App() {
     canListenOnRoute: true,
     workflowState: snapshot.state,
   })
+  const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
+  const workflowStateLabel = tr(`session.state.${snapshot.state}`)
+  const sessionActionLabel = tr(`session.action.${sessionAction}`)
+  const audioPhaseLabel = tr(`session.audio_phase.${audio.phase}`)
 
   function startSession() {
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
@@ -105,7 +110,7 @@ export default function App() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
-    setStatus('Listening')
+    setStatus(tr('session.status.listening'))
   }
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
@@ -136,12 +141,12 @@ export default function App() {
       setPlaybackQueue(nextQueue)
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
-        setStatus('Playing coach reply')
+        setStatus(tr('session.status.playing_reply'))
         setAudioUrl(nextQueue.currentAudioUrl)
         return
       }
 
-      setStatus('Coach reply played')
+      setStatus(tr('session.status.reply_played'))
     }
 
     const timeout = setTimeout(advanceQueue, 0)
@@ -149,7 +154,7 @@ export default function App() {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue])
+  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, tr])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const transcript = sourceTranscript.trim()
@@ -174,7 +179,7 @@ export default function App() {
     setBusy(true)
 
     try {
-      setStatus('Requesting coach reply')
+      setStatus(tr('session.status.requesting_reply'))
       nextSnapshot = requestCoachReply(nextSnapshot)
       setSnapshot(nextSnapshot)
       const coachReply = await api.generateCoachReply({
@@ -197,18 +202,18 @@ export default function App() {
       setMessages(coachTurn.messages)
       setSnapshot(nextSnapshot)
 
-      setStatus('Requesting coach voice')
+      setStatus(tr('session.status.requesting_voice'))
       const segments = splitSpokenText(coachReply.text)
       const playableSegments = segments.length > 1 ? segments : [coachReply.text]
       const [firstSegment, ...remainingSegments] = playableSegments
       if (!firstSegment) {
-        setStatus('Coach reply received without text')
+        setStatus(tr('session.status.reply_without_text'))
         return
       }
       const voice = await synthesizeCoachSpeech(firstSegment)
 
       if (voice.audioUrl) {
-        setStatus('Playing coach reply')
+        setStatus(tr('session.status.playing_reply'))
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
         if (remainingSegments.length) {
@@ -226,7 +231,7 @@ export default function App() {
             })
         }
       } else {
-        setStatus('Coach reply received without audio')
+        setStatus(tr('session.status.reply_without_audio'))
       }
       const completedTurn = completeCoachPlayback({
         snapshot: nextSnapshot,
@@ -263,6 +268,7 @@ export default function App() {
     scenario.name,
     snapshot,
     synthesizeCoachSpeech,
+    tr,
   ])
 
   const handleNativeFinalTranscript = useCallback((finalTranscript: string) => {
@@ -272,14 +278,15 @@ export default function App() {
     setInput(transcript)
 
     if (!isSessionActive) {
-      setStatus('Speech captured. Start a session to send it.')
+      setStatus(tr('session.status.speech_captured'))
       return
     }
 
     void submitTurn(transcript)
-  }, [isSessionActive, submitTurn])
+  }, [isSessionActive, submitTurn, tr])
 
   const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
+  const speechPhaseLabel = tr(`session.speech_phase.${speech.phase}`)
 
   async function runTurn() {
     await submitTurn(input)
@@ -288,24 +295,24 @@ export default function App() {
   async function toggleNativeSpeech() {
     if (speech.isListening) {
       speech.stopListening()
-      setStatus('Finalizing speech')
+      setStatus(tr('session.status.finalizing_speech'))
       return
     }
 
     if (busy || audio.isPlaying || audio.isRecording) return
     const started = await speech.startListening()
-    setStatus(started ? 'Listening with native speech' : 'Native speech unavailable')
+    setStatus(started ? tr('session.status.native_speech_listening') : tr('session.status.native_speech_unavailable'))
   }
 
   async function toggleRecording() {
     if (audio.isRecording) {
       const recordingUri = await audio.stopRecording()
-      setStatus(recordingUri ? 'Native recording saved' : 'Recording stopped')
+      setStatus(recordingUri ? tr('session.status.recording_saved') : tr('session.status.recording_stopped'))
       return
     }
 
     const started = await audio.startRecording()
-    setStatus(started ? 'Native recording in progress' : 'Recording unavailable')
+    setStatus(started ? tr('session.status.recording') : tr('session.status.recording_unavailable'))
   }
 
   async function submitAuth() {
@@ -314,7 +321,7 @@ export default function App() {
 
     const success = await auth.submit(authMode, normalizedEmail, password)
     if (success) {
-      setStatus(authMode === 'sign-in' ? 'Mobile session signed in' : 'Mobile account submitted')
+      setStatus(authMode === 'sign-in' ? tr('session.status.signed_in') : tr('session.status.account_submitted'))
       setPassword('')
     }
   }
@@ -324,11 +331,11 @@ export default function App() {
 
     setBusy(true)
     try {
-      setStatus('Creating mobile API session')
+      setStatus(tr('session.status.creating_api_session'))
       const session = await api.createSession()
       const nextSessionId = typeof session.id === 'string' ? session.id : null
       setApiSessionId(nextSessionId)
-      setStatus(nextSessionId ? 'Mobile API session ready' : 'Mobile API session created')
+      setStatus(nextSessionId ? tr('session.status.api_session_ready') : tr('session.status.api_session_created'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -386,6 +393,7 @@ export default function App() {
     setSettingsMessage(null)
     try {
       const preferences = await api.getPreferences()
+      setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
       setTtsProvider(preferences.tts_provider ?? 'mock')
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
       setTtsSpeed(preferences.tts_speed ?? 1)
@@ -397,7 +405,7 @@ export default function App() {
       ])
       setRemoteScenarios(scenarioResult.scenarios)
       setRemoteAccents(accentResult.accents)
-      setSettingsMessage('Preferences loaded')
+      setSettingsMessage(tr('session.status.preferences_loaded'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -423,7 +431,7 @@ export default function App() {
       })
       setTtsProvider(result.tts_provider)
       setTtsSpeed(result.tts_speed)
-      setSettingsMessage('Preferences saved')
+      setSettingsMessage(tr('session.status.preferences_saved'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -448,7 +456,7 @@ export default function App() {
       })
       setTtsProvider(result.tts_provider)
       setTtsSpeed(result.tts_speed)
-      setSettingsMessage('Practice defaults saved')
+      setSettingsMessage(tr('session.status.practice_defaults_saved'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -469,7 +477,7 @@ export default function App() {
     if (!isSessionActive || snapshot.state === 'session_ended') return
     const nextSnapshot = continueListeningSnapshot(snapshot)
     setSnapshot(nextSnapshot)
-    setStatus('Listening')
+    setStatus(tr('session.status.listening'))
   }
 
   async function endSession() {
@@ -477,7 +485,7 @@ export default function App() {
 
     setBusy(true)
     try {
-      setStatus('Generating summary')
+      setStatus(tr('session.status.generating_summary'))
       const userTurns = messages.filter(message => message.role === 'user').length
       const result = await api.generateSummary({
         sessionId: snapshot.sessionId,
@@ -498,7 +506,7 @@ export default function App() {
 
       setSnapshot(endActiveSession(snapshot).snapshot)
       setIsSessionActive(false)
-      setStatus('Session ended')
+      setStatus(tr('session.ended'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
@@ -520,14 +528,14 @@ export default function App() {
     setSummary(null)
     setSnapshot(createInitialSnapshot('mobile-session'))
     setIsSessionActive(false)
-    setStatus('Scenario selected')
+    setStatus(tr('session.status.scenario_selected'))
   }
 
   function selectAccent(key: string) {
     setSelectedAccentKey(key)
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
-    setStatus('Accent selected')
+    setStatus(tr('session.status.accent_selected'))
   }
 
   return (
@@ -543,7 +551,9 @@ export default function App() {
 
         <View style={styles.stage}>
           <Text style={styles.status}>{status}</Text>
-          <Text style={styles.audioState}>Session {snapshot.state} · Turn {snapshot.turnNumber}</Text>
+          <Text style={styles.audioState}>
+            {tr('session.mobile_session_label')} {workflowStateLabel} · {tr('session.mobile_turn_label')} {snapshot.turnNumber}
+          </Text>
           <View style={styles.voiceMark}>
             <Text style={styles.voiceMarkText}>{snapshot.state === 'speaking' ? 'AI' : 'You'}</Text>
           </View>
@@ -589,7 +599,7 @@ export default function App() {
             )}
           </View>
           <Text style={styles.audioState}>
-            Audio {audio.phase} · Speech {speech.phase} · Next {sessionAction}
+            {tr('session.mobile_audio_label')} {audioPhaseLabel} · {tr('session.mobile_speech_label')} {speechPhaseLabel} · {tr('session.mobile_next_label')} {sessionActionLabel}
           </Text>
           {audio.lastRecordingUri && (
             <Text style={styles.recordingUri} numberOfLines={1}>
