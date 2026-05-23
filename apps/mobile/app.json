@@ -19,6 +19,14 @@
     },
     "plugins": [
       [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "MeteorVoice uses the microphone for voice practice sessions.",
+          "speechRecognitionPermission": "MeteorVoice uses speech recognition to turn your practice speech into text.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "MeteorVoice uses the microphone for voice practice sessions.",

@@ -26,6 +26,15 @@ Use this checklist for native mobile development builds. Expo config validation 
 - Tap start/stop rapidly; duplicate concurrent audio operations should be blocked.
 - Background the app while recording; recording should stop and the app should show a paused/recoverable state.
 
+## Native Speech Recognition
+
+- Tap `Speak instead`, grant speech recognition and microphone permissions, and confirm the speech state enters listening.
+- Speak one short English sentence and stop; the final transcript should populate the input and submit through the existing chat/TTS flow.
+- Speak an English sentence with a Chinese word; if the native recognizer returns the Chinese text, the AI should briefly explain the Chinese word aloud and add a vocabulary correction.
+- Deny speech recognition permission; the app should show a visible unavailable/error state while text input remains usable.
+- Start native speech while coach TTS is playing; speech should be blocked until playback finishes.
+- Use text input fallback after a native speech error; the session should continue without restarting.
+
 ## Session Flow
 
 - Complete at least three consecutive turns with TTS playback and native mic test between turns.
@@ -42,6 +51,6 @@ Use this checklist for native mobile development builds. Expo config validation 
 
 ## Known Follow-Ups
 
-- STT upload/native speech recognition is still a later integration point.
+- Backend STT upload remains a later fallback option; current first path is native speech recognition.
 - Lock-screen/background long-running playback is intentionally disabled in current Expo audio config.
 - App Store/TestFlight distribution is outside the current local validation scope.
