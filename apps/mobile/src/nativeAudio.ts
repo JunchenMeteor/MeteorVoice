@@ -208,6 +208,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
   }, [player, playerStatus.playing, recorder, stopRecording])
 
   return useMemo(() => ({
+    didJustFinish: playerStatus.didJustFinish,
     durationMillis: recorderState.durationMillis,
     errorMessage,
     isPlaying,
@@ -224,6 +225,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
     isRecording,
     lastRecordingUri,
     permission,
+    playerStatus.didJustFinish,
     displayPhase,
     playReply,
     recorderState.durationMillis,
