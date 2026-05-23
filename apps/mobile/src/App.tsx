@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
@@ -18,11 +18,19 @@ import {
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
+  acceptTranscriptTurn,
+  advancePlaybackQueue,
   canAcceptUserTranscript,
   canEndSession,
+  continueListening as continueListeningSnapshot,
+  createPlaybackQueueSnapshot,
   createInitialSnapshot,
+  enqueuePlaybackAudio,
   getNextSessionAction,
+  startListeningSession,
+  startPlaybackQueue,
   transition,
+  type PlaybackQueueSnapshot,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
 import { accentProfiles, scenarios, splitSpokenText, type ConversationMessage, type ConversationResponse } from '@meteorvoice/shared'
@@ -40,7 +48,7 @@ export default function App() {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [audioQueue, setAudioQueue] = useState<string[]>([])
+  const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueueSnapshot>(() => createPlaybackQueueSnapshot())
   const [status, setStatus] = useState('Ready')
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -57,7 +65,7 @@ export default function App() {
   const [remoteAccents, setRemoteAccents] = useState<AccentDto[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
-  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-probe'))
+  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-session'))
   const [activeTab, setActiveTab] = useState<SessionTab>('corrections')
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
@@ -65,7 +73,6 @@ export default function App() {
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
-  const lastFinishedAudioUrlRef = useRef<string | null>(null)
   const audio = useNativeSessionAudio(audioUrl)
   const auth = useMobileAuth()
 
@@ -85,12 +92,12 @@ export default function App() {
 
   function startSession() {
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
-    const nextSnapshot = transition(createInitialSnapshot(nextSessionId), 'listening')
+    const nextSnapshot = startListeningSession(nextSessionId)
     setSnapshot(nextSnapshot)
     setMessages([])
     setCorrectionHistory([])
     setAudioUrl(null)
-    setAudioQueue([])
+    setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
     setStatus('Listening')
@@ -107,19 +114,24 @@ export default function App() {
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
-    if (lastFinishedAudioUrlRef.current === audioUrl && audioQueue.length === 0) return
 
     let cancelled = false
     const advanceQueue = () => {
       if (cancelled) return
 
-      lastFinishedAudioUrlRef.current = audioUrl
-      const [nextAudioUrl, ...remainingAudioUrls] = audioQueue
+      const nextQueue = advancePlaybackQueue({
+        queue: playbackQueue,
+        finishedAudioUrl: audioUrl,
+        didJustFinish: audio.didJustFinish,
+        isPlaying: audio.isPlaying,
+      })
 
-      if (nextAudioUrl) {
-        setAudioQueue(remainingAudioUrls)
+      if (nextQueue === playbackQueue) return
+
+      setPlaybackQueue(nextQueue)
+      if (nextQueue.status === 'playing' && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
         setStatus('Playing coach reply')
-        setAudioUrl(nextAudioUrl)
+        setAudioUrl(nextQueue.currentAudioUrl)
         return
       }
 
@@ -131,7 +143,7 @@ export default function App() {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [audio.didJustFinish, audio.isPlaying, audioQueue, audioUrl])
+  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const transcript = sourceTranscript.trim()
@@ -146,22 +158,13 @@ export default function App() {
       })
     ) return
 
-    const userMessage: ConversationMessage = { role: 'user', content: transcript }
-    const nextMessages = [...messages, userMessage]
-    let nextSnapshot = transition(snapshot, snapshot.state === 'listening' ? 'transcribing' : 'listening', {
-      lastTranscript: transcript,
-      messages: nextMessages,
-    })
-    if (nextSnapshot.state === 'listening') {
-      nextSnapshot = transition(nextSnapshot, 'transcribing', {
-        lastTranscript: transcript,
-        messages: nextMessages,
-      })
-    }
+    const acceptedTurn = acceptTranscriptTurn({ snapshot, transcript, messages })
+    const nextMessages = acceptedTurn.messages
+    let nextSnapshot = acceptedTurn.snapshot
     setSnapshot(nextSnapshot)
     setMessages(nextMessages)
     setAudioUrl(null)
-    setAudioQueue([])
+    setPlaybackQueue(createPlaybackQueueSnapshot())
     setBusy(true)
 
     try {
@@ -199,18 +202,18 @@ export default function App() {
 
       if (voice.audioUrl) {
         setStatus('Playing coach reply')
-        lastFinishedAudioUrlRef.current = null
+        setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
         if (remainingSegments.length) {
           void Promise.all(remainingSegments.map(segment => synthesizeCoachSpeech(segment)))
             .then(results => {
               const audioUrls = results.map(result => result.audioUrl).filter((url): url is string => Boolean(url))
-              setAudioQueue(audioUrls)
+              setPlaybackQueue(queue => enqueuePlaybackAudio(queue, audioUrls))
             })
             .catch(() => {
               void synthesizeCoachSpeech(coachReply.text)
                 .then(result => {
-                  if (result.audioUrl) setAudioQueue([result.audioUrl])
+                  if (result.audioUrl) setPlaybackQueue(queue => enqueuePlaybackAudio(queue, [result.audioUrl]))
                 })
                 .catch(() => undefined)
             })
@@ -446,9 +449,7 @@ export default function App() {
 
   async function continueSession() {
     if (!isSessionActive || snapshot.state === 'session_ended') return
-    const nextSnapshot = snapshot.state === 'correcting' || snapshot.state === 'idle'
-      ? transition(snapshot, 'listening')
-      : snapshot
+    const nextSnapshot = continueListeningSnapshot(snapshot)
     setSnapshot(nextSnapshot)
     setStatus('Listening')
   }
@@ -497,9 +498,9 @@ export default function App() {
     setMessages([])
     setCorrectionHistory([])
     setAudioUrl(null)
-    setAudioQueue([])
+    setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
-    setSnapshot(createInitialSnapshot('mobile-probe'))
+    setSnapshot(createInitialSnapshot('mobile-session'))
     setIsSessionActive(false)
     setStatus('Scenario selected')
   }
@@ -507,7 +508,7 @@ export default function App() {
   function selectAccent(key: string) {
     setSelectedAccentKey(key)
     setAudioUrl(null)
-    setAudioQueue([])
+    setPlaybackQueue(createPlaybackQueueSnapshot())
     setStatus('Accent selected')
   }
 
@@ -515,24 +516,186 @@ export default function App() {
     <SafeAreaView style={styles.shell}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>MeteorVoice Mobile Probe</Text>
-          <Text style={styles.title}>Session Architecture Check</Text>
+          <Text style={styles.eyebrow}>MeteorVoice</Text>
+          <Text style={styles.title}>Voice Practice</Text>
           <Text style={styles.subtitle}>
-            Uses shared types and API client against the existing MeteorVoice backend.
+            Practice one spoken turn at a time with native speech input, coach voice playback, and focused feedback.
           </Text>
         </View>
 
+        <View style={styles.stage}>
+          <Text style={styles.status}>{status}</Text>
+          <Text style={styles.audioState}>Session {snapshot.state} · Turn {snapshot.turnNumber}</Text>
+          <View style={styles.voiceMark}>
+            <Text style={styles.voiceMarkText}>{snapshot.state === 'speaking' ? 'AI' : 'You'}</Text>
+          </View>
+          <View style={styles.waveRow}>
+            {[0, 1, 2, 3, 4, 5, 6].map(index => (
+              <View
+                key={index}
+                style={[
+                  styles.waveBar,
+                  (snapshot.state === 'listening' || snapshot.state === 'speaking') && styles.waveBarActive,
+                  { height: 14 + ((index % 4) * 10) },
+                ]}
+              />
+            ))}
+          </View>
+          <Text style={styles.speaker}>Coach</Text>
+          <Text style={styles.reply}>
+            {latestAssistantMessage?.content ?? 'Your coach reply will appear here.'}
+          </Text>
+          <Text style={styles.speaker}>You</Text>
+          <Text style={styles.userSubtitle}>
+            {latestUserMessage?.content ?? 'Start the session, then speak or type your first line.'}
+          </Text>
+          <View style={styles.stageActions}>
+            <Pressable
+              disabled={audio.isPlaying}
+              onPress={toggleRecording}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                audio.isRecording && styles.recordingButton,
+                audio.isPlaying && styles.buttonDisabled,
+                pressed && !audio.isPlaying && styles.buttonPressed,
+              ]}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {audio.isRecording ? 'Stop mic test' : 'Mic test'}
+              </Text>
+            </Pressable>
+            {audioUrl && (
+              <Pressable onPress={() => void audio.playReply()} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Replay voice</Text>
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.audioState}>
+            Audio {audio.phase} · Speech {speech.phase} · Next {sessionAction}
+          </Text>
+          {audio.lastRecordingUri && (
+            <Text style={styles.recordingUri} numberOfLines={1}>
+              Recording: {audio.lastRecordingUri}
+            </Text>
+          )}
+          {audio.errorMessage && (
+            <Text style={styles.audioError}>{audio.errorMessage}</Text>
+          )}
+        </View>
+
         <View style={styles.section}>
-          <Text style={styles.label}>API base URL</Text>
+          <View style={styles.inputHeader}>
+            <Text style={styles.label}>Your line</Text>
+            <View style={styles.sessionControls}>
+              {!isSessionActive && snapshot.state !== 'session_ended' ? (
+                <Pressable onPress={startSession} style={styles.smallButton}>
+                  <Text style={styles.smallButtonText}>Start</Text>
+                </Pressable>
+              ) : (
+                <>
+                  <Pressable
+                    disabled={busy || snapshot.state === 'session_ended'}
+                    onPress={continueSession}
+                    style={[styles.smallButton, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
+                  >
+                    <Text style={styles.smallButtonText}>Continue</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={busy || snapshot.state === 'session_ended'}
+                    onPress={endSession}
+                    style={[styles.smallButtonMuted, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
+                  >
+                    <Text style={styles.smallButtonMutedText}>End</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </View>
           <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            inputMode="url"
-            onChangeText={setApiBaseUrl}
-            placeholder="http://localhost:3000"
-            style={styles.input}
-            value={apiBaseUrl}
+            multiline
+            onChangeText={setInput}
+            style={[styles.input, styles.textarea]}
+            value={input}
           />
+          <View style={styles.turnActionRow}>
+            <Pressable disabled={busy || audio.isRecording || !isSessionActive} onPress={runTurn} style={({ pressed }) => [
+              styles.button,
+              styles.turnAction,
+              (busy || audio.isRecording || !isSessionActive) && styles.buttonDisabled,
+              pressed && !busy && !audio.isRecording && isSessionActive && styles.buttonPressed,
+            ]}>
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send</Text>}
+            </Pressable>
+            <Pressable
+              disabled={busy || audio.isPlaying || audio.isRecording}
+              onPress={toggleNativeSpeech}
+              style={({ pressed }) => [
+                styles.secondaryInputButton,
+                styles.turnAction,
+                speech.isListening && styles.nativeSpeechButtonActive,
+                (busy || audio.isPlaying || audio.isRecording) && styles.buttonDisabled,
+                pressed && !busy && !audio.isPlaying && !audio.isRecording && styles.buttonPressed,
+              ]}
+            >
+              <Text style={styles.secondaryInputButtonText}>
+                {speech.isListening ? 'Stop' : 'Speak'}
+              </Text>
+            </Pressable>
+          </View>
+          {(speech.partialTranscript || speech.finalTranscript || speech.errorMessage) && (
+            <Text style={speech.errorMessage ? styles.audioError : styles.authHint}>
+              {speech.errorMessage ?? speech.partialTranscript ?? speech.finalTranscript}
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.tabs}>
+            <Pressable
+              onPress={() => setActiveTab('corrections')}
+              style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
+                Corrections
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab('transcript')}
+              style={[styles.tabButton, activeTab === 'transcript' && styles.tabButtonActive]}
+            >
+              <Text style={[styles.tabText, activeTab === 'transcript' && styles.tabTextActive]}>
+                Transcript
+              </Text>
+            </Pressable>
+          </View>
+
+          {activeTab === 'corrections' ? (
+            correctionHistory.length ? correctionHistory.map((correction, index) => (
+              <View key={`${correction.type}-${index}`} style={styles.correction}>
+                <Text style={styles.correctionType}>{correction.type}</Text>
+                <Text style={styles.correctionText}>{correction.originalText} {'->'} {correction.suggestedText}</Text>
+                <Text style={styles.correctionHint}>{correction.explanation}</Text>
+              </View>
+            )) : (
+              <Text style={styles.empty}>No corrections yet.</Text>
+            )
+          ) : (
+            messages.length ? messages.map((message, index) => (
+              <View key={`${message.role}-${index}`} style={styles.transcriptItem}>
+                <Text style={styles.correctionType}>{message.role === 'user' ? 'You' : 'Coach'}</Text>
+                <Text style={styles.correctionHint}>{message.content}</Text>
+              </View>
+            )) : (
+              <Text style={styles.empty}>No transcript yet.</Text>
+            )
+          )}
+
+          {summary && (
+            <View style={styles.summaryBox}>
+              <Text style={styles.correctionType}>Summary</Text>
+              <Text style={styles.correctionHint}>{summary}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.selectorPanel}>
@@ -730,6 +893,16 @@ export default function App() {
               <Text style={styles.smallButtonText}>{settingsLoading ? 'Loading...' : 'Load'}</Text>
             </Pressable>
           </View>
+          <Text style={styles.metaLabel}>API base URL</Text>
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            inputMode="url"
+            onChangeText={setApiBaseUrl}
+            placeholder="http://localhost:3000"
+            style={styles.input}
+            value={apiBaseUrl}
+          />
           <Text style={styles.metaLabel}>TTS provider</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
             {availableProviders.map(provider => {
@@ -761,162 +934,6 @@ export default function App() {
           {settingsMessage && <Text style={styles.authHint}>{settingsMessage}</Text>}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Your line</Text>
-          <View style={styles.sessionControls}>
-            {!isSessionActive && snapshot.state !== 'session_ended' ? (
-              <Pressable onPress={startSession} style={styles.smallButton}>
-                <Text style={styles.smallButtonText}>Start session</Text>
-              </Pressable>
-            ) : (
-              <>
-                <Pressable
-                  disabled={busy || snapshot.state === 'session_ended'}
-                  onPress={continueSession}
-                  style={[styles.smallButton, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
-                >
-                  <Text style={styles.smallButtonText}>Continue</Text>
-                </Pressable>
-                <Pressable
-                  disabled={busy || snapshot.state === 'session_ended'}
-                  onPress={endSession}
-                  style={[styles.smallButtonMuted, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
-                >
-                  <Text style={styles.smallButtonMutedText}>End</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-          <TextInput
-            multiline
-            onChangeText={setInput}
-            style={[styles.input, styles.textarea]}
-            value={input}
-          />
-          <Pressable disabled={busy || audio.isRecording || !isSessionActive} onPress={runTurn} style={({ pressed }) => [
-            styles.button,
-            (busy || audio.isRecording || !isSessionActive) && styles.buttonDisabled,
-            pressed && !busy && !audio.isRecording && isSessionActive && styles.buttonPressed,
-          ]}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send turn</Text>}
-          </Pressable>
-          <Pressable
-            disabled={busy || audio.isPlaying || audio.isRecording}
-            onPress={toggleNativeSpeech}
-            style={({ pressed }) => [
-              styles.secondaryInputButton,
-              speech.isListening && styles.nativeSpeechButtonActive,
-              (busy || audio.isPlaying || audio.isRecording) && styles.buttonDisabled,
-              pressed && !busy && !audio.isPlaying && !audio.isRecording && styles.buttonPressed,
-            ]}
-          >
-            <Text style={styles.secondaryInputButtonText}>
-              {speech.isListening ? 'Stop native speech' : 'Speak instead'}
-            </Text>
-          </Pressable>
-          {(speech.partialTranscript || speech.finalTranscript || speech.errorMessage) && (
-            <Text style={speech.errorMessage ? styles.audioError : styles.authHint}>
-              {speech.errorMessage ?? speech.partialTranscript ?? speech.finalTranscript}
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.stage}>
-          <Text style={styles.status}>{status}</Text>
-          <Text style={styles.audioState}>Session: {snapshot.state} · Next {sessionAction} · Turn {snapshot.turnNumber}</Text>
-          <Text style={styles.audioState}>
-            Audio: {audio.phase} · Mic: {audio.permission} · {Math.round(audio.durationMillis / 1000)}s
-          </Text>
-          <Text style={styles.audioState}>
-            Speech: {speech.phase} · Permission: {speech.permission}
-          </Text>
-          <Text style={styles.speaker}>Coach</Text>
-          <Text style={styles.reply}>
-            {latestAssistantMessage?.content ?? 'The coach reply will appear here.'}
-          </Text>
-          <Text style={styles.speaker}>You</Text>
-          <Text style={styles.userSubtitle}>
-            {latestUserMessage?.content ?? 'Start the session, then send your first line.'}
-          </Text>
-          <View style={styles.stageActions}>
-            <Pressable
-              disabled={audio.isPlaying}
-              onPress={toggleRecording}
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                audio.isRecording && styles.recordingButton,
-                audio.isPlaying && styles.buttonDisabled,
-                pressed && !audio.isPlaying && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.secondaryButtonText}>
-                {audio.isRecording ? 'Stop recording' : 'Test native mic'}
-              </Text>
-            </Pressable>
-            {audioUrl && (
-              <Pressable onPress={() => void audio.playReply()} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Replay voice</Text>
-              </Pressable>
-            )}
-          </View>
-          {audio.lastRecordingUri && (
-            <Text style={styles.recordingUri} numberOfLines={1}>
-              Recording: {audio.lastRecordingUri}
-            </Text>
-          )}
-          {audio.errorMessage && (
-            <Text style={styles.audioError}>{audio.errorMessage}</Text>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.tabs}>
-            <Pressable
-              onPress={() => setActiveTab('corrections')}
-              style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
-            >
-              <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
-                Corrections
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setActiveTab('transcript')}
-              style={[styles.tabButton, activeTab === 'transcript' && styles.tabButtonActive]}
-            >
-              <Text style={[styles.tabText, activeTab === 'transcript' && styles.tabTextActive]}>
-                Transcript
-              </Text>
-            </Pressable>
-          </View>
-
-          {activeTab === 'corrections' ? (
-            correctionHistory.length ? correctionHistory.map((correction, index) => (
-              <View key={`${correction.type}-${index}`} style={styles.correction}>
-                <Text style={styles.correctionType}>{correction.type}</Text>
-                <Text style={styles.correctionText}>{correction.originalText} {'->'} {correction.suggestedText}</Text>
-                <Text style={styles.correctionHint}>{correction.explanation}</Text>
-              </View>
-            )) : (
-              <Text style={styles.empty}>No corrections yet.</Text>
-            )
-          ) : (
-            messages.length ? messages.map((message, index) => (
-              <View key={`${message.role}-${index}`} style={styles.transcriptItem}>
-                <Text style={styles.correctionType}>{message.role === 'user' ? 'You' : 'Coach'}</Text>
-                <Text style={styles.correctionHint}>{message.content}</Text>
-              </View>
-            )) : (
-              <Text style={styles.empty}>No transcript yet.</Text>
-            )
-          )}
-
-          {summary && (
-            <View style={styles.summaryBox}>
-              <Text style={styles.correctionType}>Summary</Text>
-              <Text style={styles.correctionHint}>{summary}</Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   )
@@ -955,6 +972,12 @@ const styles = StyleSheet.create({
   section: {
     gap: 10,
   },
+  inputHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
   label: {
     color: '#253128',
     fontSize: 14,
@@ -978,6 +1001,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+    justifyContent: 'flex-end',
+  },
+  turnActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  turnAction: {
+    flex: 1,
   },
   button: {
     alignItems: 'center',
@@ -1228,6 +1259,36 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 12,
     padding: 22,
+  },
+  voiceMark: {
+    alignItems: 'center',
+    backgroundColor: '#fffaf3',
+    borderRadius: 999,
+    height: 72,
+    justifyContent: 'center',
+    width: 72,
+  },
+  voiceMarkText: {
+    color: '#16211b',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  waveRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    height: 54,
+    justifyContent: 'center',
+  },
+  waveBar: {
+    backgroundColor: '#6f7f70',
+    borderRadius: 999,
+    opacity: 0.45,
+    width: 5,
+  },
+  waveBarActive: {
+    backgroundColor: '#d6c486',
+    opacity: 1,
   },
   status: {
     color: '#b7c5b9',

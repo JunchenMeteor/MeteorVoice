@@ -19,8 +19,8 @@
 - Phase A 文档收口已完成：当前入口指向 monorepo 路径，已完成计划移动到 `docs/archive/plans/`。
 - Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`；CI workflow 已补齐基础 lint/typecheck/config/test/build。
 - Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
-- Phase D session-core 已完成第一轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session 和 playback block 规则。
-- Phase E mobile 产品化已完成第一轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进。
+- Phase D session-core 已完成第二轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session、playback block、turn lifecycle 和 playback queue 规则。
+- Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进；Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。
 - Phase F 尚未开始，按用户要求暂不做。
 
 ## 优先级顺序
@@ -153,6 +153,11 @@
 - Web session 和 Mobile session 都只把平台事件转成 core event。
 - 不因为抽离改变用户可见行为。
 
+当前状态：
+
+- Mobile 已使用 session-core 的 `startListeningSession`、`acceptTranscriptTurn`、`continueListening` 和 playback queue helpers。
+- Web `VoiceSessionProvider` 仍保留较多平台和流程编排逻辑，下一轮 SHOULD 继续在不改变用户行为的前提下做 characterization tests 后再抽离。
+
 ## Phase E: Mobile 语音闭环产品化
 
 目标：把 mobile 从 native probe 推进到可持续迭代的 native voice app。
@@ -222,6 +227,7 @@ PR 3: TTS sentence pipeline.
   - Android audio focus、权限、前后台录音限制。
 - Session UX：
   - start/continue/end、current subtitles、Corrections/Transcript、summary、history/review 与 Web 行为一致。
+  - Mobile 首屏 SHOULD 优先展示当前 voice stage、最新用户字幕、最新 coach 字幕和输入动作；API URL、auth、history、settings 属于次级区域。
 - Preferences sync：
   - locale、scenario、accent、TTS provider、speed 在 Web/Mobile 间一致。
 
@@ -231,6 +237,11 @@ PR 3: TTS sentence pipeline.
 - iOS 真机 development build 能完成一轮：用户语音输入 -> AI reply -> native playback -> correction -> session sync。
 - Android 至少完成 emulator 或真机基础 smoke。
 - `docs/mobile-audio-qa-checklist.md` 有真实执行记录或明确未执行项。
+
+当前状态：
+
+- Native speech adapter、native audio playback、TTS sentence playback queue 和正式练习页布局已合入。
+- 尚缺至少一次 iOS 真机 development build 和一次 Android emulator/device 的人工 QA 记录。
 
 ## Phase F: 口音与语音能力专项
 
