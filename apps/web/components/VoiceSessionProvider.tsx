@@ -23,7 +23,7 @@ import {
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
-import { splitSpokenText } from '@meteorvoice/shared'
+import { splitSpokenText, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -35,6 +35,22 @@ const activeSessionStorageKey = 'meteorvoice-active-session'
 const voiceSessionStateStorageKey = 'meteorvoice-session-state'
 const postPlaybackListenDelayMs = 900
 const silentAudioUrl = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA=='
+const sessionStatusKeys = [
+  'session.ready',
+  'session.loading_voice',
+  'session.paused',
+  'session.listening',
+  'session.transcribing',
+  'session.thinking',
+  'session.speaking',
+  'session.playback_blocked',
+  'session.correcting',
+  'session.ended',
+  'session.tap_mic',
+  'session.no_speech',
+  'session.waiting_for_speech',
+  'session.stt_unavailable',
+] as const
 
 type AudioLevelStop = () => void
 
@@ -126,6 +142,39 @@ function publishActiveSession(active: boolean) {
 
 function wait(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+function isKnownLocalizedSessionStatus(statusText: string) {
+  return Object.values(translations).some(localeTable =>
+    sessionStatusKeys.some(key => localeTable[key] === statusText),
+  )
+}
+
+function getSessionStatusKey(input: {
+  activeSession: boolean
+  routePaused: boolean
+  workflowState: WorkflowState
+}) {
+  if (input.routePaused) return 'session.paused'
+  if (input.workflowState === 'session_ended') return 'session.ended'
+  if (!input.activeSession) return 'session.ready'
+
+  switch (input.workflowState) {
+    case 'listening':
+      return 'session.listening'
+    case 'transcribing':
+      return 'session.transcribing'
+    case 'thinking':
+      return 'session.thinking'
+    case 'speaking':
+      return 'session.speaking'
+    case 'correcting':
+      return 'session.correcting'
+    case 'idle':
+      return 'session.tap_mic'
+    default:
+      return 'session.ready'
+  }
 }
 
 function sampleAudioLevel(source: AudioLevelSource, onLevel: (level: number | null) => void): AudioLevelStop {
@@ -434,6 +483,17 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   useEffect(() => {
     routePausedRef.current = isRoutePaused
   }, [isRoutePaused])
+
+  useEffect(() => {
+    setStatusText(current => {
+      if (!isKnownLocalizedSessionStatus(current)) return current
+      return tr(getSessionStatusKey({
+        activeSession: activeSessionRef.current,
+        routePaused: routePausedRef.current,
+        workflowState: snapshotRef.current.state,
+      }))
+    })
+  }, [tr])
 
   useEffect(() => {
     correctionHistoryRef.current = corrections

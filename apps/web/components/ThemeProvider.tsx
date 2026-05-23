@@ -3,12 +3,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 const themes = [
-  { key: 'default-calm',  label: 'Default Calm' },
-  { key: 'conversation',  label: 'Conversation' },
-  { key: 'night',         label: 'Night' },
-  { key: 'learning',      label: 'Learning' },
-  { key: 'bright',        label: 'Bright' },
-  { key: 'playful',       label: 'Playful' },
+  { key: 'default-calm', labelKey: 'settings.theme_default_calm' },
+  { key: 'conversation', labelKey: 'settings.theme_conversation' },
+  { key: 'night', labelKey: 'settings.theme_night' },
+  { key: 'learning', labelKey: 'settings.theme_learning' },
+  { key: 'bright', labelKey: 'settings.theme_bright' },
+  { key: 'playful', labelKey: 'settings.theme_playful' },
 ]
 
 type ThemeKey = typeof themes[number]['key']
