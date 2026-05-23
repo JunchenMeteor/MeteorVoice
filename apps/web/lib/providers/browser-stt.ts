@@ -1,4 +1,5 @@
 import type { STTProvider, STTResult } from './types'
+import { getSilenceFinalizeDelay } from '@meteorvoice/session-core'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -29,7 +30,6 @@ declare global {
   }
 }
 
-const SILENCE_TIMEOUT = 3200
 const MAX_DURATION = 30000
 const RESTART_AFTER_BROWSER_END_DELAY = 120
 
@@ -110,9 +110,10 @@ export function createBrowserSTT(): STTProvider {
             }
           }
           if (allResults.length > 0 || lastInterim) {
+            const currentTranscript = allResults.join(' ').trim() || lastInterim
             silenceTimer = setTimeout(() => {
               finalize()
-            }, SILENCE_TIMEOUT)
+            }, getSilenceFinalizeDelay(currentTranscript))
           }
         }
 

@@ -136,3 +136,23 @@ export function shouldRestoreListeningAfterPlayback(input: {
 }) {
   return input.activeSession && input.canListenOnRoute && input.workflowState === 'speaking'
 }
+
+export const DEFAULT_SILENCE_FINALIZE_MS = 1400
+export const FILLER_GRACE_FINALIZE_MS = 2200
+
+const FILLER_END_PATTERN = /(?:^|[\s,，.。!?！？])(?:um+|uh+|er+|erm+|hmm+|mmm+|嗯+|啊+|呃+|额+|唔+)[\s,，.。!?！？]*$/i
+const CHINESE_TEXT_PATTERN = /[\u3400-\u9fff]/
+
+export function endsWithThinkingFiller(transcript?: string | null) {
+  return FILLER_END_PATTERN.test(transcript?.trim() ?? '')
+}
+
+export function containsChineseText(transcript?: string | null) {
+  return CHINESE_TEXT_PATTERN.test(transcript ?? '')
+}
+
+export function getSilenceFinalizeDelay(transcript?: string | null) {
+  return endsWithThinkingFiller(transcript)
+    ? FILLER_GRACE_FINALIZE_MS
+    : DEFAULT_SILENCE_FINALIZE_MS
+}
