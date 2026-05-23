@@ -19,7 +19,7 @@
 - Phase A 文档收口已完成：当前入口指向 monorepo 路径，已完成计划移动到 `docs/archive/plans/`。
 - Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`；CI workflow 已补齐基础 lint/typecheck/config/test/build。
 - Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
-- Phase D session-core 已完成第二轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session、playback block、turn lifecycle 和 playback queue 规则。
+- Phase D session-core 已完成第三轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session、playback block、turn lifecycle、coach reply receive/playback completion、route pause、error recovery effect mapping 和 playback queue 规则。
 - Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进；Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。
 - Phase F 尚未开始，按用户要求暂不做。
 
@@ -131,6 +131,11 @@
 - speaking/listening/thinking/correcting 的 next action 计算。
 - silence/no-speech 不生成 synthetic turn 的规则。
 - TTS 播放结束后是否恢复 listening 的规则。
+- 收到用户 transcript 后如何追加 user message、进入 transcribing、触发 request reply。
+- 收到 coach reply 后如何追加 assistant message、进入 speaking、触发 playback。
+- 播放完成后如何进入 corrections、恢复 listening 或播放队列下一段。
+- end session 时如何进入 terminal state。
+- STT/no-speech、coach reply、TTS/playback 等失败时如何回到 recoverable state，并返回错误展示/恢复 effect。
 
 不应进入 `packages/session-core` 的内容：
 
@@ -140,6 +145,12 @@
 - Expo Audio、AVAudioSession、Android foreground service。
 - Supabase/HTTP fetch。
 - UI component state。
+
+统一边界：
+
+- Web 和 Mobile 的原生能力不统一：Browser Speech/Web Audio/HTMLAudioElement、Expo Speech/Expo Audio 仍分别留在 `apps/web` 和 `apps/mobile`。
+- `packages/session-core` 统一的是平台事件之后的业务编排：transcript accepted、request reply、receive reply、play reply、play next audio、show corrections、show error、recover to idle、restore listening、pause、end。
+- `session-core` 只返回 snapshot/messages/effects，不直接 fetch、不播放音频、不操作 DOM、不请求权限。
 
 实施建议：
 
@@ -155,8 +166,9 @@
 
 当前状态：
 
-- Mobile 已使用 session-core 的 `startListeningSession`、`acceptTranscriptTurn`、`continueListening` 和 playback queue helpers。
-- Web `VoiceSessionProvider` 仍保留较多平台和流程编排逻辑，下一轮 SHOULD 继续在不改变用户行为的前提下做 characterization tests 后再抽离。
+- Mobile 已使用 session-core 的 `startListeningSession`、`acceptTranscriptTurn`、`requestCoachReply`、`receiveCoachReply`、`completeCoachPlayback`、`recoverSessionError`、`continueListening`、`endActiveSession` 和 playback queue helpers。
+- Web `VoiceSessionProvider` 已使用 session-core 的 transcript、coach reply、playback completion、route pause 和 error recovery helpers；仍保留浏览器 STT、Web Audio、TTS playback、local/session storage 和 pending async cancellation。
+- 后续 SHOULD 只在出现新的跨端业务规则时继续扩展 `session-core`；不要为了抽象而把具体平台 adapter 放入 `session-core`。
 
 ## Phase E: Mobile 语音闭环产品化
 

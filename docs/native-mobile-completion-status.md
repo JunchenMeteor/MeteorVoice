@@ -12,9 +12,9 @@
   - 支持 mobile bearer token 调用需要身份的 API。
 - `packages/session-core`
   - 平台无关 workflow snapshot、transition、turn guard helpers。
-  - 已包含移动端可复用的 turn lifecycle、continue listening 和 TTS playback queue 纯函数。
-  - Web provider 已切到 session-core 的关键 guard。
-  - Mobile app 消费 workflow snapshot 和部分 session-core 播放队列规则。
+  - 已包含双端可复用的 turn lifecycle、request/receive coach reply、playback completion、route pause、error recovery、continue listening、end session 和 TTS playback queue 纯函数。
+  - Web provider 已切到 session-core 的关键 guard 和部分 orchestration helper。
+  - Mobile app 消费 workflow snapshot、turn orchestration 和播放队列规则。
 - `apps/mobile`
   - Expo React Native app，非 WebView。
   - Supabase email/password auth，SecureStore session persistence。
@@ -72,7 +72,7 @@ npm run mobile:android
 - 已新增 API DTO/routes：scenarios、accents、session turn detail。
 - Preferences API 已扩展 locale、默认 scenario/accent 和 TTS speed，并配套 Supabase migration。
 - Mobile 已接入新增 API，用于远端场景/口音能力、默认练习设置保存和历史 turn detail 查看。
-- session-core 已新增平台无关 next action、no-speech、playback restore 和 end-session 判断。
+- session-core 已新增平台无关 next action、no-speech、playback restore、end-session、coach reply orchestration、route pause、error recovery 和 playback queue 判断。
 - Mobile 已接入 native speech adapter、TTS sentence playback queue 和正式练习页布局。
 - CI 已补齐 GitHub Actions 基础流程：lint、mobile typecheck/config、test 和 web build。
 - 口音与语音能力专项仍未开始。

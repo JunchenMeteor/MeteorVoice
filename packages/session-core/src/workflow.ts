@@ -27,6 +27,31 @@ export interface PlaybackQueueSnapshot {
   status: 'idle' | 'playing' | 'finished'
 }
 
+export type SessionEffect =
+  | 'request_coach_reply'
+  | 'play_coach_reply'
+  | 'play_next_audio'
+  | 'show_corrections'
+  | 'show_error'
+  | 'recover_to_idle'
+  | 'restore_listening'
+  | 'pause_listening'
+  | 'end_session'
+
+export type SessionErrorReason =
+  | 'no_speech'
+  | 'stt_unavailable'
+  | 'coach_reply_failed'
+  | 'tts_failed'
+  | 'playback_blocked'
+  | 'unknown'
+
+export interface SessionOrchestrationResult {
+  snapshot: WorkflowSnapshot
+  messages: ConversationMessage[]
+  effects: SessionEffect[]
+}
+
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   idle: ['listening', 'session_ended'],
   listening: ['transcribing', 'idle', 'session_ended'],
@@ -76,7 +101,7 @@ export function acceptTranscriptTurn(input: {
   snapshot: WorkflowSnapshot
   transcript: string
   messages: ConversationMessage[]
-}): { snapshot: WorkflowSnapshot; messages: ConversationMessage[]; userMessage: ConversationMessage } {
+}): SessionOrchestrationResult & { userMessage: ConversationMessage } {
   const userMessage: ConversationMessage = { role: 'user', content: input.transcript }
   const messages = [...input.messages, userMessage]
   let nextSnapshot = transition(input.snapshot, input.snapshot.state === 'listening' ? 'transcribing' : 'listening', {
@@ -91,7 +116,100 @@ export function acceptTranscriptTurn(input: {
     })
   }
 
-  return { snapshot: nextSnapshot, messages, userMessage }
+  return { snapshot: nextSnapshot, messages, userMessage, effects: ['request_coach_reply'] }
+}
+
+export function requestCoachReply(snapshot: WorkflowSnapshot): WorkflowSnapshot {
+  return transition(snapshot, 'thinking')
+}
+
+export function receiveCoachReply(input: {
+  snapshot: WorkflowSnapshot
+  messages: ConversationMessage[]
+  responseText: string
+  corrections: ConversationResponse['corrections']
+}): SessionOrchestrationResult {
+  const assistantMessage: ConversationMessage = { role: 'assistant', content: input.responseText }
+  const messages = [...input.messages, assistantMessage]
+  const snapshot = transition(input.snapshot, 'speaking', {
+    lastResponse: input.responseText,
+    lastCorrections: input.corrections,
+    messages,
+  })
+
+  return { snapshot, messages, effects: ['play_coach_reply'] }
+}
+
+export function completeCoachPlayback(input: {
+  snapshot: WorkflowSnapshot
+  corrections: ConversationResponse['corrections']
+  shouldAutoRestoreListening?: boolean
+}): SessionOrchestrationResult {
+  if (input.corrections.length > 0) {
+    return {
+      snapshot: transition(input.snapshot, 'correcting', { lastCorrections: input.corrections }),
+      messages: input.snapshot.messages,
+      effects: ['show_corrections'],
+    }
+  }
+
+  if (input.shouldAutoRestoreListening) {
+    return {
+      snapshot: transition(input.snapshot, 'listening'),
+      messages: input.snapshot.messages,
+      effects: ['restore_listening'],
+    }
+  }
+
+  return {
+    snapshot: transition(input.snapshot, 'correcting', { lastCorrections: [] }),
+    messages: input.snapshot.messages,
+    effects: ['show_corrections'],
+  }
+}
+
+export function recoverSessionError(input: {
+  snapshot: WorkflowSnapshot
+  reason: SessionErrorReason
+  activeSession: boolean
+  canListenOnRoute: boolean
+}): {
+  snapshot: WorkflowSnapshot
+  effects: SessionEffect[]
+  reason: SessionErrorReason
+  recoverable: boolean
+} {
+  if (!input.activeSession || input.snapshot.state === 'session_ended') {
+    return {
+      snapshot: input.snapshot,
+      effects: ['show_error'],
+      reason: input.reason,
+      recoverable: false,
+    }
+  }
+
+  const shouldMoveToIdle =
+    input.snapshot.state === 'listening' ||
+    input.snapshot.state === 'transcribing' ||
+    input.snapshot.state === 'thinking' ||
+    input.snapshot.state === 'speaking'
+
+  const snapshot = shouldMoveToIdle
+    ? transition(input.snapshot, 'idle')
+    : input.snapshot
+
+  const effects: SessionEffect[] = ['show_error']
+  if (shouldMoveToIdle) effects.push('recover_to_idle')
+  if (input.canListenOnRoute && (snapshot.state === 'idle' || snapshot.state === 'correcting')) {
+    effects.push('restore_listening')
+  }
+
+  return {
+    snapshot,
+    effects,
+    reason: input.reason,
+    recoverable: input.canListenOnRoute,
+  }
 }
 
 export function continueListening(snapshot: WorkflowSnapshot): WorkflowSnapshot {
@@ -157,6 +275,30 @@ export function advancePlaybackQueue(input: {
     lastFinishedAudioUrl: finishedAudioUrl,
     status: nextAudioUrl ? 'playing' : 'finished',
   }
+}
+
+export function getPlaybackCompletionEffects(queue: PlaybackQueueSnapshot): SessionEffect[] {
+  if (queue.status === 'playing') return ['play_next_audio']
+  if (queue.status === 'finished') return ['show_corrections']
+  return []
+}
+
+export function pauseSessionForRoute(snapshot: WorkflowSnapshot): {
+  snapshot: WorkflowSnapshot
+  effects: SessionEffect[]
+} {
+  if (snapshot.state === 'listening') {
+    return { snapshot: transition(snapshot, 'idle'), effects: ['pause_listening'] }
+  }
+
+  return { snapshot, effects: ['pause_listening'] }
+}
+
+export function endActiveSession(snapshot: WorkflowSnapshot): {
+  snapshot: WorkflowSnapshot
+  effects: SessionEffect[]
+} {
+  return { snapshot: transition(snapshot, 'session_ended'), effects: ['end_session'] }
 }
 
 export type SessionNextAction =

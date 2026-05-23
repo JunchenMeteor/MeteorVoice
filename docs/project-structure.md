@@ -63,6 +63,7 @@ Highest-priority improvements:
 ## Architecture Decisions and Future Directions
 
 - **TTS/STT provider interfaces**: `TTSProvider`, `STTProvider`, `ttsProviderCapabilities`, and `supportsAccent` live in `packages/shared/src/speech.ts` and are available to both Web and Mobile. Concrete adapters (Tencent, Volcengine, Xunfei) remain in `apps/web/lib/providers/` as server-side implementations; Mobile calls them via API. To add a native or offline TTS implementation on Mobile, implement `TTSProvider` from `@meteorvoice/shared` directly in `apps/mobile` — no architecture change needed.
+- **Session orchestration**: `packages/session-core` owns platform-neutral turn rules and effect decisions: transcript acceptance, request/receive coach reply, playback completion, playback queue advancement, pause/resume, error recovery, and end-session transitions. Web and Mobile should translate platform events into these helpers, then execute returned effects in their own adapters. Do not put Browser Speech, Web Audio, Expo Audio, native permissions, fetch calls, DOM storage, or UI state in `packages/session-core`.
 - **Background audio keep-alive**: iOS `AVAudioSession` management and Android `ForegroundService` are platform-specific and MUST live in `apps/mobile` only. Do not add background lifecycle logic to `packages/session-core` — that package stays platform-neutral.
 - **i18n**: All UI string translations live in `packages/shared/src/i18n.ts` and are shared by Web and Mobile. Do not add translation strings directly in `apps/web` or `apps/mobile`.
 

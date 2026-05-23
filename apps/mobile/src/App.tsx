@@ -25,11 +25,16 @@ import {
   continueListening as continueListeningSnapshot,
   createPlaybackQueueSnapshot,
   createInitialSnapshot,
+  endActiveSession,
   enqueuePlaybackAudio,
   getNextSessionAction,
+  getPlaybackCompletionEffects,
+  receiveCoachReply,
+  recoverSessionError,
+  requestCoachReply,
+  completeCoachPlayback,
   startListeningSession,
   startPlaybackQueue,
-  transition,
   type PlaybackQueueSnapshot,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
@@ -129,7 +134,8 @@ export default function App() {
       if (nextQueue === playbackQueue) return
 
       setPlaybackQueue(nextQueue)
-      if (nextQueue.status === 'playing' && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
+      const effects = getPlaybackCompletionEffects(nextQueue)
+      if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
         setStatus('Playing coach reply')
         setAudioUrl(nextQueue.currentAudioUrl)
         return
@@ -169,7 +175,7 @@ export default function App() {
 
     try {
       setStatus('Requesting coach reply')
-      nextSnapshot = transition(nextSnapshot, 'thinking')
+      nextSnapshot = requestCoachReply(nextSnapshot)
       setSnapshot(nextSnapshot)
       const coachReply = await api.generateCoachReply({
         messages: nextMessages,
@@ -180,14 +186,15 @@ export default function App() {
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
         },
       })
-      const messagesWithReply: ConversationMessage[] = [...nextMessages, { role: 'assistant', content: coachReply.text }]
-      setMessages(messagesWithReply)
       setCorrectionHistory(previous => [...previous, ...coachReply.corrections])
-      nextSnapshot = transition(nextSnapshot, 'speaking', {
-        lastResponse: coachReply.text,
-        lastCorrections: coachReply.corrections,
-        messages: messagesWithReply,
+      const coachTurn = receiveCoachReply({
+        snapshot: nextSnapshot,
+        messages: nextMessages,
+        responseText: coachReply.text,
+        corrections: coachReply.corrections,
       })
+      nextSnapshot = coachTurn.snapshot
+      setMessages(coachTurn.messages)
       setSnapshot(nextSnapshot)
 
       setStatus('Requesting coach voice')
@@ -221,9 +228,20 @@ export default function App() {
       } else {
         setStatus('Coach reply received without audio')
       }
-      const finalSnapshot = transition(nextSnapshot, 'correcting')
+      const completedTurn = completeCoachPlayback({
+        snapshot: nextSnapshot,
+        corrections: coachReply.corrections,
+      })
+      const finalSnapshot = completedTurn.snapshot
       setSnapshot(finalSnapshot)
     } catch (error) {
+      const recovery = recoverSessionError({
+        snapshot: nextSnapshot,
+        reason: 'coach_reply_failed',
+        activeSession: isSessionActive,
+        canListenOnRoute: true,
+      })
+      setSnapshot(recovery.snapshot)
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
         : error instanceof Error
@@ -478,7 +496,7 @@ export default function App() {
         corrections: correctionHistory,
       }).catch(() => undefined)
 
-      setSnapshot(transition(snapshot, 'session_ended'))
+      setSnapshot(endActiveSession(snapshot).snapshot)
       setIsSessionActive(false)
       setStatus('Session ended')
     } catch (error) {
