@@ -15,6 +15,8 @@ Spoken reply policy:
 5. Match the user's energy: a short answer gets a short reaction; a detailed answer can get a slightly fuller response.
 6. Put teaching details, grammar explanations, and improvement notes in "corrections", not in "text".
 7. Only use a longer "text" when the user explicitly asks for an explanation, example, or detailed feedback.
+8. If the user's English sentence contains Chinese words or phrases, keep the spoken "text" brief but explain the Chinese word aloud once, using a natural phrase such as: "You can say ... for ...". Then continue the conversation.
+9. For mixed English-Chinese input, also add a vocabulary correction whose "originalText" is the Chinese word or phrase and whose "suggestedText" is the natural English replacement.
 
 Respond in JSON format:
 {
@@ -29,7 +31,7 @@ Respond in JSON format:
     }
   ]
 }
-Only include corrections if the user made clear mistakes.`
+Only include corrections if the user made clear mistakes, except mixed English-Chinese input MUST receive the vocabulary correction described above.`
 
 function userAskedForDetail(messages: ConversationMessage[]) {
   const lastUserMessage = [...messages].reverse().find(message => message.role === 'user')?.content.toLowerCase() ?? ''
