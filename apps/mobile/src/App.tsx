@@ -79,7 +79,7 @@ export default function App() {
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
-  const audio = useNativeSessionAudio(audioUrl)
+  const audio = useNativeSessionAudio(audioUrl, ttsSpeed)
   const auth = useMobileAuth()
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
@@ -118,9 +118,9 @@ export default function App() {
       text,
       accent: accent.name,
       provider: ttsProvider,
-      speed: ttsSpeed,
+      speed: 1,
     })
-  }, [accent.name, api, ttsProvider, ttsSpeed])
+  }, [accent.name, api, ttsProvider])
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
