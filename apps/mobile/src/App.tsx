@@ -117,9 +117,9 @@ export default function App() {
       text,
       accent: accent.name,
       provider: ttsProvider,
-      speed: ttsSpeed,
+      speed: 1,
     })
-  }, [accent.name, api, ttsProvider, ttsSpeed])
+  }, [accent.name, api, ttsProvider])
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return

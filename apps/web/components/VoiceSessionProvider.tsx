@@ -738,7 +738,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed }),
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: 1 }),
         })
         const result = await res.json() as { audioUrl?: string }
         if (!result.audioUrl) return
