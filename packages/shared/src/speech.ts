@@ -9,7 +9,19 @@ export interface TTSResult {
 }
 
 export interface STTProvider {
-  transcribe(audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult>
+  transcribe(
+    audioBlob: Blob,
+    options?: {
+      signal?: AbortSignal
+      language?: string
+      getVoiceActivity?: () => {
+        lastVoiceAt: number | null
+        noiseFloor: number
+        level: number | null
+        isVoiceActive: boolean
+      } | null
+    },
+  ): Promise<STTResult>
 }
 
 export interface TTSProvider {

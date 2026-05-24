@@ -1,5 +1,9 @@
 import type { STTProvider, STTResult } from './types'
-import { getSilenceFinalizeDelay } from '@meteorvoice/session-core'
+import {
+  getSpeechEndpointDelay,
+  getVoiceActivityHoldDelay,
+  type VoiceActivitySnapshot,
+} from '@meteorvoice/session-core'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -47,13 +51,20 @@ export function createBrowserSTT(): STTProvider {
   }
 
   return {
-    transcribe(_audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult> {
+    transcribe(
+      _audioBlob: Blob,
+      options?: {
+        signal?: AbortSignal
+        language?: string
+        getVoiceActivity?: () => VoiceActivitySnapshot | null
+      },
+    ): Promise<STTResult> {
       void _audioBlob
       return new Promise((resolve, reject) => {
         const recognition = new SpeechRecognitionCtor()
         recognition.continuous = true
         recognition.interimResults = true
-        recognition.lang = 'en-US'
+        if (options?.language) recognition.lang = options.language
 
         let settled = false
         let silenceTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,6 +110,17 @@ export function createBrowserSTT(): STTProvider {
 
         maxTimer = setTimeout(() => finalize(), MAX_DURATION)
 
+        function finalizeAfterVoiceHold() {
+          const voiceHold = getVoiceActivityHoldDelay({
+            voiceActivity: options?.getVoiceActivity?.(),
+          })
+          if (voiceHold > 0) {
+            silenceTimer = setTimeout(finalizeAfterVoiceHold, voiceHold)
+            return
+          }
+          finalize()
+        }
+
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           clearSilenceTimer()
           for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -112,8 +134,12 @@ export function createBrowserSTT(): STTProvider {
           if (allResults.length > 0 || lastInterim) {
             const currentTranscript = allResults.join(' ').trim() || lastInterim
             silenceTimer = setTimeout(() => {
-              finalize()
-            }, getSilenceFinalizeDelay(currentTranscript))
+              finalizeAfterVoiceHold()
+            }, getSpeechEndpointDelay({
+              transcript: currentTranscript,
+              hasFinalResult: allResults.length > 0,
+              voiceActivity: options?.getVoiceActivity?.(),
+            }))
           }
         }
 

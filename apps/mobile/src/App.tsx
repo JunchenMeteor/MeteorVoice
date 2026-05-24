@@ -26,7 +26,6 @@ import {
   createPlaybackQueueSnapshot,
   createInitialSnapshot,
   endActiveSession,
-  enqueuePlaybackAudio,
   getNextSessionAction,
   getPlaybackCompletionEffects,
   receiveCoachReply,
@@ -38,7 +37,7 @@ import {
   type PlaybackQueueSnapshot,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
-import { accentProfiles, scenarios, splitSpokenText, t, type ConversationMessage, type ConversationResponse, type Locale } from '@meteorvoice/shared'
+import { accentProfiles, scenarios, t, type ConversationMessage, type ConversationResponse, type Locale } from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
@@ -203,33 +202,16 @@ export default function App() {
       setSnapshot(nextSnapshot)
 
       setStatus(tr('session.status.requesting_voice'))
-      const segments = splitSpokenText(coachReply.text)
-      const playableSegments = segments.length > 1 ? segments : [coachReply.text]
-      const [firstSegment, ...remainingSegments] = playableSegments
-      if (!firstSegment) {
+      if (!coachReply.text.trim()) {
         setStatus(tr('session.status.reply_without_text'))
         return
       }
-      const voice = await synthesizeCoachSpeech(firstSegment)
+      const voice = await synthesizeCoachSpeech(coachReply.text)
 
       if (voice.audioUrl) {
         setStatus(tr('session.status.playing_reply'))
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
-        if (remainingSegments.length) {
-          void Promise.all(remainingSegments.map(segment => synthesizeCoachSpeech(segment)))
-            .then(results => {
-              const audioUrls = results.map(result => result.audioUrl).filter((url): url is string => Boolean(url))
-              setPlaybackQueue(queue => enqueuePlaybackAudio(queue, audioUrls))
-            })
-            .catch(() => {
-              void synthesizeCoachSpeech(coachReply.text)
-                .then(result => {
-                  if (result.audioUrl) setPlaybackQueue(queue => enqueuePlaybackAudio(queue, [result.audioUrl]))
-                })
-                .catch(() => undefined)
-            })
-        }
       } else {
         setStatus(tr('session.status.reply_without_audio'))
       }

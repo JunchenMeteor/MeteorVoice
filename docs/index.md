@@ -12,6 +12,8 @@
    - 双端架构骨架完成后的产品化路线图，包含文档收口、workspace 工程化、API 契约、session-core、mobile 语音闭环和口音能力专项。
 4. `docs/native-mobile-architecture-plan.md`
    - Web + Native Mobile 双端架构升级历史路线、mobile 探针、共享包和 session core 落地计划。
+5. `docs/session-endpointing-vad.md`
+   - 会话页“用户是否说完”的 endpointing + VAD 设计，修改 STT/VAD/静音等待/轮次触发前 MUST 阅读。
 
 ## 当前执行状态
 
@@ -33,6 +35,8 @@
   - Native mobile 本地运行和编译说明，覆盖 Expo Go、development build、真机调试和国内网络建议。
 - `docs/native-mobile-completion-status.md`
   - Native mobile completion pass 状态、当前验证命令和已知限制。
+- `docs/session-endpointing-vad.md`
+  - Web/Mobile 语音 endpointing、VAD 信号、文本未完判断和后续 native VAD 增强计划。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 
