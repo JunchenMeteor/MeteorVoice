@@ -33,24 +33,51 @@
 - 跨端 API client SHOULD 放在 `packages/api-client/`。
 - 平台无关 session/turn lifecycle SHOULD 放在 `packages/session-core/`。
 
+## Issue / PR 标题和 Label 规则
+
+Issue 和 PR 标题 MUST 使用英文，并使用下列前缀之一：
+
+- `[Feature]`：新能力、产品体验增强、架构阶段能力。
+- `[Fix]`：bug 修复、回归修复、线上或预览环境异常修复。
+- `[Docs]`：文档、runbook、计划、交接说明；docs 类型 MUST 使用 `documentation` label，禁止用 `enhancement` 代替。
+- `[Refactor]`：不直接改变用户可见行为的结构整理、模块抽取、代码边界调整。
+- `[Chore]`：仓库维护、CI、依赖、配置、同步类事务。
+- `[TTS]`：TTS、播放链路、语速、音频合成 provider 相关工作。可同时叠加 `bug` 或 `enhancement`。
+- `[Mobile]`：native mobile 或 mobile web 相关工作。可同时叠加 `bug` 或 `enhancement`。
+
+Release 标题 MAY 直接以 `Release ...` 开头，不要求加 `[Release]` 前缀，但 MUST 使用 `release` label。
+
+Label 使用规则：
+
+- `[Feature]` MUST 使用 `enhancement`。
+- `[Fix]` MUST 使用 `bug`。
+- `[Docs]` MUST 使用 `documentation`，MUST NOT 使用 `enhancement`。
+- `[Refactor]` MUST 使用 `refactor`。
+- `[Chore]` MUST 使用 `chore`。
+- `[TTS]` MUST 使用 `tts`，并按实际性质额外使用 `bug` 或 `enhancement`。
+- `[Mobile]` MUST 使用 `mobile`，并按实际性质额外使用 `bug` 或 `enhancement`。
+- `Release ...` MUST 使用 `release`。
+- 如果一个任务同时涉及多个领域，MAY 叠加领域 label，例如 mobile Web TTS bug 使用 `bug` + `mobile` + `tts`。
+
 ## Issue 规则
 
 - 开始较大功能前，SHOULD 先确认是否已有对应 issue。
-- 新建 issue 时，标题 MUST 使用英文，并以 `[Feature] ...` 或 `[Fix] ...` 开头。
+- 新建 issue 时，标题 MUST 符合上方标题前缀规则。
 - 新建 issue 时，body MUST 包含以下固定结构：
   - `## Summary`
   - `## Expected Behavior`
   - `## Proposed Changes`
   - `## Test Plan`
-- fix 类 issue MUST 使用 `bug` label；feature 类 issue MUST 使用 `enhancement` label。
+- 新建 issue 时，label MUST 符合上方 label 规则。
 - 禁止为同一工作重复创建 issue。
 - 当用户明确要求不要创建 issue 时，MUST 不创建。
 
 ## PR 规则
 
 - 分支名 MUST 使用 `dev/<description>/<feature>`，例如 `dev/feature/session-immersive-ui`。
-- PR 标题 MUST 使用英文，并以 `[Feature] ...` 或 `[Fix] ...` 开头。
+- PR 标题 MUST 符合上方标题前缀规则。
 - PR SHOULD 聚焦一个可 review 的主题，避免把 UI 重构、provider 改动和数据库迁移混在一起。
+- PR label MUST 符合上方 label 规则。
 - PR body MUST 使用以下顺序：
   - `## Summary`
   - `## Test Plan`
@@ -85,9 +112,12 @@ Closes #48
 
 ## 长期分支规则
 
-- `main` 是日常集成主线，功能、修复和架构升级里程碑最终 SHOULD 合入 `main`。
-- `release` 是长期稳定发布/预发布分支，SHOULD 只接收从 `main` 挑选或合入的已验证变更。
+- `main` 是日常集成和预览分支，功能、修复和架构升级里程碑最终 SHOULD 合入 `main`。
+- `release` 是长期稳定发布/生产分支，production deployment SHOULD 只由 `release` 触发。
 - 禁止把 `release` 当作日常开发分支。
+- 发布新版本时，MUST 将上次发布节点之后 `main` 上的全部改动完整合入 `release`，不得按主观判断选择性 cherry-pick。
+- 如果某个 `main` 改动暂时不能发布，MUST 先在 `main` 通过 revert 或后续 PR 修正，再把修正后的 `main` 全量合入 `release`。
+- release hotfix 只允许用于紧急生产修复；hotfix 合入 `release` 后，MUST 立即同步回 `main`，避免长期分叉。
 - 发布版本 SHOULD 使用 tag 表达，例如 `v0.1.0`，不要为每个版本创建长期 release 分支。
 - 日期或版本分支 MAY 用于短期 hotfix 或候选发布，例如 `release/v0.1.1-rc`，完成后 SHOULD 删除。
 - `dev/architecture/native-mobile` 曾用于 native mobile 架构升级长期集成。当前双端架构骨架已合入 `main`，新的产品化阶段 SHOULD 以 `docs/architecture-productization-roadmap.md` 为准；如用户要求重启长期架构分支，再按任务创建。
