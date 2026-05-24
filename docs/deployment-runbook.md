@@ -43,11 +43,12 @@ Vercel 环境变量仍配置在项目级，不跟随文件迁移。检查项：
 ## 分支职责
 
 - `main`
-  - 完整 monorepo 集成主线。
-  - 接收架构升级、Web/Mobile 共同能力、后续开发。
+  - 完整 monorepo 集成和预览分支。
+  - 接收架构升级、Web/Mobile 共同能力、后续开发，并触发 preview deployment。
 - `release`
-  - 稳定发布/预发布分支。
-  - 只在产品负责人确认后从 `main` 或明确 hotfix PR 合入。
+  - 稳定生产发布分支。
+  - production deployment SHOULD 只由 `release` 触发。
+  - 发布新版本时 MUST 完整合入上次发布节点之后 `main` 上的全部改动，不得选择性 cherry-pick。
 - `dev/architecture/native-mobile`
   - 本轮 native mobile 架构升级长期集成分支。
   - PR16 合入 `main` 后可以保留为历史分支，不再作为默认开发入口。
@@ -62,8 +63,9 @@ Vercel 环境变量仍配置在项目级，不跟随文件迁移。检查项：
    npm run mobile:config
    ```
 3. Web 预览部署检查通过。
-4. 需要发布时，从 `main` 提 PR 到 `release`。
-5. `release` 触发 production deployment。
+4. 需要发布时，从 `main` 提 PR 到 `release`，或本地在 `release` 上执行 `git merge --no-ff main` 后 push。
+5. 发布合并 MUST 包含上次发布节点之后 `main` 上的全部改动；如果某个改动不能发布，先在 `main` revert 或修正，再发布修正后的完整 main。
+6. `release` 触发 production deployment。
 
 ## 手动触发生产部署
 
