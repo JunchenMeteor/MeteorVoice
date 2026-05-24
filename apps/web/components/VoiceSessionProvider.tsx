@@ -17,6 +17,7 @@ import {
   canSamplePlaybackLevel,
   completeCoachPlayback,
   createVoiceActivitySnapshot,
+  judgeEndpoint,
   pauseSessionForRoute,
   receiveCoachReply,
   recoverSessionError,
@@ -553,6 +554,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
   const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
   const voiceLevelRequestRef = useRef(0)
+  const listeningStartMsRef = useRef(0)
+  const pendingEndpointTranscriptRef = useRef('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
   const audioUnlockedRef = useRef(false)
@@ -962,6 +965,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setCorrections([])
     setSummary(null)
     setInterrupted(false)
+    listeningStartMsRef.current = 0
+    pendingEndpointTranscriptRef.current = ''
     startNextTurn()
   }, [startNextTurn, tr, ttsPreferenceLoaded, unlockSessionAudio])
 
@@ -1039,6 +1044,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       setStatusText(tr('session.paused'))
       return
     }
+    listeningStartMsRef.current = 0
+    pendingEndpointTranscriptRef.current = ''
     startNextTurn()
   }, [startNextTurn, tr, unlockSessionAudio])
 
@@ -1058,7 +1065,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
     setInterrupted(false)
     setStatusText(tr('session.listening'))
-    applyTransition('listening')
+    if (snapshotRef.current.state !== 'listening') {
+      applyTransition('listening')
+    }
+    if (listeningStartMsRef.current === 0) {
+      listeningStartMsRef.current = Date.now()
+      pendingEndpointTranscriptRef.current = ''
+    }
 
     const abortController = new AbortController()
     abortListeningRef.current = abortController
@@ -1106,12 +1119,51 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       return
     }
     abortListeningRef.current = null
+    const endpointVoiceActivity = voiceActivityRef.current
     stopVoiceLevelSampling()
+    const endpointTranscript = [pendingEndpointTranscriptRef.current, transcript]
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join(' ')
 
+    // 三层判停：本地判断 + LLM 语义确认 + 安全网超时
+    const endpointResult = await judgeEndpoint({
+      transcript: endpointTranscript,
+      voiceActivity: endpointVoiceActivity,
+      listeningDurationMs: Date.now() - listeningStartMsRef.current,
+      lastVoiceAtMs: endpointVoiceActivity.lastVoiceAt ?? null,
+      messages: snapshotRef.current.messages,
+      scenario: scenarioRef.current.key,
+      semanticCheck: async (t, ctx) => {
+        const res = await fetch('/api/semantic-endpoint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
+        })
+        if (!res.ok) throw new Error('Semantic check failed')
+        const data = await res.json() as { judgment: 'done' | 'thinking' }
+        return data.judgment
+      },
+    })
+    if (!isCurrentTurn()) return
+
+    if (endpointResult.judgment === 'continue') {
+      pendingEndpointTranscriptRef.current = endpointTranscript
+      setStatusText(tr(endpointResult.reason === 'llm_thinking' ? 'session.waiting_for_speech' : 'session.listening'))
+      window.setTimeout(() => {
+        if (isCurrentTurn() && activeSessionRef.current && canListenOnRouteRef.current) {
+          simulateTurnRef.current(turnId)
+        }
+      }, 500)
+      return
+    }
+
+    listeningStartMsRef.current = 0 // turn 已提交，下一轮重新计时
+    pendingEndpointTranscriptRef.current = ''
     setStatusText(tr('session.transcribing'))
     const acceptedTurn = acceptTranscriptTurn({
       snapshot: snapshotRef.current,
-      transcript,
+      transcript: endpointTranscript,
       messages: snapshotRef.current.messages,
     })
     snapshotRef.current = acceptedTurn.snapshot

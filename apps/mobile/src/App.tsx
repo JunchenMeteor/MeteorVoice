@@ -30,6 +30,7 @@ import {
   endActiveSession,
   getNextSessionAction,
   getPlaybackCompletionEffects,
+  judgeEndpoint,
   receiveCoachReply,
   recoverSessionError,
   requestCoachReply,
@@ -92,14 +93,20 @@ export default function App() {
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
+  const getAuthHeaders = auth.getAuthHeaders
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const listeningStartMsRef = useRef(0)
+  const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
+  const endpointRequestRef = useRef(0)
+  const sessionActiveRef = useRef(false)
+  const pendingNativeTranscriptRef = useRef('')
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
   const api = useMemo(() => createMeteorVoiceApiClient({
     baseUrl: apiBaseUrl.trim(),
-    headers: auth.getAuthHeaders,
-  }), [apiBaseUrl, auth.getAuthHeaders])
+    headers: getAuthHeaders,
+  }), [apiBaseUrl, getAuthHeaders])
   const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
   const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
   const sessionAction = getNextSessionAction({
@@ -113,6 +120,9 @@ export default function App() {
   const audioPhaseLabel = tr(`session.audio_phase.${audio.phase}`)
 
   function startSession() {
+    listeningStartMsRef.current = Date.now()
+    pendingNativeTranscriptRef.current = ''
+    sessionActiveRef.current = true
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
     const nextSnapshot = startListeningSession(nextSessionId)
     setSnapshot(nextSnapshot)
@@ -188,6 +198,8 @@ export default function App() {
     setMessages(nextMessages)
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
+    listeningStartMsRef.current = 0 // turn 已提交，下一轮重新计时
+    pendingNativeTranscriptRef.current = ''
     setBusy(true)
 
     try {
@@ -266,22 +278,63 @@ export default function App() {
     tr,
   ])
 
-  const handleNativeFinalTranscript = useCallback((finalTranscript: string) => {
+  const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
     const transcript = finalTranscript.trim()
     if (!transcript) return
+    const endpointTranscript = [pendingNativeTranscriptRef.current, transcript]
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join(' ')
 
-    setInput(transcript)
+    setInput(endpointTranscript)
 
     if (!isSessionActive) {
       setStatus(tr('session.status.speech_captured'))
       return
     }
 
-    void submitTurn(transcript)
-  }, [isSessionActive, submitTurn, tr])
+    // 三层判停：确认系统判断是否正确
+    const baseUrl = apiBaseUrl.trim()
+    const endpointRequestId = ++endpointRequestRef.current
+    const endpointResult = await judgeEndpoint({
+      transcript: endpointTranscript,
+      listeningDurationMs: Date.now() - listeningStartMsRef.current,
+      messages,
+      scenario: scenario.key,
+      semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
+        const res = await fetch(`${baseUrl}/api/semantic-endpoint`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
+        })
+        if (!res.ok) throw new Error('Semantic check failed')
+        const data = await res.json() as { judgment: 'done' | 'thinking' }
+        return data.judgment
+      } : undefined,
+    })
+    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current) return
+
+    if (endpointResult.judgment === 'continue') {
+      pendingNativeTranscriptRef.current = endpointTranscript
+      setStatus(tr('session.status.listening'))
+      void speechStartListeningRef.current('en-US')
+      return
+    }
+
+    pendingNativeTranscriptRef.current = ''
+    void submitTurn(endpointTranscript)
+  }, [apiBaseUrl, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn, tr])
 
   const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
   const speechPhaseLabel = tr(`session.speech_phase.${speech.phase}`)
+
+  useEffect(() => {
+    speechStartListeningRef.current = speech.startListening
+  }, [speech.startListening])
+
+  useEffect(() => {
+    sessionActiveRef.current = isSessionActive
+  }, [isSessionActive])
 
   async function runTurn() {
     await submitTurn(input)
@@ -295,6 +348,8 @@ export default function App() {
     }
 
     if (busy || audio.isPlaying || audio.isRecording) return
+    listeningStartMsRef.current = Date.now()
+    pendingNativeTranscriptRef.current = ''
     const started = await speech.startListening('en-US')
     setStatus(started ? tr('session.status.native_speech_listening') : tr('session.status.native_speech_unavailable'))
   }
@@ -494,6 +549,9 @@ export default function App() {
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
 
     setBusy(true)
+    sessionActiveRef.current = false
+    endpointRequestRef.current += 1
+    pendingNativeTranscriptRef.current = ''
     try {
       setStatus(tr('session.status.generating_summary'))
       const userTurns = messages.filter(message => message.role === 'user').length

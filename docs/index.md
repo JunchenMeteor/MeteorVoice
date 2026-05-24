@@ -19,9 +19,8 @@
 
 - 当前主线：`main` 已完成 Web 迁入 `apps/web`、Expo native mobile app、`packages/shared`、`packages/api-client`、`packages/session-core` 的双端架构骨架。
 - 当前稳定发布/预发布分支：`release`。
-- 会话页沉浸式 UI、移动端 full-screen stage、P2/P3 音频驱动 waveform、AI 回复长度/速度优化、iOS Web audio unlock/fallback 已完成并合入 `main`。
-- iOS Web audio unlock 是移动 Web 的可靠性修复，不是 native mobile 长期架构替代。
-- 下一阶段 SHOULD 按 `docs/architecture-productization-roadmap.md` 推进文档收口、workspace 工程化、API 契约、session-core 抽离和 mobile 语音闭环产品化。
+- 已完成并合入 `main`：沉浸式 UI、移动端 full-screen stage、waveform、AI 回复自然度优化、iOS Web audio unlock、CI 并行化、历史页详展/分页/软删除、Preferences 跨设备同步、Mobile 音频中断硬化。
+- 当前正在推进三合一层级判停（`docs/semantic-endpointing-plan.md`），将固定静默等待升级为 L1 本地判断 + L2 LLM 语义判停 + L3 安全网超时。
 
 ## 活跃计划
 
@@ -39,6 +38,8 @@
   - Web/Mobile 语音 endpointing、VAD 信号、文本未完判断和后续 native VAD 增强计划。
 - `docs/execution-plan-ci-history-prefs-audio.md`
   - 四个并行方向的详细执行计划：CI/CD 增强、历史页完善、跨设备偏好同步、Mobile 音频硬化。每个方向独立可操作，含实施步骤和验收标准。
+- `docs/semantic-endpointing-plan.md`
+  - 三合一层级判停方案：Layer 1 本地快速判断 + Layer 2 LLM 语义判停 + Layer 3 安全网超时。从固定静默时长升级为智能 end-of-turn 检测。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 
