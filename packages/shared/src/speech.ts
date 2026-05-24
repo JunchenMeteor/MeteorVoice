@@ -93,6 +93,13 @@ export const ttsProviderCapabilities = {
 
 export type TTSProviderKey = keyof typeof ttsProviderCapabilities
 
+const calibratedNormalSpeechRate = 1.2
+
+function normalizeSpeedMultiplier(speed: number) {
+  if (!Number.isFinite(speed)) return 1
+  return Math.min(1.5, Math.max(0.6, speed))
+}
+
 export function supportsAccent(provider: string, accent: string): boolean {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
   if (!capabilities) return false
@@ -101,9 +108,10 @@ export function supportsAccent(provider: string, accent: string): boolean {
 
 export function getTTSSpeedRouting(provider: string, speed = 1): { serverSpeed: number; playbackRate: number } {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
+  const calibratedSpeed = normalizeSpeedMultiplier(speed) * calibratedNormalSpeechRate
   if (capabilities?.speedControl === 'provider') {
-    return { serverSpeed: speed, playbackRate: 1 }
+    return { serverSpeed: calibratedSpeed, playbackRate: 1 }
   }
 
-  return { serverSpeed: 1, playbackRate: speed }
+  return { serverSpeed: 1, playbackRate: calibratedSpeed }
 }
