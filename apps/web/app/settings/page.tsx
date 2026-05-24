@@ -4,7 +4,7 @@ import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
-import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
@@ -63,6 +63,7 @@ export default function SettingsPage() {
     if (!supportsAccent(ttsProvider, key)) return
     setDefaultAccent(key)
     localStorage.setItem('coach-default-accent', key)
+    void persistPreference('default_accent_key', key)
   }
 
   function handleTtsProviderChange(key: string) {
@@ -70,23 +71,15 @@ export default function SettingsPage() {
     if (!supportsAccent(key, defaultAccent)) {
       setDefaultAccent('american')
       localStorage.setItem('coach-default-accent', 'american')
+      void persistPreference('default_accent_key', 'american')
     }
-    fetch('/api/preferences', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tts_provider: key }),
-    }).catch(() => {})
+    void persistPreference('tts_provider', key)
   }
 
   function handleTtsSpeedChange(index: number) {
     const next = ttsSpeedOptions[index] ?? 1
     setTtsSpeed(next)
-    writeTTSSpeedPreference(next)
-    fetch('/api/preferences', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tts_speed: next }),
-    }).catch(() => {})
+    void persistTTSSpeedPreference(next)
   }
 
   return (

@@ -35,17 +35,38 @@ export async function updateSessionStatus(input: { id: string; status: string })
   return { success: true }
 }
 
-export async function listSessions() {
+export async function listSessions(options?: {
+  offset?: number
+  limit?: number
+  scenarioKey?: string
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { sessions: [] }
+  if (!user) return { sessions: [], hasMore: false }
 
-  const { data: sessions, error } = await supabase
+  const limit = Math.min(options?.limit ?? 20, 50)
+  const offset = options?.offset ?? 0
+
+  let query = supabase
     .from('sessions')
-    .select('id, started_at, ended_at, status, scenarios(key, name), accent_profiles(key, name)')
+    .select('id, started_at, ended_at, status, scenarios(key, name), accent_profiles(key, name)', { count: 'exact' })
     .eq('user_id', user.id)
+    .neq('status', 'deleted')
     .order('started_at', { ascending: false })
-    .limit(30)
+    .range(offset, offset + limit)
+
+  if (options?.scenarioKey) {
+    query = supabase
+      .from('sessions')
+      .select('id, started_at, ended_at, status, scenarios!inner(key, name), accent_profiles(key, name)', { count: 'exact' })
+      .eq('user_id', user.id)
+      .neq('status', 'deleted')
+      .eq('scenarios.key', options.scenarioKey)
+      .order('started_at', { ascending: false })
+      .range(offset, offset + limit)
+  }
+
+  const { data: sessions, error, count } = await query
 
   if (error) return { error: error.message, status: 500 as const }
 
@@ -54,7 +75,12 @@ export async function listSessions() {
     .select('session_id, summary')
     .eq('user_id', user.id)
 
-  const summaryMap = new Map((histories ?? []).map((history: { session_id: string; summary: string }) => [history.session_id, history.summary]))
+  const summaryMap = new Map(
+    (histories ?? []).map((h: { session_id: string; summary: string }) => [h.session_id, h.summary]),
+  )
+
+  const totalCount = count ?? (sessions ?? []).length
+  const hasMore = offset + (sessions ?? []).length < totalCount
 
   const result = (sessions ?? []).map((session: Record<string, unknown>) => ({
     id: String(session.id),
@@ -67,7 +93,23 @@ export async function listSessions() {
     summary: summaryMap.get(session.id as string) ?? null,
   }))
 
-  return { sessions: result }
+  return { sessions: result, hasMore }
+}
+
+export async function deleteSession(sessionId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Unauthorized', status: 401 as const }
+
+  // 软删除：status → 'deleted'
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'deleted', ended_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+
+  if (error) return { error: error.message, status: 500 as const }
+  return { success: true }
 }
 
 export async function listSessionTurns(sessionId: string) {

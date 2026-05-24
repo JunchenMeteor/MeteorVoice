@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -8,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  type AppStateStatus,
 } from 'react-native'
 import {
   createMeteorVoiceApiClient,
@@ -50,6 +52,7 @@ import {
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
+import { pullMobilePreferences, syncMobilePreferences } from './mobilePreferences'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
 type SessionTab = 'corrections' | 'transcript'
@@ -89,6 +92,7 @@ export default function App() {
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
+  const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -461,7 +465,22 @@ export default function App() {
   }
 
   function adjustSpeed(delta: number) {
-    setTtsSpeed(previous => Math.min(1.3, Math.max(0.7, Number((previous + delta).toFixed(1)))))
+    setTtsSpeed(previous => {
+      const next = Math.min(1.3, Math.max(0.7, Number((previous + delta).toFixed(1))))
+      // Debounce 回写 API
+      if (prefSyncTimerRef.current) clearTimeout(prefSyncTimerRef.current)
+      prefSyncTimerRef.current = setTimeout(() => {
+        void syncMobilePreferences({
+          apiBaseUrl: apiBaseUrl.trim(),
+          getAuthHeaders: auth.getAuthHeaders,
+          ttsSpeed: next,
+          ttsProvider,
+          defaultScenarioKey: selectedScenarioKey,
+          defaultAccentKey: selectedAccentKey,
+        })
+      }, 600)
+      return next
+    })
   }
 
   async function continueSession() {
@@ -528,6 +547,23 @@ export default function App() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setStatus(tr('session.status.accent_selected'))
   }
+
+  // 进入前台时从 API 拉取最新偏好配置（静默失败）
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState !== 'active') return
+      void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(prefs => {
+        if (!prefs) return
+        setTtsProvider(prefs.ttsProvider)
+        setTtsSpeed(prefs.ttsSpeed)
+        setAvailableProviders(prefs.availableProviders)
+        if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
+        if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
+        if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
+      })
+    })
+    return () => subscription.remove()
+  }, [apiBaseUrl, auth.getAuthHeaders])
 
   return (
     <SafeAreaView style={styles.shell}>
