@@ -79,10 +79,24 @@ export const ttsProviderCapabilities = {
 export type TTSProviderKey = keyof typeof ttsProviderCapabilities
 
 const calibratedNormalSpeechRate = 1.2
+const xunfeiMinSpeed = 50
+const xunfeiNormalSpeed = 70
+const xunfeiMaxSpeed = 100
 
 function normalizeSpeedMultiplier(speed: number) {
   if (!Number.isFinite(speed)) return 1
-  return Math.min(1.5, Math.max(0.6, speed))
+  return Math.min(1.5, Math.max(0.75, speed))
+}
+
+function mapXunfeiSpeed(speed: number) {
+  const normalized = normalizeSpeedMultiplier(speed)
+  if (normalized <= 1) {
+    const progress = (normalized - 0.75) / 0.25
+    return Math.round(xunfeiMinSpeed + ((xunfeiNormalSpeed - xunfeiMinSpeed) * progress))
+  }
+
+  const progress = (normalized - 1) / 0.5
+  return Math.round(xunfeiNormalSpeed + ((xunfeiMaxSpeed - xunfeiNormalSpeed) * progress))
 }
 
 export function supportsAccent(provider: string, accent: string): boolean {
@@ -93,10 +107,10 @@ export function supportsAccent(provider: string, accent: string): boolean {
 
 export function getTTSSpeedRouting(provider: string, speed = 1): { serverSpeed: number; playbackRate: number } {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
-  const calibratedSpeed = normalizeSpeedMultiplier(speed) * calibratedNormalSpeechRate
+  const normalizedSpeed = normalizeSpeedMultiplier(speed)
   if (capabilities?.speedControl === 'provider') {
-    return { serverSpeed: calibratedSpeed, playbackRate: 1 }
+    return { serverSpeed: provider === 'xunfei' ? mapXunfeiSpeed(normalizedSpeed) : normalizedSpeed, playbackRate: 1 }
   }
 
-  return { serverSpeed: 1, playbackRate: calibratedSpeed }
+  return { serverSpeed: 1, playbackRate: normalizedSpeed * calibratedNormalSpeechRate }
 }

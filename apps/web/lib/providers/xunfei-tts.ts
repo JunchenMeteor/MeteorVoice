@@ -53,7 +53,7 @@ export function createXunfeiTTS(): TTSProvider {
             business: {
               aue: 'lame',
               vcn: voiceForAccent(options?.accent),
-              speed: Math.round((options?.speed ?? 1) * 50),
+              speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
               volume: 50,
               pitch: 50,
               bgs: 0,
