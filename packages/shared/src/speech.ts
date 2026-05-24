@@ -9,7 +9,22 @@ export interface TTSResult {
 }
 
 export interface STTProvider {
-  transcribe(audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult>
+  transcribe(
+    audioBlob: Blob,
+    options?: {
+      signal?: AbortSignal
+      language?: string
+      getVoiceActivity?: () => {
+        lastVoiceAt: number | null
+        noiseFloor: number
+        level: number | null
+        peakLevel: number
+        smoothedPeakLevel: number
+        threshold: number
+        isVoiceActive: boolean
+      } | null
+    },
+  ): Promise<STTResult>
 }
 
 export interface TTSProvider {
@@ -80,8 +95,8 @@ export type TTSProviderKey = keyof typeof ttsProviderCapabilities
 
 const calibratedNormalSpeechRate = 1.2
 const xunfeiMinSpeed = 50
-const xunfeiNormalSpeed = 70
-const xunfeiMaxSpeed = 100
+const xunfeiNormalSpeed = 55
+const xunfeiMaxSpeed = 80
 
 function normalizeSpeedMultiplier(speed: number) {
   if (!Number.isFinite(speed)) return 1

@@ -1,4 +1,9 @@
-import { findCommonErrors, retrieveRelevantContext } from '@/lib/retrieval'
+import {
+  buildMixedChineseSpokenHint,
+  findCommonCorrections,
+  findCommonErrors,
+  retrieveRelevantContext,
+} from '@/lib/retrieval'
 import type { ConversationContext, ConversationMessage } from '@/lib/providers/types'
 import { createAICoach } from '@/lib/providers/ai-provider'
 
@@ -23,5 +28,27 @@ export async function generateCoachReply(messages: ConversationMessage[], contex
     ragMessages.unshift({ role: 'system', content: contextParts.join('\n') })
   }
 
-  return ai.generateReply(ragMessages, context)
+  const response = await ai.generateReply(ragMessages, context)
+  if (!lastUserMsg) return response
+
+  const requiredCorrections = findCommonCorrections(lastUserMsg.content)
+  const mergedCorrections = [...response.corrections]
+  for (const correction of requiredCorrections) {
+    const duplicate = mergedCorrections.some(existing =>
+      existing.type === correction.type &&
+      existing.originalText.toLowerCase() === correction.originalText.toLowerCase(),
+    )
+    if (!duplicate) mergedCorrections.push(correction)
+  }
+
+  const mixedChineseHint = buildMixedChineseSpokenHint(lastUserMsg.content)
+  const text = mixedChineseHint && !response.text.includes(mixedChineseHint)
+    ? `${mixedChineseHint} ${response.text}`.trim()
+    : response.text
+
+  return {
+    ...response,
+    text,
+    corrections: mergedCorrections,
+  }
 }

@@ -27,6 +27,16 @@ export interface PlaybackQueueSnapshot {
   status: 'idle' | 'playing' | 'finished'
 }
 
+export interface VoiceActivitySnapshot {
+  lastVoiceAt: number | null
+  noiseFloor: number
+  level: number | null
+  peakLevel: number
+  smoothedPeakLevel: number
+  threshold: number
+  isVoiceActive: boolean
+}
+
 export type SessionEffect =
   | 'request_coach_reply'
   | 'play_coach_reply'
@@ -368,11 +378,27 @@ export function shouldRestoreListeningAfterPlayback(input: {
   return input.activeSession && input.canListenOnRoute && input.workflowState === 'speaking'
 }
 
-export const DEFAULT_SILENCE_FINALIZE_MS = 1400
-export const FILLER_GRACE_FINALIZE_MS = 2200
+export const DEFAULT_SILENCE_FINALIZE_MS = 1700
+export const FINAL_RESULT_SILENCE_FINALIZE_MS = 950
+export const MIXED_LANGUAGE_GRACE_FINALIZE_MS = 2600
+export const FILLER_GRACE_FINALIZE_MS = 3400
+export const INCOMPLETE_PHRASE_GRACE_FINALIZE_MS = 2200
+export const VOICE_ACTIVITY_HOLD_MS = 700
+export const MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS = 1600
+export const DEFAULT_VOICE_NOISE_FLOOR = 0.018
+export const MIN_VOICE_ACTIVITY_LEVEL = 0.085
+export const VOICE_ACTIVITY_NOISE_MULTIPLIER = 3.1
+export const VOICE_ACTIVITY_PEAK_RATIO = 0.32
+export const VOICE_ACTIVITY_PEAK_SMOOTHING = 0.18
 
 const FILLER_END_PATTERN = /(?:^|[\s,，.。!?！？])(?:um+|uh+|er+|erm+|hmm+|mmm+|嗯+|啊+|呃+|额+|唔+)[\s,，.。!?！？]*$/i
 const CHINESE_TEXT_PATTERN = /[\u3400-\u9fff]/
+const CHINESE_TEXT_GLOBAL_PATTERN = /[\u3400-\u9fff]+/g
+const COMPLETE_ENDING_PATTERN = /[.!?。！？]$/
+const TRAILING_CONTINUATION_PATTERN = /(?:^|[\s,，])(?:and|or|but|because|so|then|that|which|who|whom|whose|when|where|why|how|if|as|while|although|though|unless|until|before|after|since|than|to|for|with|without|about|from|into|onto|over|under|between|during|like|比如|然后|因为|所以|但是|还有|就是|那个|这个|如果|虽然|或者|以及|跟|和|对|给|从|到|在|关于|为了)[\s,，.。!?！？]*$/i
+const LEADING_CONTINUATION_PATTERN = /^(?:I mean|actually|maybe|let me think|how to say|you know|well|so|and|but|就是|那个|这个|怎么说|我想想|然后|嗯|啊|呃|额)[\s,，.。!?！？]*$/i
+const TRAILING_ARTICLE_PATTERN = /(?:^|[\s,，])(?:a|an|the|my|your|his|her|their|our|this|that|these|those)[\s,，.。!?！？]*$/i
+const VERY_SHORT_UNPUNCTUATED_WORDS = 3
 
 export function endsWithThinkingFiller(transcript?: string | null) {
   return FILLER_END_PATTERN.test(transcript?.trim() ?? '')
@@ -382,8 +408,123 @@ export function containsChineseText(transcript?: string | null) {
   return CHINESE_TEXT_PATTERN.test(transcript ?? '')
 }
 
+export function looksLikeIncompleteSpeech(transcript?: string | null) {
+  const normalized = transcript?.trim() ?? ''
+  if (!normalized) return false
+  if (endsWithThinkingFiller(normalized)) return true
+  if (LEADING_CONTINUATION_PATTERN.test(normalized)) return true
+  if (TRAILING_CONTINUATION_PATTERN.test(normalized)) return true
+  if (TRAILING_ARTICLE_PATTERN.test(normalized)) return true
+  if (COMPLETE_ENDING_PATTERN.test(normalized)) return false
+
+  const words = normalized
+    .replace(CHINESE_TEXT_GLOBAL_PATTERN, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (words.length === 0) return false
+  return words.length <= VERY_SHORT_UNPUNCTUATED_WORDS
+}
+
 export function getSilenceFinalizeDelay(transcript?: string | null) {
-  return endsWithThinkingFiller(transcript)
-    ? FILLER_GRACE_FINALIZE_MS
-    : DEFAULT_SILENCE_FINALIZE_MS
+  if (endsWithThinkingFiller(transcript)) return FILLER_GRACE_FINALIZE_MS
+  if (looksLikeIncompleteSpeech(transcript)) return INCOMPLETE_PHRASE_GRACE_FINALIZE_MS
+  if (containsChineseText(transcript)) return MIXED_LANGUAGE_GRACE_FINALIZE_MS
+  return DEFAULT_SILENCE_FINALIZE_MS
+}
+
+export function getSpeechEndpointDelay(input: {
+  transcript?: string | null
+  hasFinalResult?: boolean
+  voiceActivity?: VoiceActivitySnapshot | null
+  nowMs?: number
+}) {
+  let delay: number
+  if (endsWithThinkingFiller(input.transcript)) {
+    delay = FILLER_GRACE_FINALIZE_MS
+  } else if (looksLikeIncompleteSpeech(input.transcript)) {
+    delay = INCOMPLETE_PHRASE_GRACE_FINALIZE_MS
+  } else {
+    delay = input.hasFinalResult || input.transcript?.trim()
+      ? FINAL_RESULT_SILENCE_FINALIZE_MS
+      : DEFAULT_SILENCE_FINALIZE_MS
+  }
+
+  const voiceHold = getVoiceActivityHoldDelay({
+    voiceActivity: input.voiceActivity,
+    nowMs: input.nowMs,
+  })
+  return Math.max(delay, voiceHold)
+}
+
+export function createVoiceActivitySnapshot(): VoiceActivitySnapshot {
+  return {
+    lastVoiceAt: null,
+    noiseFloor: DEFAULT_VOICE_NOISE_FLOOR,
+    level: null,
+    peakLevel: 0,
+    smoothedPeakLevel: 0,
+    threshold: MIN_VOICE_ACTIVITY_LEVEL,
+    isVoiceActive: false,
+  }
+}
+
+export function updateVoiceActivitySnapshot(
+  snapshot: VoiceActivitySnapshot,
+  input: {
+    level: number | null
+    nowMs?: number
+  },
+): VoiceActivitySnapshot {
+  const nowMs = input.nowMs ?? Date.now()
+  if (typeof input.level !== 'number' || Number.isNaN(input.level)) {
+    return { ...snapshot, level: null, isVoiceActive: false }
+  }
+
+  const level = Math.min(1, Math.max(0, input.level))
+  const peakLevel = Math.max(snapshot.peakLevel, level)
+  const smoothedPeakLevel = level > snapshot.smoothedPeakLevel
+    ? snapshot.smoothedPeakLevel * (1 - VOICE_ACTIVITY_PEAK_SMOOTHING) + level * VOICE_ACTIVITY_PEAK_SMOOTHING
+    : snapshot.smoothedPeakLevel
+  const threshold = Math.max(
+    MIN_VOICE_ACTIVITY_LEVEL,
+    snapshot.noiseFloor * VOICE_ACTIVITY_NOISE_MULTIPLIER,
+    smoothedPeakLevel * VOICE_ACTIVITY_PEAK_RATIO,
+  )
+  const isVoiceActive = level >= threshold
+  const noiseFloor = isVoiceActive
+    ? snapshot.noiseFloor
+    : snapshot.noiseFloor * 0.92 + level * 0.08
+
+  return {
+    lastVoiceAt: isVoiceActive ? nowMs : snapshot.lastVoiceAt,
+    noiseFloor,
+    level,
+    peakLevel,
+    smoothedPeakLevel,
+    threshold,
+    isVoiceActive,
+  }
+}
+
+export function getVoiceActivityHoldDelay(input: {
+  voiceActivity?: VoiceActivitySnapshot | null
+  nowMs?: number
+  holdStartedAt?: number | null
+}) {
+  const voiceActivity = input.voiceActivity
+  if (!voiceActivity?.lastVoiceAt) return 0
+
+  const nowMs = input.nowMs ?? Date.now()
+  if (
+    input.holdStartedAt &&
+    nowMs - input.holdStartedAt >= MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS
+  ) {
+    return 0
+  }
+
+  if (voiceActivity.isVoiceActive) return VOICE_ACTIVITY_HOLD_MS
+
+  const silenceAge = nowMs - voiceActivity.lastVoiceAt
+  return Math.max(0, VOICE_ACTIVITY_HOLD_MS - silenceAge)
 }

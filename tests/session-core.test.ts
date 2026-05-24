@@ -9,11 +9,20 @@ import {
   completeCoachPlayback,
   continueListening,
   createPlaybackQueueSnapshot,
+  createVoiceActivitySnapshot,
   DEFAULT_SILENCE_FINALIZE_MS,
   endActiveSession,
   endsWithThinkingFiller,
+  FINAL_RESULT_SILENCE_FINALIZE_MS,
   FILLER_GRACE_FINALIZE_MS,
   getSilenceFinalizeDelay,
+  getSpeechEndpointDelay,
+  getVoiceActivityHoldDelay,
+  INCOMPLETE_PHRASE_GRACE_FINALIZE_MS,
+  looksLikeIncompleteSpeech,
+  MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS,
+  MIN_VOICE_ACTIVITY_LEVEL,
+  MIXED_LANGUAGE_GRACE_FINALIZE_MS,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
   getNextSessionAction,
@@ -29,6 +38,9 @@ import {
   shouldResumeListeningOnRoute,
   startListeningSession,
   startPlaybackQueue,
+  updateVoiceActivitySnapshot,
+  VOICE_ACTIVITY_PEAK_RATIO,
+  VOICE_ACTIVITY_PEAK_SMOOTHING,
 } from '@meteorvoice/session-core'
 import { splitSpokenText } from '@meteorvoice/shared'
 
@@ -150,11 +162,93 @@ describe('session-core turn guard helpers', () => {
 
   it('uses short silence finalization with filler grace', () => {
     expect(getSilenceFinalizeDelay('I would like to book a table')).toBe(DEFAULT_SILENCE_FINALIZE_MS)
+    expect(getSilenceFinalizeDelay('I want to 预约 a table')).toBe(MIXED_LANGUAGE_GRACE_FINALIZE_MS)
+    expect(getSilenceFinalizeDelay('I want to')).toBe(INCOMPLETE_PHRASE_GRACE_FINALIZE_MS)
     expect(getSilenceFinalizeDelay('I would like to, um')).toBe(FILLER_GRACE_FINALIZE_MS)
     expect(getSilenceFinalizeDelay('我想 um')).toBe(FILLER_GRACE_FINALIZE_MS)
     expect(getSilenceFinalizeDelay('我想 嗯')).toBe(FILLER_GRACE_FINALIZE_MS)
     expect(endsWithThinkingFiller('I think uh')).toBe(true)
     expect(endsWithThinkingFiller('I think this is useful')).toBe(false)
+  })
+
+  it('uses faster endpointing when speech recognition has a final result', () => {
+    expect(getSpeechEndpointDelay({
+      transcript: 'I would like to book a table',
+      hasFinalResult: true,
+    })).toBe(FINAL_RESULT_SILENCE_FINALIZE_MS)
+    expect(getSpeechEndpointDelay({
+      transcript: 'I would like to book a table',
+      hasFinalResult: false,
+    })).toBe(FINAL_RESULT_SILENCE_FINALIZE_MS)
+    expect(getSpeechEndpointDelay({
+      transcript: 'I would like to, um',
+      hasFinalResult: true,
+    })).toBe(FILLER_GRACE_FINALIZE_MS)
+    expect(getSpeechEndpointDelay({
+      transcript: 'I want to',
+      hasFinalResult: true,
+    })).toBe(INCOMPLETE_PHRASE_GRACE_FINALIZE_MS)
+  })
+
+  it('extends endpointing while voice activity is still recent', () => {
+    const started = createVoiceActivitySnapshot()
+    const inactiveNoise = updateVoiceActivitySnapshot(started, { level: 0.07, nowMs: 900 })
+    expect(inactiveNoise.isVoiceActive).toBe(false)
+
+    const active = updateVoiceActivitySnapshot(started, { level: 0.2, nowMs: 1000 })
+    expect(active.isVoiceActive).toBe(true)
+    expect(active.peakLevel).toBe(0.2)
+    expect(active.smoothedPeakLevel).toBe(0.2 * VOICE_ACTIVITY_PEAK_SMOOTHING)
+    expect(active.threshold).toBe(MIN_VOICE_ACTIVITY_LEVEL)
+
+    const singleSpike = updateVoiceActivitySnapshot(started, { level: 0.5, nowMs: 1000 })
+    expect(singleSpike.peakLevel).toBe(0.5)
+    expect(singleSpike.threshold).toBe(MIN_VOICE_ACTIVITY_LEVEL)
+
+    let loudSpeech = started
+    for (let index = 0; index < 8; index += 1) {
+      loudSpeech = updateVoiceActivitySnapshot(loudSpeech, { level: 0.5, nowMs: 1000 + index * 50 })
+    }
+    const trailingNoise = updateVoiceActivitySnapshot(loudSpeech, { level: 0.12, nowMs: 1500 })
+    expect(loudSpeech.peakLevel).toBe(0.5)
+    expect(loudSpeech.threshold).toBeCloseTo(loudSpeech.smoothedPeakLevel * VOICE_ACTIVITY_PEAK_RATIO)
+    expect(trailingNoise.isVoiceActive).toBe(false)
+    expect(getSpeechEndpointDelay({
+      transcript: 'I would like to reserve a table',
+      hasFinalResult: true,
+      voiceActivity: active,
+      nowMs: 1000,
+    })).toBe(FINAL_RESULT_SILENCE_FINALIZE_MS)
+    expect(getSpeechEndpointDelay({
+      transcript: 'I would like to reserve a table',
+      hasFinalResult: true,
+      voiceActivity: active,
+      nowMs: 2000,
+    })).toBe(FINAL_RESULT_SILENCE_FINALIZE_MS)
+    expect(getVoiceActivityHoldDelay({
+      voiceActivity: active,
+      nowMs: 1200,
+      holdStartedAt: 1000,
+    })).toBeGreaterThan(0)
+    expect(getVoiceActivityHoldDelay({
+      voiceActivity: active,
+      nowMs: 1000 + MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS,
+      holdStartedAt: 1000,
+    })).toBe(0)
+  })
+
+  it('detects incomplete speech shapes for endpointing', () => {
+    expect(looksLikeIncompleteSpeech('I want to')).toBe(true)
+    expect(looksLikeIncompleteSpeech('I want to reserve a table.')).toBe(false)
+    expect(looksLikeIncompleteSpeech('I want to reserve a table')).toBe(false)
+    expect(looksLikeIncompleteSpeech('I want to reserve a table because')).toBe(true)
+    expect(looksLikeIncompleteSpeech('I want to reserve a table for')).toBe(true)
+    expect(looksLikeIncompleteSpeech('I would like a')).toBe(true)
+    expect(looksLikeIncompleteSpeech('let me think')).toBe(true)
+    expect(looksLikeIncompleteSpeech('how to say')).toBe(true)
+    expect(looksLikeIncompleteSpeech('然后')).toBe(true)
+    expect(looksLikeIncompleteSpeech('如果')).toBe(true)
+    expect(looksLikeIncompleteSpeech('我想订一个餐厅')).toBe(false)
   })
 
   it('detects Chinese words inside mixed English input', () => {

@@ -16,14 +16,17 @@ import {
   canSampleListeningLevel,
   canSamplePlaybackLevel,
   completeCoachPlayback,
+  createVoiceActivitySnapshot,
   pauseSessionForRoute,
   receiveCoachReply,
   recoverSessionError,
   requestCoachReply,
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
+  updateVoiceActivitySnapshot,
+  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { getTTSSpeedRouting, splitSpokenText, t as translations } from '@meteorvoice/shared'
+import { getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -42,6 +45,7 @@ const sessionStatusKeys = [
   'session.listening',
   'session.transcribing',
   'session.thinking',
+  'session.preparing_reply',
   'session.speaking',
   'session.playback_blocked',
   'session.correcting',
@@ -166,7 +170,7 @@ function getSessionStatusKey(input: {
     case 'transcribing':
       return 'session.transcribing'
     case 'thinking':
-      return 'session.thinking'
+      return 'session.preparing_reply'
     case 'speaking':
       return 'session.speaking'
     case 'correcting':
@@ -283,6 +287,89 @@ function normalizePlaybackRate(speed?: number) {
   return Math.min(1.6, Math.max(0.5, speed))
 }
 
+function isCoarsePointerDevice() {
+  if (typeof window === 'undefined') return false
+  return Boolean(window.matchMedia?.('(pointer: coarse)').matches)
+}
+
+function getPlaybackStartDelayMs() {
+  return isCoarsePointerDevice() ? 120 : 0
+}
+
+function writeString(view: DataView, offset: number, value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index))
+  }
+}
+
+function encodeWavWithSilence(audioBuffer: AudioBuffer, silenceSeconds: number) {
+  const channels = audioBuffer.numberOfChannels
+  const sampleRate = audioBuffer.sampleRate
+  const silenceFrames = Math.ceil(sampleRate * silenceSeconds)
+  const totalFrames = silenceFrames + audioBuffer.length
+  const bytesPerSample = 2
+  const blockAlign = channels * bytesPerSample
+  const dataSize = totalFrames * blockAlign
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+
+  writeString(view, 0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeString(view, 8, 'WAVE')
+  writeString(view, 12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, channels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * blockAlign, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bytesPerSample * 8, true)
+  writeString(view, 36, 'data')
+  view.setUint32(40, dataSize, true)
+
+  const channelData = Array.from({ length: channels }, (_, index) => audioBuffer.getChannelData(index))
+  let offset = 44
+  for (let frame = 0; frame < totalFrames; frame += 1) {
+    const sourceFrame = frame - silenceFrames
+    for (let channel = 0; channel < channels; channel += 1) {
+      const sample = sourceFrame < 0 ? 0 : channelData[channel][sourceFrame] ?? 0
+      const clamped = Math.max(-1, Math.min(1, sample))
+      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
+      offset += bytesPerSample
+    }
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+async function addSilencePreroll(blob: Blob, silenceSeconds: number) {
+  const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
+  if (!AudioContextCtor) return blob
+
+  const audioContext = new AudioContextCtor()
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(await blob.arrayBuffer())
+    return encodeWavWithSilence(audioBuffer, silenceSeconds)
+  } finally {
+    void audioContext.close().catch(() => {})
+  }
+}
+
+async function createPlayableAudioUrl(audioUrl: string) {
+  if (!audioUrl.startsWith('data:audio/')) return { url: audioUrl, revoke: null as (() => void) | null }
+
+  const response = await fetch(audioUrl)
+  const blob = await response.blob()
+  const playableBlob = isCoarsePointerDevice()
+    ? await addSilencePreroll(blob, 0.18).catch(() => blob)
+    : blob
+  const objectUrl = URL.createObjectURL(playableBlob)
+  return {
+    url: objectUrl,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  }
+}
+
 function playAudioToEnd(
   audioUrl: string,
   options?: {
@@ -299,21 +386,31 @@ function playAudioToEnd(
     audio.preload = 'auto'
     audio.playbackRate = playbackRate
     audio.setAttribute('playsinline', 'true')
-    audio.src = audioUrl
     let settled = false
     let timeout: number | null = null
+    let startTimeout: number | null = null
     let stopLevelSampler: AudioLevelStop | null = null
+    let revokePlayableUrl: (() => void) | null = null
+    let playbackStarted = false
 
     function cleanup() {
       audio.onended = null
       audio.onerror = null
       audio.onloadedmetadata = null
+      audio.onloadeddata = null
+      audio.oncanplay = null
       stopLevelSampler?.()
       stopLevelSampler = null
       if (timeout) {
         window.clearTimeout(timeout)
         timeout = null
       }
+      if (startTimeout) {
+        window.clearTimeout(startTimeout)
+        startTimeout = null
+      }
+      revokePlayableUrl?.()
+      revokePlayableUrl = null
     }
 
     function settle(callback: () => void) {
@@ -336,6 +433,27 @@ function playAudioToEnd(
     audio.onended = () => settle(resolve)
     audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
 
+    function startPlayback() {
+      if (playbackStarted || settled) return
+      playbackStarted = true
+      const delayMs = getPlaybackStartDelayMs()
+      startTimeout = window.setTimeout(() => {
+        startTimeout = null
+        try {
+          audio.currentTime = 0
+        } catch {}
+        audio.play().catch(error => {
+          if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+            settle(() => reject(new PlaybackBlockedError(audioUrl)))
+            return
+          }
+          settle(() => reject(error))
+        })
+      }, delayMs)
+    }
+
+    audio.onloadeddata = startPlayback
+    audio.oncanplay = startPlayback
     armTimeout(45000)
     if (options?.onLevel && options.playbackNodesRef) {
       const levelSource = getPlaybackLevelSource(audio, options.playbackNodesRef, options.onLevel)
@@ -343,14 +461,20 @@ function playAudioToEnd(
         stopLevelSampler = sampleAudioLevel(levelSource, options.onLevel)
       }
     }
-    audio.load()
-    audio.play().catch(error => {
-      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
-        settle(() => reject(new PlaybackBlockedError(audioUrl)))
-        return
-      }
-      settle(() => reject(error))
-    })
+
+    void createPlayableAudioUrl(audioUrl)
+      .then(playable => {
+        if (settled) {
+          playable.revoke?.()
+          return
+        }
+        revokePlayableUrl = playable.revoke
+        audio.src = playable.url
+        audio.load()
+      })
+      .catch(error => {
+        settle(() => reject(error))
+      })
   })
 }
 
@@ -427,6 +551,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const simulateTurnRef = useRef<(turnId: number) => void>(() => {})
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
+  const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
   const voiceLevelRequestRef = useRef(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
@@ -554,6 +679,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     voiceLevelRequestRef.current += 1
     stopVoiceLevelRef.current?.()
     stopVoiceLevelRef.current = null
+    voiceActivityRef.current = createVoiceActivitySnapshot()
     setVoiceLevel(null)
   }, [])
 
@@ -652,6 +778,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           workflowState: snapshotRef.current.state,
         })
       ) {
+        voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level })
         setVoiceLevel(level)
       }
     }).then(stop => {
@@ -759,19 +886,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         }
       }
 
-      const segments = splitSpokenText(text)
-      if (segments.length <= 1) {
-        await playTTS(text)
-        return
-      }
-
-      try {
-        for (const segment of segments) {
-          await playTTS(segment)
-        }
-      } catch {
-        await playTTS(text)
-      }
+      await playTTS(text)
     } catch {
       setVoiceLevel(null)
       await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
@@ -945,7 +1060,11 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       try {
         startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()
-        const result = await browserSTT.transcribe(new Blob(), { signal: abortController.signal })
+        const result = await browserSTT.transcribe(new Blob(), {
+          signal: abortController.signal,
+          language: 'en-US',
+          getVoiceActivity: () => voiceActivityRef.current,
+        })
         if (!canContinueListening()) return
         transcript = result.transcript
       } catch {
@@ -995,7 +1114,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : currentAccent
     const currentScenario = scenarioRef.current
 
-    setStatusText(tr('session.thinking'))
+    setStatusText(tr('session.preparing_reply'))
     updateSnapshot(current => requestCoachReply(current))
     let response: ConversationResponse
     try {

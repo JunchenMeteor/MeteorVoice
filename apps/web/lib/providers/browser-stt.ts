@@ -1,5 +1,9 @@
 import type { STTProvider, STTResult } from './types'
-import { getSilenceFinalizeDelay } from '@meteorvoice/session-core'
+import {
+  getSpeechEndpointDelay,
+  getVoiceActivityHoldDelay,
+  type VoiceActivitySnapshot,
+} from '@meteorvoice/session-core'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -32,6 +36,12 @@ declare global {
 
 const MAX_DURATION = 30000
 const RESTART_AFTER_BROWSER_END_DELAY = 120
+const debugVadStorageKey = 'meteorvoice-debug-vad'
+
+function debugVad(event: string, details: Record<string, unknown>) {
+  if (typeof window === 'undefined' || window.localStorage.getItem(debugVadStorageKey) !== 'true') return
+  console.debug('[MeteorVoice VAD]', event, details)
+}
 
 export function browserSTTSupported(): boolean {
   return !!(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition))
@@ -47,13 +57,20 @@ export function createBrowserSTT(): STTProvider {
   }
 
   return {
-    transcribe(_audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult> {
+    transcribe(
+      _audioBlob: Blob,
+      options?: {
+        signal?: AbortSignal
+        language?: string
+        getVoiceActivity?: () => VoiceActivitySnapshot | null
+      },
+    ): Promise<STTResult> {
       void _audioBlob
       return new Promise((resolve, reject) => {
         const recognition = new SpeechRecognitionCtor()
         recognition.continuous = true
         recognition.interimResults = true
-        recognition.lang = 'en-US'
+        if (options?.language) recognition.lang = options.language
 
         let settled = false
         let silenceTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,6 +116,25 @@ export function createBrowserSTT(): STTProvider {
 
         maxTimer = setTimeout(() => finalize(), MAX_DURATION)
 
+        function finalizeAfterVoiceHold(holdStartedAt = Date.now()) {
+          const voiceActivity = options?.getVoiceActivity?.()
+          const voiceHold = getVoiceActivityHoldDelay({
+            voiceActivity,
+            holdStartedAt,
+          })
+          debugVad('finalize-check', {
+            voiceHold,
+            holdAgeMs: Date.now() - holdStartedAt,
+            transcript: allResults.join(' ').trim() || lastInterim,
+            voiceActivity,
+          })
+          if (voiceHold > 0) {
+            silenceTimer = setTimeout(() => finalizeAfterVoiceHold(holdStartedAt), voiceHold)
+            return
+          }
+          finalize()
+        }
+
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           clearSilenceTimer()
           for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -111,9 +147,21 @@ export function createBrowserSTT(): STTProvider {
           }
           if (allResults.length > 0 || lastInterim) {
             const currentTranscript = allResults.join(' ').trim() || lastInterim
+            const voiceActivity = options?.getVoiceActivity?.()
+            const endpointDelay = getSpeechEndpointDelay({
+              transcript: currentTranscript,
+              hasFinalResult: allResults.length > 0,
+              voiceActivity,
+            })
+            debugVad('schedule-finalize', {
+              endpointDelay,
+              hasFinalResult: allResults.length > 0,
+              transcript: currentTranscript,
+              voiceActivity,
+            })
             silenceTimer = setTimeout(() => {
-              finalize()
-            }, getSilenceFinalizeDelay(currentTranscript))
+              finalizeAfterVoiceHold()
+            }, endpointDelay)
           }
         }
 

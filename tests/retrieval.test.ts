@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { retrieveRelevantContext, findCommonErrors } from '@/lib/retrieval'
+import {
+  buildMixedChineseSpokenHint,
+  findCommonCorrections,
+  findCommonErrors,
+  retrieveRelevantContext,
+} from '@/lib/retrieval'
 
 describe('retrieval', () => {
   it('returns scenario context for matching scenario', () => {
@@ -42,5 +47,16 @@ describe('retrieval', () => {
   it('returns empty for error-free text', () => {
     const tips = findCommonErrors('The weather is nice today')
     expect(tips).toEqual([])
+  })
+
+  it('builds fallback corrections for clear grammar errors', () => {
+    const corrections = findCommonCorrections('I goes to school every day')
+    expect(corrections.some(c => c.type === 'grammar' && c.suggestedText === 'I go')).toBe(true)
+  })
+
+  it('builds fallback corrections and spoken hint for mixed Chinese-English input', () => {
+    const corrections = findCommonCorrections('I want to 预约 a table')
+    expect(corrections.some(c => c.type === 'vocabulary' && c.originalText === '预约')).toBe(true)
+    expect(buildMixedChineseSpokenHint('I want to 预约 a table')).toContain('reserve')
   })
 })
