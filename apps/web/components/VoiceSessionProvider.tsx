@@ -287,6 +287,24 @@ function normalizePlaybackRate(speed?: number) {
   return Math.min(1.6, Math.max(0.5, speed))
 }
 
+function getPlaybackStartDelayMs() {
+  if (typeof window === 'undefined') return 0
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches
+  return coarsePointer ? 120 : 0
+}
+
+async function createPlayableAudioUrl(audioUrl: string) {
+  if (!audioUrl.startsWith('data:audio/')) return { url: audioUrl, revoke: null as (() => void) | null }
+
+  const response = await fetch(audioUrl)
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  return {
+    url: objectUrl,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  }
+}
+
 function playAudioToEnd(
   audioUrl: string,
   options?: {
@@ -303,21 +321,31 @@ function playAudioToEnd(
     audio.preload = 'auto'
     audio.playbackRate = playbackRate
     audio.setAttribute('playsinline', 'true')
-    audio.src = audioUrl
     let settled = false
     let timeout: number | null = null
+    let startTimeout: number | null = null
     let stopLevelSampler: AudioLevelStop | null = null
+    let revokePlayableUrl: (() => void) | null = null
+    let playbackStarted = false
 
     function cleanup() {
       audio.onended = null
       audio.onerror = null
       audio.onloadedmetadata = null
+      audio.onloadeddata = null
+      audio.oncanplay = null
       stopLevelSampler?.()
       stopLevelSampler = null
       if (timeout) {
         window.clearTimeout(timeout)
         timeout = null
       }
+      if (startTimeout) {
+        window.clearTimeout(startTimeout)
+        startTimeout = null
+      }
+      revokePlayableUrl?.()
+      revokePlayableUrl = null
     }
 
     function settle(callback: () => void) {
@@ -340,6 +368,27 @@ function playAudioToEnd(
     audio.onended = () => settle(resolve)
     audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
 
+    function startPlayback() {
+      if (playbackStarted || settled) return
+      playbackStarted = true
+      const delayMs = getPlaybackStartDelayMs()
+      startTimeout = window.setTimeout(() => {
+        startTimeout = null
+        try {
+          audio.currentTime = 0
+        } catch {}
+        audio.play().catch(error => {
+          if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+            settle(() => reject(new PlaybackBlockedError(audioUrl)))
+            return
+          }
+          settle(() => reject(error))
+        })
+      }, delayMs)
+    }
+
+    audio.onloadeddata = startPlayback
+    audio.oncanplay = startPlayback
     armTimeout(45000)
     if (options?.onLevel && options.playbackNodesRef) {
       const levelSource = getPlaybackLevelSource(audio, options.playbackNodesRef, options.onLevel)
@@ -347,14 +396,20 @@ function playAudioToEnd(
         stopLevelSampler = sampleAudioLevel(levelSource, options.onLevel)
       }
     }
-    audio.load()
-    audio.play().catch(error => {
-      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
-        settle(() => reject(new PlaybackBlockedError(audioUrl)))
-        return
-      }
-      settle(() => reject(error))
-    })
+
+    void createPlayableAudioUrl(audioUrl)
+      .then(playable => {
+        if (settled) {
+          playable.revoke?.()
+          return
+        }
+        revokePlayableUrl = playable.revoke
+        audio.src = playable.url
+        audio.load()
+      })
+      .catch(error => {
+        settle(() => reject(error))
+      })
   })
 }
 
