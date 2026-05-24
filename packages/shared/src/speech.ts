@@ -75,15 +75,19 @@ export function splitSpokenText(text: string, options: SpokenSegmentOptions = {}
 export const ttsProviderCapabilities = {
   mock: {
     accents: ['british', 'american', 'indian', 'australian', 'singapore', 'african'],
+    speedControl: 'client' as const,
   },
   xunfei: {
     accents: ['american'],
+    speedControl: 'provider' as const,
   },
   volcengine: {
     accents: ['american'],
+    speedControl: 'client' as const,
   },
   tencent: {
     accents: ['american'],
+    speedControl: 'client' as const,
   },
 } as const
 
@@ -93,4 +97,13 @@ export function supportsAccent(provider: string, accent: string): boolean {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
   if (!capabilities) return false
   return (capabilities.accents as readonly string[]).includes(accent)
+}
+
+export function getTTSSpeedRouting(provider: string, speed = 1): { serverSpeed: number; playbackRate: number } {
+  const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
+  if (capabilities?.speedControl === 'provider') {
+    return { serverSpeed: speed, playbackRate: 1 }
+  }
+
+  return { serverSpeed: 1, playbackRate: speed }
 }
