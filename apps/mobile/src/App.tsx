@@ -282,7 +282,7 @@ export default function App() {
     }
 
     if (busy || audio.isPlaying || audio.isRecording) return
-    const started = await speech.startListening()
+    const started = await speech.startListening('en-US')
     setStatus(started ? tr('session.status.native_speech_listening') : tr('session.status.native_speech_unavailable'))
   }
 
