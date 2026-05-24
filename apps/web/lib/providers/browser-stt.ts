@@ -36,6 +36,12 @@ declare global {
 
 const MAX_DURATION = 30000
 const RESTART_AFTER_BROWSER_END_DELAY = 120
+const debugVadStorageKey = 'meteorvoice-debug-vad'
+
+function debugVad(event: string, details: Record<string, unknown>) {
+  if (typeof window === 'undefined' || window.localStorage.getItem(debugVadStorageKey) !== 'true') return
+  console.debug('[MeteorVoice VAD]', event, details)
+}
 
 export function browserSTTSupported(): boolean {
   return !!(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition))
@@ -110,12 +116,20 @@ export function createBrowserSTT(): STTProvider {
 
         maxTimer = setTimeout(() => finalize(), MAX_DURATION)
 
-        function finalizeAfterVoiceHold() {
+        function finalizeAfterVoiceHold(holdStartedAt = Date.now()) {
+          const voiceActivity = options?.getVoiceActivity?.()
           const voiceHold = getVoiceActivityHoldDelay({
-            voiceActivity: options?.getVoiceActivity?.(),
+            voiceActivity,
+            holdStartedAt,
+          })
+          debugVad('finalize-check', {
+            voiceHold,
+            holdAgeMs: Date.now() - holdStartedAt,
+            transcript: allResults.join(' ').trim() || lastInterim,
+            voiceActivity,
           })
           if (voiceHold > 0) {
-            silenceTimer = setTimeout(finalizeAfterVoiceHold, voiceHold)
+            silenceTimer = setTimeout(() => finalizeAfterVoiceHold(holdStartedAt), voiceHold)
             return
           }
           finalize()
@@ -133,13 +147,21 @@ export function createBrowserSTT(): STTProvider {
           }
           if (allResults.length > 0 || lastInterim) {
             const currentTranscript = allResults.join(' ').trim() || lastInterim
-            silenceTimer = setTimeout(() => {
-              finalizeAfterVoiceHold()
-            }, getSpeechEndpointDelay({
+            const voiceActivity = options?.getVoiceActivity?.()
+            const endpointDelay = getSpeechEndpointDelay({
               transcript: currentTranscript,
               hasFinalResult: allResults.length > 0,
-              voiceActivity: options?.getVoiceActivity?.(),
-            }))
+              voiceActivity,
+            })
+            debugVad('schedule-finalize', {
+              endpointDelay,
+              hasFinalResult: allResults.length > 0,
+              transcript: currentTranscript,
+              voiceActivity,
+            })
+            silenceTimer = setTimeout(() => {
+              finalizeAfterVoiceHold()
+            }, endpointDelay)
           }
         }
 

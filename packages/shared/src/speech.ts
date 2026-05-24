@@ -18,6 +18,9 @@ export interface STTProvider {
         lastVoiceAt: number | null
         noiseFloor: number
         level: number | null
+        peakLevel: number
+        smoothedPeakLevel: number
+        threshold: number
         isVoiceActive: boolean
       } | null
     },

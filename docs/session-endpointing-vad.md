@@ -85,6 +85,30 @@ Mobile 当前方案与真音频 VAD 的本质区别：
 - Web 已经稳定拥有 Web Audio 麦克风采样，因此本轮可以落地真音频 activity。
 - Mobile 已经使用系统 native speech recognition，系统本身包含 endpointing；贸然并发录音采样会增加权限、音频会话和设备差异风险。
 - 因此 Mobile 本轮先采用系统 endpoint + speech event activity + 统一 `session-core` 保护规则。真音频 VAD 作为下一阶段 native module 或统一录音链路增强。
+- Native VAD module 本轮明确暂缓；除非真机 QA 证明系统 native speech endpoint 仍无法满足业务体验，否则不要新增 native VAD module。
+
+### Web 轻量 VAD 调参策略
+
+Web 端当前是轻量 VAD，不追求替代系统级 DSP。实现 MUST 避免因底噪导致一直 listening：
+
+- 使用最低人声阈值，过滤小音量底噪。
+- 使用动态噪声倍数，让阈值随环境底噪上升。
+- 使用平滑峰值比例，而不是单帧绝对最高值，避免咳嗽、敲击麦克风、键盘声把阈值瞬间抬太高。
+- 使用最大 VAD hold 上限，确保噪声误判不会无限阻止提交。
+
+如需调试 Web VAD，可在浏览器控制台执行：
+
+```js
+localStorage.setItem('meteorvoice-debug-vad', 'true')
+```
+
+刷新页面后，控制台会输出 `level`、`peakLevel`、`smoothedPeakLevel`、`threshold`、`noiseFloor`、`isVoiceActive` 和 endpoint hold 信息。
+
+关闭调试：
+
+```js
+localStorage.removeItem('meteorvoice-debug-vad')
+```
 
 ## session-core 边界
 
