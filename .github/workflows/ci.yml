@@ -71,8 +71,8 @@ jobs:
       - name: Mobile public config
         run: npm run mobile:config
 
-  web-build:
-    name: Web Build
+  verify:
+    name: Verify
     needs: [lint, packages-test, mobile-typecheck]
     runs-on: ubuntu-latest
     steps:
