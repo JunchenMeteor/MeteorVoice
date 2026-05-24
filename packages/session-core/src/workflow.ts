@@ -31,6 +31,9 @@ export interface VoiceActivitySnapshot {
   lastVoiceAt: number | null
   noiseFloor: number
   level: number | null
+  peakLevel: number
+  smoothedPeakLevel: number
+  threshold: number
   isVoiceActive: boolean
 }
 
@@ -379,9 +382,14 @@ export const DEFAULT_SILENCE_FINALIZE_MS = 1700
 export const FINAL_RESULT_SILENCE_FINALIZE_MS = 950
 export const MIXED_LANGUAGE_GRACE_FINALIZE_MS = 2600
 export const FILLER_GRACE_FINALIZE_MS = 3400
-export const INCOMPLETE_PHRASE_GRACE_FINALIZE_MS = 2600
+export const INCOMPLETE_PHRASE_GRACE_FINALIZE_MS = 2200
 export const VOICE_ACTIVITY_HOLD_MS = 700
+export const MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS = 1600
 export const DEFAULT_VOICE_NOISE_FLOOR = 0.018
+export const MIN_VOICE_ACTIVITY_LEVEL = 0.085
+export const VOICE_ACTIVITY_NOISE_MULTIPLIER = 3.1
+export const VOICE_ACTIVITY_PEAK_RATIO = 0.32
+export const VOICE_ACTIVITY_PEAK_SMOOTHING = 0.18
 
 const FILLER_END_PATTERN = /(?:^|[\s,，.。!?！？])(?:um+|uh+|er+|erm+|hmm+|mmm+|嗯+|啊+|呃+|额+|唔+)[\s,，.。!?！？]*$/i
 const CHINESE_TEXT_PATTERN = /[\u3400-\u9fff]/
@@ -454,6 +462,9 @@ export function createVoiceActivitySnapshot(): VoiceActivitySnapshot {
     lastVoiceAt: null,
     noiseFloor: DEFAULT_VOICE_NOISE_FLOOR,
     level: null,
+    peakLevel: 0,
+    smoothedPeakLevel: 0,
+    threshold: MIN_VOICE_ACTIVITY_LEVEL,
     isVoiceActive: false,
   }
 }
@@ -471,7 +482,15 @@ export function updateVoiceActivitySnapshot(
   }
 
   const level = Math.min(1, Math.max(0, input.level))
-  const threshold = Math.max(0.055, snapshot.noiseFloor * 2.4)
+  const peakLevel = Math.max(snapshot.peakLevel, level)
+  const smoothedPeakLevel = level > snapshot.smoothedPeakLevel
+    ? snapshot.smoothedPeakLevel * (1 - VOICE_ACTIVITY_PEAK_SMOOTHING) + level * VOICE_ACTIVITY_PEAK_SMOOTHING
+    : snapshot.smoothedPeakLevel
+  const threshold = Math.max(
+    MIN_VOICE_ACTIVITY_LEVEL,
+    snapshot.noiseFloor * VOICE_ACTIVITY_NOISE_MULTIPLIER,
+    smoothedPeakLevel * VOICE_ACTIVITY_PEAK_RATIO,
+  )
   const isVoiceActive = level >= threshold
   const noiseFloor = isVoiceActive
     ? snapshot.noiseFloor
@@ -481,6 +500,9 @@ export function updateVoiceActivitySnapshot(
     lastVoiceAt: isVoiceActive ? nowMs : snapshot.lastVoiceAt,
     noiseFloor,
     level,
+    peakLevel,
+    smoothedPeakLevel,
+    threshold,
     isVoiceActive,
   }
 }
@@ -488,12 +510,21 @@ export function updateVoiceActivitySnapshot(
 export function getVoiceActivityHoldDelay(input: {
   voiceActivity?: VoiceActivitySnapshot | null
   nowMs?: number
+  holdStartedAt?: number | null
 }) {
   const voiceActivity = input.voiceActivity
   if (!voiceActivity?.lastVoiceAt) return 0
-  if (voiceActivity.isVoiceActive) return VOICE_ACTIVITY_HOLD_MS
 
   const nowMs = input.nowMs ?? Date.now()
+  if (
+    input.holdStartedAt &&
+    nowMs - input.holdStartedAt >= MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS
+  ) {
+    return 0
+  }
+
+  if (voiceActivity.isVoiceActive) return VOICE_ACTIVITY_HOLD_MS
+
   const silenceAge = nowMs - voiceActivity.lastVoiceAt
   return Math.max(0, VOICE_ACTIVITY_HOLD_MS - silenceAge)
 }

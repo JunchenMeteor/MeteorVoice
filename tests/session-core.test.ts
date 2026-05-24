@@ -17,8 +17,11 @@ import {
   FILLER_GRACE_FINALIZE_MS,
   getSilenceFinalizeDelay,
   getSpeechEndpointDelay,
+  getVoiceActivityHoldDelay,
   INCOMPLETE_PHRASE_GRACE_FINALIZE_MS,
   looksLikeIncompleteSpeech,
+  MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS,
+  MIN_VOICE_ACTIVITY_LEVEL,
   MIXED_LANGUAGE_GRACE_FINALIZE_MS,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
@@ -36,6 +39,8 @@ import {
   startListeningSession,
   startPlaybackQueue,
   updateVoiceActivitySnapshot,
+  VOICE_ACTIVITY_PEAK_RATIO,
+  VOICE_ACTIVITY_PEAK_SMOOTHING,
 } from '@meteorvoice/session-core'
 import { splitSpokenText } from '@meteorvoice/shared'
 
@@ -187,8 +192,27 @@ describe('session-core turn guard helpers', () => {
 
   it('extends endpointing while voice activity is still recent', () => {
     const started = createVoiceActivitySnapshot()
+    const inactiveNoise = updateVoiceActivitySnapshot(started, { level: 0.07, nowMs: 900 })
+    expect(inactiveNoise.isVoiceActive).toBe(false)
+
     const active = updateVoiceActivitySnapshot(started, { level: 0.2, nowMs: 1000 })
     expect(active.isVoiceActive).toBe(true)
+    expect(active.peakLevel).toBe(0.2)
+    expect(active.smoothedPeakLevel).toBe(0.2 * VOICE_ACTIVITY_PEAK_SMOOTHING)
+    expect(active.threshold).toBe(MIN_VOICE_ACTIVITY_LEVEL)
+
+    const singleSpike = updateVoiceActivitySnapshot(started, { level: 0.5, nowMs: 1000 })
+    expect(singleSpike.peakLevel).toBe(0.5)
+    expect(singleSpike.threshold).toBe(MIN_VOICE_ACTIVITY_LEVEL)
+
+    let loudSpeech = started
+    for (let index = 0; index < 8; index += 1) {
+      loudSpeech = updateVoiceActivitySnapshot(loudSpeech, { level: 0.5, nowMs: 1000 + index * 50 })
+    }
+    const trailingNoise = updateVoiceActivitySnapshot(loudSpeech, { level: 0.12, nowMs: 1500 })
+    expect(loudSpeech.peakLevel).toBe(0.5)
+    expect(loudSpeech.threshold).toBeCloseTo(loudSpeech.smoothedPeakLevel * VOICE_ACTIVITY_PEAK_RATIO)
+    expect(trailingNoise.isVoiceActive).toBe(false)
     expect(getSpeechEndpointDelay({
       transcript: 'I would like to reserve a table',
       hasFinalResult: true,
@@ -201,6 +225,16 @@ describe('session-core turn guard helpers', () => {
       voiceActivity: active,
       nowMs: 2000,
     })).toBe(FINAL_RESULT_SILENCE_FINALIZE_MS)
+    expect(getVoiceActivityHoldDelay({
+      voiceActivity: active,
+      nowMs: 1200,
+      holdStartedAt: 1000,
+    })).toBeGreaterThan(0)
+    expect(getVoiceActivityHoldDelay({
+      voiceActivity: active,
+      nowMs: 1000 + MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS,
+      holdStartedAt: 1000,
+    })).toBe(0)
   })
 
   it('detects incomplete speech shapes for endpointing', () => {
