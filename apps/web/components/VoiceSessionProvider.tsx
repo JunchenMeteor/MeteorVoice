@@ -70,7 +70,7 @@ type PlaybackAudioNodes = {
 type PendingPlayback = {
   audioUrl: string
   onLevel?: (level: number | null) => void
-  speed?: TTSSpeed
+  speed?: number
   resolve: () => void
 }
 
@@ -278,18 +278,23 @@ function getPlaybackLevelSource(
   }
 }
 
+function normalizePlaybackRate(speed?: number) {
+  if (typeof speed !== 'number' || !Number.isFinite(speed)) return 1
+  return Math.min(1.6, Math.max(0.5, speed))
+}
+
 function playAudioToEnd(
   audioUrl: string,
   options?: {
     audio?: HTMLAudioElement
     playbackNodesRef?: { current: PlaybackAudioNodes | null }
     onLevel?: (level: number | null) => void
-    speed?: TTSSpeed
+    speed?: number
   },
 ) {
   return new Promise<void>((resolve, reject) => {
     const audio = options?.audio ?? new Audio()
-    const playbackRate = normalizeTTSSpeed(options?.speed ?? 1)
+    const playbackRate = normalizePlaybackRate(options?.speed)
     audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
     audio.playbackRate = playbackRate
@@ -606,7 +611,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const waitForBlockedPlayback = useCallback((
     audioUrl: string,
     onLevel?: (level: number | null) => void,
-    speed?: TTSSpeed,
+    speed?: number,
   ) => {
     setPlaybackBlocked(true)
     return new Promise<void>(resolve => {
@@ -742,12 +747,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
             audio: getSessionAudio(),
             playbackNodesRef,
             onLevel: updatePlaybackLevel,
-            speed: normalizeTTSSpeed(speedRouting.playbackRate),
+            speed: speedRouting.playbackRate,
           })
         } catch (error) {
           if (error instanceof PlaybackBlockedError) {
             setStatusText(tr('session.playback_blocked'))
-            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, normalizeTTSSpeed(speedRouting.playbackRate))
+            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speedRouting.playbackRate)
             return
           }
           throw error
