@@ -78,7 +78,7 @@ export default function App() {
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
-  const audio = useNativeSessionAudio(audioUrl)
+  const audio = useNativeSessionAudio(audioUrl, ttsSpeed)
   const auth = useMobileAuth()
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]

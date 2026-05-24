@@ -74,6 +74,7 @@ type PlaybackAudioNodes = {
 type PendingPlayback = {
   audioUrl: string
   onLevel?: (level: number | null) => void
+  speed?: TTSSpeed
   resolve: () => void
 }
 
@@ -287,12 +288,15 @@ function playAudioToEnd(
     audio?: HTMLAudioElement
     playbackNodesRef?: { current: PlaybackAudioNodes | null }
     onLevel?: (level: number | null) => void
+    speed?: TTSSpeed
   },
 ) {
   return new Promise<void>((resolve, reject) => {
     const audio = options?.audio ?? new Audio()
+    const playbackRate = normalizeTTSSpeed(options?.speed ?? 1)
     audio.crossOrigin = 'anonymous'
     audio.preload = 'auto'
+    audio.playbackRate = playbackRate
     audio.setAttribute('playsinline', 'true')
     audio.src = audioUrl
     let settled = false
@@ -325,7 +329,7 @@ function playAudioToEnd(
 
     audio.onloadedmetadata = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        armTimeout((audio.duration * 1000) + 2000)
+        armTimeout((audio.duration * 1000 / playbackRate) + 2000)
       }
     }
     audio.onended = () => settle(resolve)
@@ -605,10 +609,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     }
   }, [])
 
-  const waitForBlockedPlayback = useCallback((audioUrl: string, onLevel?: (level: number | null) => void) => {
+  const waitForBlockedPlayback = useCallback((
+    audioUrl: string,
+    onLevel?: (level: number | null) => void,
+    speed?: TTSSpeed,
+  ) => {
     setPlaybackBlocked(true)
     return new Promise<void>(resolve => {
-      pendingPlaybackRef.current = { audioUrl, onLevel, resolve }
+      pendingPlaybackRef.current = { audioUrl, onLevel, speed, resolve }
     })
   }, [])
 
@@ -620,6 +628,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       audio: getSessionAudio(),
       playbackNodesRef,
       onLevel: pending.onLevel,
+      speed: pending.speed,
     })
       .then(resolvePendingPlayback)
       .catch(error => {
@@ -739,11 +748,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
             audio: getSessionAudio(),
             playbackNodesRef,
             onLevel: updatePlaybackLevel,
+            speed,
           })
         } catch (error) {
           if (error instanceof PlaybackBlockedError) {
             setStatusText(tr('session.playback_blocked'))
-            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel)
+            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speed)
             return
           }
           throw error
