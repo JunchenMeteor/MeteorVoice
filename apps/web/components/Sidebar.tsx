@@ -6,10 +6,12 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getUserDisplayName, getUserInitial } from '@/lib/auth/display'
 import { useT } from '@/components/LanguageProvider'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const t = useT()
+  const { accent, isSessionActive, scenario } = useVoiceSession()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userDisplayName, setUserDisplayName] = useState<string | null>(null)
@@ -33,17 +35,18 @@ export default function Sidebar() {
     return () => subscription.unsubscribe()
   }, [])
 
+  const activeSessionHref = `/session?scenario=${scenario.key}&accent=${accent.key}`
   const navItems = [
-    { href: '/',       label: t('nav.home'),      icon: HomeIcon },
-    { href: '/session', label: t('nav.practice'),  icon: MicIcon },
-    { href: '/review',  label: t('nav.review'),    icon: BookIcon },
-    { href: '/history', label: t('nav.history'),   icon: ClockIcon },
-    { href: '/settings', label: t('nav.settings'), icon: GearIcon },
+    { href: '/', match: '/', label: t('nav.home'), icon: HomeIcon },
+    { href: isSessionActive ? activeSessionHref : '/session', match: '/session', label: t('nav.practice'), icon: MicIcon },
+    { href: '/review', match: '/review', label: t('nav.review'), icon: BookIcon },
+    { href: '/history', match: '/history', label: t('nav.history'), icon: ClockIcon },
+    { href: '/settings', match: '/settings', label: t('nav.settings'), icon: GearIcon },
   ]
 
   const sidebar = (isMobile: boolean) => (
     <aside
-      className={`flex flex-col h-full border-r transition-all duration-200 shrink-0 ${isMobile ? 'fixed left-0 top-0 z-50 shadow-xl' : ''}`}
+      className={`flex flex-col h-full transition-all duration-200 shrink-0 ${isMobile ? 'fixed right-0 top-0 z-50 border-l shadow-xl' : 'border-r'}`}
       style={{
         width: collapsed && !isMobile ? '3.5rem' : '14rem',
         background: 'var(--theme-bg-sidebar)',
@@ -78,10 +81,10 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2 space-y-1 mt-2">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const active = href === '/'
+        {navItems.map(({ href, match, label, icon: Icon }) => {
+          const active = match === '/'
             ? pathname === '/'
-            : pathname.startsWith(href)
+            : pathname.startsWith(match)
           return (
             <Link
               key={href}
@@ -164,7 +167,7 @@ export default function Sidebar() {
     <>
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3 left-3 z-40 p-2 rounded-lg"
+        className="lg:hidden fixed right-3 top-3 z-40 p-2 rounded-lg"
         style={{ background: 'var(--theme-bg-card)', border: '1px solid var(--theme-border)' }}
         aria-label="Open menu"
       >

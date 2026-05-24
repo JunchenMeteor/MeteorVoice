@@ -207,7 +207,7 @@ export function SessionPageClient() {
           willChange: 'transform',
         }} />
 
-        <header className="relative z-10 flex min-h-10 items-start justify-between gap-3 pl-[4.5rem]">
+        <header className="relative z-10 min-h-10 pr-14">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-[var(--theme-text-primary)]">
               {scenario.icon} {scenarioLabel}
@@ -216,16 +216,9 @@ export function SessionPageClient() {
               {accentLabel} ({accentRegion}) · {difficultyLabel}
             </p>
           </div>
-          {isSessionActive ? (
-            <Button variant="danger" size="sm" onClick={endSession}>{tr('session.end')}</Button>
-          ) : (
-            <Button size="sm" onClick={startSession} disabled={!ttsPreferenceLoaded}>
-              {ttsPreferenceLoaded ? tr('session.start') : tr('login.loading')}
-            </Button>
-          )}
         </header>
 
-        <div className="relative z-10 mt-3 flex items-center gap-2 pl-[4.5rem]">
+        <div className="relative z-10 mt-3 flex items-center gap-2 pr-14">
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: statusColor }} />
           <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]">{statusText}</span>
           {interrupted && (
@@ -285,20 +278,35 @@ export function SessionPageClient() {
             </div>
           )}
 
-          {canContinue && (
-            <div className="flex justify-center">
+          {!isSessionActive ? (
+            <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
-                onClick={continueSpeaking}
-                className="flex h-16 w-16 items-center justify-center rounded-full transition-all active:scale-95"
+                onClick={startSession}
+                disabled={!ttsPreferenceLoaded}
+                className="flex h-16 w-16 items-center justify-center rounded-full transition-all active:scale-95 disabled:opacity-40"
                 style={{ background: 'var(--theme-accent)' }}
-                aria-label={tr('session.start_speaking')}
+                aria-label={tr('session.start')}
               >
-                <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="7" y="2" width="6" height="10" rx="3" />
-                  <path d="M4 10a6 6 0 0012 0" />
-                  <line x1="10" y1="16" x2="10" y2="19" />
-                  <line x1="7" y1="19" x2="13" y2="19" />
+                <svg width="30" height="30" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M7 4.5v11l8-5.5-8-5.5z" fill="#fff" />
+                </svg>
+              </button>
+              <span className="text-sm font-medium text-[var(--theme-text-primary)]">
+                {ttsPreferenceLoaded ? tr('session.start') : tr('login.loading')}
+              </span>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={endSession}
+                className="flex h-11 w-11 items-center justify-center rounded-full transition-all active:scale-95"
+                style={{ background: 'var(--theme-danger)' }}
+                aria-label={tr('session.end')}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <rect x="5" y="5" width="10" height="10" rx="2" fill="#fff" />
                 </svg>
               </button>
             </div>
