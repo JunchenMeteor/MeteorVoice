@@ -913,6 +913,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const browserSTT = createBrowserSTT()
         const result = await browserSTT.transcribe(new Blob(), {
           signal: abortController.signal,
+          language: 'en-US',
           getVoiceActivity: () => voiceActivityRef.current,
         })
         if (!canContinueListening()) return
