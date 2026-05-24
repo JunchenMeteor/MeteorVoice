@@ -140,6 +140,25 @@ localStorage.removeItem('meteorvoice-debug-vad')
    - Android: `AudioRecord` short buffer + RMS/noise gate。
 4. 统一把原生 VAD snapshot 传入 `session-core`，保持业务规则跨端一致。
 
+### LLM 语义判停（下一阶段主方向）
+
+参见 `docs/semantic-endpointing-plan.md`。核心思路：将"纯声学 VAD + 固定静默等待"升级为三层架构：
+
+| 层 | 方式 | 延迟 | 成本 |
+|----|------|------|------|
+| L1 本地快速判断 | 正则 + 结构分析 | <1ms | 0 |
+| L2 LLM 语义判停 | DeepSeek 单 token 判断 done/thinking | 目标 200-400ms，最多 1.5s | ~50 tokens |
+| L3 安全网超时 | 45s 单次 utterance 上限，8s 异常静默上限 | — | 0 |
+
+LLM 语义判停不应替代当前文本保护规则，而是作为 `uncertain` 场景的第二层判断。当前所有正则规则（filler、trailing conjunction、中英混输）保持不变，只在"正则无法确定"时才调 LLM。
+
+时间窗口 MUST 分层理解：
+
+- `pauseDelayMs = 500ms`：最近人声结束后，进入 L2 语义判停前的最小停顿。
+- `semanticTimeoutMs = 1500ms`：L2 判停请求的交互预算；超时按 `done` 提交，避免判停本身拖慢回复。
+- `maxSilenceMs = 8000ms`：曾经检测到人声但长期无新声音时的异常静默兜底。
+- `maxListeningMs = 45000ms`：单次用户 utterance 的最长保护窗口，允许慢速表达，但防止永远卡在 listening。
+
 ## 验收
 
 - `npm run lint`

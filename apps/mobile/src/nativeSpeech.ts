@@ -147,10 +147,6 @@ export function useNativeSpeech(options: {
           'job interview',
           'small talk',
         ],
-        androidIntentOptions: {
-          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 2600,
-          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2200,
-        },
       })
       return true
     } catch (error) {
