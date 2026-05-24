@@ -95,8 +95,8 @@ export type TTSProviderKey = keyof typeof ttsProviderCapabilities
 
 const calibratedNormalSpeechRate = 1.2
 const xunfeiMinSpeed = 50
-const xunfeiNormalSpeed = 70
-const xunfeiMaxSpeed = 100
+const xunfeiNormalSpeed = 55
+const xunfeiMaxSpeed = 80
 
 function normalizeSpeedMultiplier(speed: number) {
   if (!Number.isFinite(speed)) return 1
