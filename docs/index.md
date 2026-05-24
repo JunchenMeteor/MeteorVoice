@@ -37,6 +37,8 @@
   - Native mobile completion pass 状态、当前验证命令和已知限制。
 - `docs/session-endpointing-vad.md`
   - Web/Mobile 语音 endpointing、VAD 信号、文本未完判断和后续 native VAD 增强计划。
+- `docs/execution-plan-ci-history-prefs-audio.md`
+  - 四个并行方向的详细执行计划：CI/CD 增强、历史页完善、跨设备偏好同步、Mobile 音频硬化。每个方向独立可操作，含实施步骤和验收标准。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 

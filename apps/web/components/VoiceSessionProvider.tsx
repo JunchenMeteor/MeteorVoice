@@ -30,7 +30,7 @@ import { getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, type TTSSpeed } from '@/lib/tts-speed'
+import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
 import { useT } from '@/components/LanguageProvider'
 
 const mockTTS = createMockTTS()
@@ -608,11 +608,19 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [accentBanner])
 
   useEffect(() => {
+    void flushPendingPreferences()
     fetch('/api/preferences')
       .then(res => res.json())
       .then((data: { tts_provider?: string; tts_speed?: number }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
-        if (typeof data.tts_speed === 'number') setTtsSpeed(normalizeTTSSpeed(data.tts_speed))
+        if (typeof data.tts_speed === 'number') {
+          const serverSpeed = normalizeTTSSpeed(data.tts_speed)
+          setTtsSpeed(serverSpeed)
+          // 覆盖 localStorage 为 API 权威值
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('meteorvoice-tts-speed', String(serverSpeed))
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setTtsPreferenceLoaded(true))
