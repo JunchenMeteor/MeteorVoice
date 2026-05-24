@@ -1,6 +1,6 @@
 export const ttsSpeedStorageKey = 'meteorvoice-tts-speed'
 export const ttsSpeedChangeEvent = 'meteorvoice-tts-speed-change'
-export const ttsSpeedOptions = [0.75, 0.85, 1, 1.1, 1.2] as const
+export const ttsSpeedOptions = [0.75, 0.9, 1, 1.2, 1.35, 1.5] as const
 
 export type TTSSpeed = typeof ttsSpeedOptions[number]
 
