@@ -27,7 +27,7 @@ import { splitSpokenText, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { readTTSSpeedPreference, ttsSpeedChangeEvent, type TTSSpeed } from '@/lib/tts-speed'
+import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, type TTSSpeed } from '@/lib/tts-speed'
 import { useT } from '@/components/LanguageProvider'
 
 const mockTTS = createMockTTS()
@@ -445,13 +445,25 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [ttsSpeed])
 
   useEffect(() => {
+    const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
+
     function handleSpeedChange(event: Event) {
       const customEvent = event as CustomEvent<{ speed?: TTSSpeed }>
       setTtsSpeed(customEvent.detail?.speed ?? readTTSSpeedPreference())
     }
 
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') syncSpeedPreference()
+    }
+
     window.addEventListener(ttsSpeedChangeEvent, handleSpeedChange)
-    return () => window.removeEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+    window.addEventListener('focus', syncSpeedPreference)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+      window.removeEventListener('focus', syncSpeedPreference)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -464,8 +476,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   useEffect(() => {
     fetch('/api/preferences')
       .then(res => res.json())
-      .then((data: { tts_provider?: string }) => {
+      .then((data: { tts_provider?: string; tts_speed?: number }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
+        if (typeof data.tts_speed === 'number') setTtsSpeed(normalizeTTSSpeed(data.tts_speed))
       })
       .catch(() => {})
       .finally(() => setTtsPreferenceLoaded(true))
