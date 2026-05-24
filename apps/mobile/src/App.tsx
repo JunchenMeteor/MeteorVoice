@@ -38,7 +38,16 @@ import {
   type PlaybackQueueSnapshot,
   type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
-import { accentProfiles, scenarios, splitSpokenText, t, type ConversationMessage, type ConversationResponse, type Locale } from '@meteorvoice/shared'
+import {
+  accentProfiles,
+  getTTSSpeedRouting,
+  scenarios,
+  splitSpokenText,
+  t,
+  type ConversationMessage,
+  type ConversationResponse,
+  type Locale,
+} from '@meteorvoice/shared'
 
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
@@ -79,7 +88,8 @@ export default function App() {
   const [apiSessionId, setApiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
-  const audio = useNativeSessionAudio(audioUrl)
+  const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
+  const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
@@ -118,9 +128,9 @@ export default function App() {
       text,
       accent: accent.name,
       provider: ttsProvider,
-      speed: ttsSpeed,
+      speed: ttsSpeedRouting.serverSpeed,
     })
-  }, [accent.name, api, ttsProvider, ttsSpeed])
+  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed])
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return

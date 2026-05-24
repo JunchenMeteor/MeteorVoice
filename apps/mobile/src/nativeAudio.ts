@@ -35,12 +35,18 @@ const recordingAudioMode = {
   allowsRecording: true,
 }
 
-export function useNativeSessionAudio(audioUrl: string | null) {
+function normalizePlaybackRate(value: number) {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(1.4, Math.max(0.5, value))
+}
+
+export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue = 1) {
   const [permission, setPermission] = useState<NativeAudioPermission>('unknown')
   const [phase, setPhase] = useState<NativeAudioPhase>('idle')
   const [lastRecordingUri, setLastRecordingUri] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const operationRef = useRef<Promise<unknown> | null>(null)
+  const playbackRate = normalizePlaybackRate(playbackRateValue)
 
   const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
@@ -58,6 +64,10 @@ export function useNativeSessionAudio(audioUrl: string | null) {
   const configurePlayback = useCallback(async () => {
     await setAudioModeAsync(playbackAudioMode)
   }, [])
+
+  const applyPlaybackRate = useCallback(() => {
+    player.setPlaybackRate(playbackRate, 'high')
+  }, [playbackRate, player])
 
   const configureRecording = useCallback(async () => {
     await setAudioModeAsync(recordingAudioMode)
@@ -158,6 +168,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
         }
 
         await configurePlayback()
+        applyPlaybackRate()
         player.seekTo(0)
         player.play()
         setPhase('playing')
@@ -169,16 +180,21 @@ export function useNativeSessionAudio(audioUrl: string | null) {
         return false
       }
     })
-  }, [audioUrl, configurePlayback, player, recorder, recorderState.isRecording, runExclusive])
+  }, [applyPlaybackRate, audioUrl, configurePlayback, player, recorder, recorderState.isRecording, runExclusive])
 
   useEffect(() => {
     void configurePlayback().catch(() => {})
   }, [configurePlayback])
 
   useEffect(() => {
+    applyPlaybackRate()
+  }, [applyPlaybackRate])
+
+  useEffect(() => {
     if (!audioUrl) return
     void configurePlayback()
       .then(() => {
+        applyPlaybackRate()
         player.seekTo(0)
         player.play()
       })
@@ -187,7 +203,7 @@ export function useNativeSessionAudio(audioUrl: string | null) {
         setErrorMessage(message)
         setPhase('error')
       })
-  }, [audioUrl, configurePlayback, player])
+  }, [applyPlaybackRate, audioUrl, configurePlayback, player])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {

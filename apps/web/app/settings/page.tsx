@@ -16,6 +16,10 @@ const allTtsProviders = [
   { key: 'tencent', labelKey: 'settings.tts_provider_tencent' },
 ] as const
 
+function formatTtsSpeed(speed: number) {
+  return `${speed.toFixed(2).replace(/0$/, '')}x`
+}
+
 function initialDefaultAccent() {
   if (typeof window === 'undefined') return 'american'
   return localStorage.getItem('coach-default-accent') ?? 'american'
@@ -34,9 +38,21 @@ export default function SettingsPage() {
     async function loadTtsProvider() {
       try {
         const res = await fetch('/api/preferences')
-        const data = await res.json() as { tts_provider?: string; available_providers?: string[] }
+        const data = await res.json() as {
+          tts_provider?: string
+          available_providers?: string[]
+          tts_speed?: number
+        }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
+        if (typeof data.tts_speed === 'number') {
+          const serverSpeed = data.tts_speed
+          const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
+            Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
+          ttsSpeedOptions[2])
+          setTtsSpeed(nextSpeed)
+          writeTTSSpeedPreference(nextSpeed)
+        }
       } catch {}
     }
 
@@ -66,6 +82,11 @@ export default function SettingsPage() {
     const next = ttsSpeedOptions[index] ?? 1
     setTtsSpeed(next)
     writeTTSSpeedPreference(next)
+    fetch('/api/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts_speed: next }),
+    }).catch(() => {})
   }
 
   return (
@@ -207,7 +228,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm font-medium text-[var(--theme-text-primary)]">
               <span>{t('settings.tts_speed_slow')}</span>
-              <span className="status-badge success">{ttsSpeed.toFixed(2).replace(/0$/, '')}x</span>
+              <span className="status-badge success">{formatTtsSpeed(ttsSpeed)}</span>
               <span>{t('settings.tts_speed_fast')}</span>
             </div>
             <input
@@ -220,9 +241,11 @@ export default function SettingsPage() {
               className="w-full accent-[var(--theme-accent)]"
               aria-label={t('settings.tts_speed')}
             />
-            <div className="grid grid-cols-5 text-center text-xs text-[var(--theme-text-muted)]">
+            <div className="flex justify-between text-xs text-[var(--theme-text-muted)]">
               {ttsSpeedOptions.map(speed => (
-                <span key={speed}>{speed === 1 ? t('settings.tts_speed_normal') : `${speed}x`}</span>
+                <span key={speed} className="min-w-0 text-center first:text-left last:text-right">
+                  {speed === 1 ? t('settings.tts_speed_normal') : formatTtsSpeed(speed)}
+                </span>
               ))}
             </div>
           </div>
