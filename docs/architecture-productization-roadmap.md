@@ -20,7 +20,7 @@
 - Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`；CI workflow 已补齐基础 lint/typecheck/config/test/build。
 - Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
 - Phase D session-core 已完成第三轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session、playback block、turn lifecycle、coach reply receive/playback completion、route pause、error recovery effect mapping 和 playback queue 规则。
-- Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进；Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。
+- Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进；Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。语音 endpointing 已改为文本规则 + activity/VAD 信号组合，详见 `docs/session-endpointing-vad.md`。
 - Phase F 尚未开始，按用户要求暂不做。
 
 ## 优先级顺序
@@ -169,6 +169,7 @@
 - Mobile 已使用 session-core 的 `startListeningSession`、`acceptTranscriptTurn`、`requestCoachReply`、`receiveCoachReply`、`completeCoachPlayback`、`recoverSessionError`、`continueListening`、`endActiveSession` 和 playback queue helpers。
 - Web `VoiceSessionProvider` 已使用 session-core 的 transcript、coach reply、playback completion、route pause 和 error recovery helpers；仍保留浏览器 STT、Web Audio、TTS playback、local/session storage 和 pending async cancellation。
 - 后续 SHOULD 只在出现新的跨端业务规则时继续扩展 `session-core`；不要为了抽象而把具体平台 adapter 放入 `session-core`。
+- 语音 endpointing 规则属于跨端业务规则，SHOULD 继续留在 `packages/session-core`；Web Audio、Browser Speech、Expo Speech、Expo Audio metering 仍留在各端 adapter。
 
 ## Phase E: Mobile 语音闭环产品化
 

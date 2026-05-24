@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createVoiceActivitySnapshot,
+  FINAL_RESULT_SILENCE_FINALIZE_MS,
+  getSpeechEndpointDelay,
+  updateVoiceActivitySnapshot,
+  type VoiceActivitySnapshot,
+} from '@meteorvoice/session-core'
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
@@ -24,8 +31,20 @@ export function useNativeSpeech(options: {
   const [partialTranscript, setPartialTranscript] = useState('')
   const [finalTranscript, setFinalTranscript] = useState('')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
+  const finalTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearFinalTranscriptTimer = useCallback(() => {
+    if (!finalTranscriptTimerRef.current) return
+    clearTimeout(finalTranscriptTimerRef.current)
+    finalTranscriptTimerRef.current = null
+  }, [])
+
+  useEffect(() => clearFinalTranscriptTimer, [clearFinalTranscriptTimer])
 
   useSpeechRecognitionEvent('start', () => {
+    clearFinalTranscriptTimer()
+    voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level: 1 })
     setPhase('listening')
     setErrorMessage(null)
   })
@@ -37,18 +56,34 @@ export function useNativeSpeech(options: {
   useSpeechRecognitionEvent('result', event => {
     const transcript = event.results[0]?.transcript?.trim() ?? ''
     if (!transcript) return
+    clearFinalTranscriptTimer()
+    voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level: 1 })
 
     if (event.isFinal) {
       setFinalTranscript(transcript)
       setPartialTranscript('')
       setPhase('idle')
-      options.onFinalTranscript?.(transcript)
+      const endpointDelay = getSpeechEndpointDelay({
+        transcript,
+        hasFinalResult: true,
+        voiceActivity: voiceActivityRef.current,
+      })
+      const finalDelay = Math.max(0, endpointDelay - FINAL_RESULT_SILENCE_FINALIZE_MS)
+      if (finalDelay === 0) {
+        options.onFinalTranscript?.(transcript)
+      } else {
+        finalTranscriptTimerRef.current = setTimeout(() => {
+          finalTranscriptTimerRef.current = null
+          options.onFinalTranscript?.(transcript)
+        }, finalDelay)
+      }
     } else {
       setPartialTranscript(transcript)
     }
   })
 
   useSpeechRecognitionEvent('error', (event: ExpoSpeechRecognitionErrorEvent) => {
+    clearFinalTranscriptTimer()
     setPhase(event.error === 'not-allowed' ? 'unavailable' : 'error')
     setErrorMessage(`${event.error}: ${event.message}`)
   })
@@ -80,12 +115,14 @@ export function useNativeSpeech(options: {
     }
   }, [])
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async (language?: string) => {
     try {
       setPhase('checking')
       setErrorMessage(null)
       setFinalTranscript('')
       setPartialTranscript('')
+      clearFinalTranscriptTimer()
+      voiceActivityRef.current = createVoiceActivitySnapshot()
 
       if (!isAvailable()) {
         setPhase('unavailable')
@@ -99,7 +136,7 @@ export function useNativeSpeech(options: {
 
       setPermission('granted')
       ExpoSpeechRecognitionModule.start({
-        lang: 'en-US',
+        ...(language ? { lang: language } : {}),
         interimResults: true,
         continuous: false,
         addsPunctuation: true,
@@ -111,8 +148,8 @@ export function useNativeSpeech(options: {
           'small talk',
         ],
         androidIntentOptions: {
-          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 1500,
-          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 1300,
+          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 2600,
+          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2200,
         },
       })
       return true
@@ -122,7 +159,7 @@ export function useNativeSpeech(options: {
       setErrorMessage(message)
       return false
     }
-  }, [isAvailable, requestPermissions])
+  }, [clearFinalTranscriptTimer, isAvailable, requestPermissions])
 
   const stopListening = useCallback(() => {
     try {
@@ -140,12 +177,13 @@ export function useNativeSpeech(options: {
       ExpoSpeechRecognitionModule.abort()
       setPhase('idle')
       setPartialTranscript('')
+      clearFinalTranscriptTimer()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Speech recognition failed to cancel'
       setPhase('error')
       setErrorMessage(message)
     }
-  }, [])
+  }, [clearFinalTranscriptTimer])
 
   const clearFinalTranscript = useCallback(() => {
     setFinalTranscript('')

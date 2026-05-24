@@ -1,0 +1,131 @@
+# Session Endpointing and VAD Plan
+
+本文档定义会话页“用户是否说完”的判断方案。后续 AI agent 修改 Web/Mobile 语音轮次、STT、VAD、静音等待或回复触发逻辑前，MUST 先读本文件。
+
+## 目标
+
+用户说话结束判断 MUST 从“固定静音时间”升级为以 VAD/语音活动为主的 endpointing：
+
+- VAD/语音活动判断：最近是否还有真实人声或系统识别活动。
+- STT 事件判断：是否已经收到 final result，还是只有 interim/partial。
+- STT 文本判断：只作为“明显还没说完”的延迟保护，不作为必须完整的提交条件。
+- 兜底窗口：只作为保护，不再作为唯一依据。
+
+核心原则：
+
+- 最近已经没有人声且有 transcript 时 SHOULD 尽快提交，即使文本不是完整句，也交给 AI 承接、追问或纠正。
+- 语气词、连接词、介词/冠词结尾、中文连接词、明显铺垫词 SHOULD 继续等待。
+- 中英混输 MUST 保留为有效输入，不应因非英文片段被丢弃。
+- 固定时间阈值 MUST 只作为 endpoint window 的上限/下限，不应重新变成唯一判断。
+
+## 当前落地策略
+
+## 架构取舍
+
+当前实现遵循现有双端架构边界：
+
+- `packages/session-core` 保存 endpointing 纯规则：文本保护、voice activity snapshot、动态 hold 计算。
+- `apps/web` 只负责采集 Browser Speech/Web Audio 信号，不复制业务判断。
+- `apps/mobile` 只负责采集 Expo native speech 事件，不复制业务判断。
+- 页面组件不直接判断“是否说完”，只消费 session/provider/adapter 输出的结果。
+
+这样做的原因：
+
+- Web 和 Mobile 的底层语音能力不同，不能把 Browser API 或 Expo API 塞进 `session-core`。
+- “什么时候该提交给 AI”是跨端业务规则，必须统一在 `session-core`。
+- 平台 adapter 只把原始平台信号转成 `VoiceActivitySnapshot`、transcript、final/interim 这类纯数据。
+
+禁止做法：
+
+- 禁止在 `SessionPage.tsx` 或 Mobile 页面里手写另一套 endpoint 判断。
+- 禁止 Web/Mobile 各自维护不同语义的“静音结束”规则。
+- 禁止为了 Mobile 真音频 VAD 把 `expo-audio` 或 native module 直接引入 `session-core`。
+
+### Web
+
+Web 使用两路信号：
+
+- Browser Speech API 提供 transcript、final/interim result。
+- Web Audio `AnalyserNode` 提供本地麦克风音量，更新 voice activity snapshot。
+
+当前实现不新增依赖、不调用云 VAD、不增加服务器成本。
+
+Web endpoint 逻辑：
+
+1. STT result 更新 transcript。
+2. Web Audio VAD 更新最近人声活动时间。
+3. 如果最近仍有人声，延后 finalize。
+4. 如果最近无人声且有 transcript，则提交给 AI。
+5. 文本规则只在明显没说完时增加短保护窗口，例如 filler、连接词或冠词结尾。
+
+### Mobile
+
+Mobile 当前使用 Expo native speech recognition。该库的 final result 已包含系统级 endpointing，系统底层通常已经结合了原生 VAD。
+
+Mobile 当前策略：
+
+- 不再强行指定 `en-US`，让系统语音识别使用设备/系统默认 speech locale。
+- final transcript 可直接提交给 AI。
+- partial/final result 事件作为 speech activity 信号，并转换为 `session-core` 的 `VoiceActivitySnapshot`。
+- 文本规则只作为明显没说完时的短保护，不要求 transcript 是完整句。
+
+限制：
+
+- Expo speech recognition adapter 当前不稳定暴露实时麦克风 metering。
+- `expo-audio` recording metering 可用，但与 native speech recognition 同时录音可能产生平台音频会话冲突。
+- 因此 Mobile 本轮不强行并发录音做自定义 VAD；如后续需要真正音频级 VAD，SHOULD 增加 native module 或把语音输入切到统一 recording pipeline。
+
+Mobile 当前方案与真音频 VAD 的本质区别：
+
+- 当前方案依赖系统 speech recognition 的 endpointing，再用 MeteorVoice 文本保护规则补一层。优点是成本低、风险低、不抢麦克风；缺点是系统误判时我们只能事后保护。
+- 真音频 VAD 是 MeteorVoice 自己直接采麦克风音频，独立判断最近有没有人声。优点是更可控、更统一；缺点是需要 native audio pipeline、真机调参，并可能与系统 speech recognition 的麦克风占用冲突。
+
+当前选择原因：
+
+- Web 已经稳定拥有 Web Audio 麦克风采样，因此本轮可以落地真音频 activity。
+- Mobile 已经使用系统 native speech recognition，系统本身包含 endpointing；贸然并发录音采样会增加权限、音频会话和设备差异风险。
+- 因此 Mobile 本轮先采用系统 endpoint + speech event activity + 统一 `session-core` 保护规则。真音频 VAD 作为下一阶段 native module 或统一录音链路增强。
+
+## session-core 边界
+
+`packages/session-core` SHOULD 只保存纯规则：
+
+- `looksLikeIncompleteSpeech`，仅用于延迟保护
+- `getSpeechEndpointDelay`
+- voice activity snapshot/update/hold 判断
+
+`session-core` MUST NOT 访问：
+
+- Browser Speech API
+- Web Audio API
+- Expo Audio
+- Expo Speech Recognition
+- DOM、React state、权限 API
+
+平台 adapter 负责采集信号，再把纯数据交给 `session-core`。
+
+## 后续增强
+
+如果当前策略仍有明显误判，下一步 SHOULD 做：
+
+1. Web 增加可观察调试字段：last voice age、noise floor、endpoint reason。
+2. Mobile development build 验证 speech recognition 是否暴露更稳定的音量/活动事件。
+3. 如需要原生级 VAD，新增 Expo native module：
+   - iOS: `AVAudioEngine` input tap + RMS/noise gate。
+   - Android: `AudioRecord` short buffer + RMS/noise gate。
+4. 统一把原生 VAD snapshot 传入 `session-core`，保持业务规则跨端一致。
+
+## 验收
+
+- `npm run lint`
+- `npm run mobile:typecheck`
+- `npm test`
+- Web 端测试：
+  - 正常完整句不会长时间等待。
+  - `um/uh/嗯/啊` 后不会立刻结束。
+  - `I want to`、`because`、`for`、`a/the` 等未完形态不会立刻结束。
+  - `I want to 预约 a table` 能进入对话并触发中文词汇解释。
+- Mobile 端测试：
+  - final transcript 后仍走文本 endpoint guard。
+  - partial/final result 不被 UI 语言强制锁到 `en-US`。
+  - 不支持实时 metering 的设备仍能退回 native speech recognition 的系统 endpointing。

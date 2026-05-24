@@ -16,14 +16,17 @@ import {
   canSampleListeningLevel,
   canSamplePlaybackLevel,
   completeCoachPlayback,
+  createVoiceActivitySnapshot,
   pauseSessionForRoute,
   receiveCoachReply,
   recoverSessionError,
   requestCoachReply,
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
+  updateVoiceActivitySnapshot,
+  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { splitSpokenText, t as translations } from '@meteorvoice/shared'
+import { t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -42,6 +45,7 @@ const sessionStatusKeys = [
   'session.listening',
   'session.transcribing',
   'session.thinking',
+  'session.preparing_reply',
   'session.speaking',
   'session.playback_blocked',
   'session.correcting',
@@ -165,7 +169,7 @@ function getSessionStatusKey(input: {
     case 'transcribing':
       return 'session.transcribing'
     case 'thinking':
-      return 'session.thinking'
+      return 'session.preparing_reply'
     case 'speaking':
       return 'session.speaking'
     case 'correcting':
@@ -418,6 +422,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const simulateTurnRef = useRef<(turnId: number) => void>(() => {})
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
+  const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
   const voiceLevelRequestRef = useRef(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
@@ -532,6 +537,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     voiceLevelRequestRef.current += 1
     stopVoiceLevelRef.current?.()
     stopVoiceLevelRef.current = null
+    voiceActivityRef.current = createVoiceActivitySnapshot()
     setVoiceLevel(null)
   }, [])
 
@@ -625,6 +631,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           workflowState: snapshotRef.current.state,
         })
       ) {
+        voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level })
         setVoiceLevel(level)
       }
     }).then(stop => {
@@ -730,19 +737,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         }
       }
 
-      const segments = splitSpokenText(text)
-      if (segments.length <= 1) {
-        await playTTS(text)
-        return
-      }
-
-      try {
-        for (const segment of segments) {
-          await playTTS(segment)
-        }
-      } catch {
-        await playTTS(text)
-      }
+      await playTTS(text)
     } catch {
       setVoiceLevel(null)
       await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
@@ -916,7 +911,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       try {
         startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()
-        const result = await browserSTT.transcribe(new Blob(), { signal: abortController.signal })
+        const result = await browserSTT.transcribe(new Blob(), {
+          signal: abortController.signal,
+          getVoiceActivity: () => voiceActivityRef.current,
+        })
         if (!canContinueListening()) return
         transcript = result.transcript
       } catch {
@@ -966,7 +964,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : currentAccent
     const currentScenario = scenarioRef.current
 
-    setStatusText(tr('session.thinking'))
+    setStatusText(tr('session.preparing_reply'))
     updateSnapshot(current => requestCoachReply(current))
     let response: ConversationResponse
     try {
