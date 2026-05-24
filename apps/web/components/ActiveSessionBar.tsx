@@ -23,9 +23,9 @@ export default function ActiveSessionBar() {
   if (!isSessionActive || pathname.startsWith('/session')) return null
 
   return (
-    <div className="fixed inset-x-3 bottom-3 z-40 lg:left-[15rem]">
+    <div className="sticky top-0 z-30 px-3 pt-3 lg:px-6">
       <div
-        className="mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-lg border px-3 py-2 shadow-lg"
+        className="mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-lg border px-3 py-2 shadow-sm"
         style={{
           background: 'var(--theme-bg-card)',
           borderColor: 'var(--theme-border)',
