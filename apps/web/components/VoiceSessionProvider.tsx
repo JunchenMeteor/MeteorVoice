@@ -23,7 +23,7 @@ import {
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
 } from '@meteorvoice/session-core'
-import { splitSpokenText, t as translations } from '@meteorvoice/shared'
+import { getTTSSpeedRouting, splitSpokenText, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -728,10 +728,11 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         return
       }
       const playTTS = async (speechText: string) => {
+        const speedRouting = getTTSSpeedRouting(provider, speed)
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: 1 }),
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed }),
         })
         const result = await res.json() as { audioUrl?: string }
         if (!result.audioUrl) return
@@ -741,12 +742,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
             audio: getSessionAudio(),
             playbackNodesRef,
             onLevel: updatePlaybackLevel,
-            speed,
+            speed: normalizeTTSSpeed(speedRouting.playbackRate),
           })
         } catch (error) {
           if (error instanceof PlaybackBlockedError) {
             setStatusText(tr('session.playback_blocked'))
-            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speed)
+            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, normalizeTTSSpeed(speedRouting.playbackRate))
             return
           }
           throw error
