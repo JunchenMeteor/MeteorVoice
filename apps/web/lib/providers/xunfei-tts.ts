@@ -24,12 +24,37 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
   return `wss://${host}${path}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${host}`
 }
 
-function voiceForAccent(accent?: string) {
+type XunfeiVoiceEnv = Record<string, string | undefined>
+
+function readEnvVoice(env: XunfeiVoiceEnv, key: keyof XunfeiVoiceEnv) {
+  return env[key]?.trim() || undefined
+}
+
+export function hasXunfeiVoiceConfig(env: XunfeiVoiceEnv = process.env) {
+  return Boolean(
+    readEnvVoice(env, 'XUNFEI_TTS_VOICE') ||
+    readEnvVoice(env, 'XUNFEI_TTS_VOICE_AMERICAN') ||
+    readEnvVoice(env, 'XUNFEI_TTS_VOICE_BRITISH') ||
+    readEnvVoice(env, 'XUNFEI_TTS_VOICE_INDIAN'),
+  )
+}
+
+export function resolveXunfeiVoiceForAccent(accent?: string, env: XunfeiVoiceEnv = process.env) {
   const normalized = accent?.toLowerCase() ?? ''
-  if (normalized.includes('british')) return process.env.XUNFEI_TTS_VOICE_BRITISH || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  if (normalized.includes('american')) return process.env.XUNFEI_TTS_VOICE_AMERICAN || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  if (normalized.includes('indian')) return process.env.XUNFEI_TTS_VOICE_INDIAN || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  return process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
+  const fallback = readEnvVoice(env, 'XUNFEI_TTS_VOICE')
+  const voice = normalized.includes('british')
+    ? readEnvVoice(env, 'XUNFEI_TTS_VOICE_BRITISH') ?? fallback
+    : normalized.includes('indian')
+      ? readEnvVoice(env, 'XUNFEI_TTS_VOICE_INDIAN') ?? fallback
+      : normalized.includes('american')
+        ? readEnvVoice(env, 'XUNFEI_TTS_VOICE_AMERICAN') ?? fallback
+        : fallback
+
+  if (!voice) {
+    throw new Error('XUNFEI_TTS_VOICE is required for Xunfei TTS. Configure a V3-compatible vcn from the Xunfei console, or an accent-specific override such as XUNFEI_TTS_VOICE_AMERICAN.')
+  }
+
+  return voice
 }
 
 export function createXunfeiTTS(): TTSProvider {
@@ -52,7 +77,7 @@ export function createXunfeiTTS(): TTSProvider {
             common: { app_id: appId },
             business: {
               aue: 'lame',
-              vcn: voiceForAccent(options?.accent),
+              vcn: resolveXunfeiVoiceForAccent(options?.accent),
               speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
               volume: 50,
               pitch: 50,
