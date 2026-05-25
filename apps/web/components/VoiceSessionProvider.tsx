@@ -877,8 +877,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed }),
         })
-        const result = await res.json() as { audioUrl?: string }
-        if (!result.audioUrl) return
+        const result = await res.json() as { audioUrl?: string; error?: string }
+        if (!res.ok) throw new Error(result.error || `TTS request failed: ${res.status}`)
+        if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
 
         try {
           await playAudioToEnd(result.audioUrl, {

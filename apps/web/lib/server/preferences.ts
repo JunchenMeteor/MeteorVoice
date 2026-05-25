@@ -18,10 +18,13 @@ export function normalizeTTSProvider(value?: string | null): TTSProviderPreferen
 }
 
 export function resolveTTSProviderPreference(storedValue?: string | null) {
-  const fallback = normalizeTTSProvider(process.env.TTS_PROVIDER)
+  const available = getAvailableProviders()
+  const envFallback = normalizeTTSProvider(process.env.TTS_PROVIDER)
+  const fallback = available.includes(envFallback) ? envFallback : 'mock'
   const stored = normalizeTTSProvider(storedValue)
 
   if (!storedValue) return fallback
+  if (!available.includes(stored)) return fallback
   if (stored === 'mock' && fallback !== 'mock') return fallback
   return stored
 }
@@ -109,11 +112,10 @@ export async function setPreferences(input: {
     throw new Error('Unauthorized')
   }
 
-  const normalized = normalizeTTSProvider(input.tts_provider ?? previous.tts_provider)
   const available = getAvailableProviders()
-  if (!available.includes(normalized)) {
-    throw new Error(`TTS provider "${normalized}" is not configured`)
-  }
+  const requestedProvider = normalizeTTSProvider(input.tts_provider ?? previous.tts_provider)
+  const fallbackProvider = resolveTTSProviderPreference()
+  const normalized = available.includes(requestedProvider) ? requestedProvider : fallbackProvider
   const locale = normalizeLocale(input.locale ?? previous.locale)
   const defaultScenarioKey = normalizeScenarioKey(input.default_scenario_key ?? previous.default_scenario_key)
   const defaultAccentKey = normalizeAccentKey(input.default_accent_key ?? previous.default_accent_key)
