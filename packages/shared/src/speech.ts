@@ -28,7 +28,7 @@ export interface STTProvider {
 }
 
 export interface TTSProvider {
-  synthesize(text: string, options?: { accent?: string; speed?: number }): Promise<TTSResult>
+  synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult>
 }
 
 const sentenceBoundaryPattern = /[^.!?。！？]+[.!?。！？]+(?:["'”’)]*)?|[^.!?。！？]+$/g

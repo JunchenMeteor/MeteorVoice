@@ -46,10 +46,13 @@ describe('resolveTTSProviderPreference', () => {
     expect(resolveTTSProviderPreference('tencent')).toBe('tencent')
   })
 
-  it('falls back when stored provider is no longer available', () => {
+  it('keeps xunfei available when credentials exist and catalog voices can be selected', () => {
     process.env.TTS_PROVIDER = 'xunfei'
+    process.env.XUNFEI_APP_ID = 'app'
+    process.env.XUNFEI_API_KEY = 'key'
+    process.env.XUNFEI_API_SECRET = 'secret'
     delete process.env.XUNFEI_TTS_VOICE
-    expect(resolveTTSProviderPreference('xunfei')).toBe('mock')
+    expect(resolveTTSProviderPreference('xunfei')).toBe('xunfei')
   })
 
   it('falls back to mock when no provider is configured', () => {

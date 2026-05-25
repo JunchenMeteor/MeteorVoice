@@ -177,10 +177,7 @@ TTS 服务商密钥（均可选，不填则使用 mock TTS）：
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
-XUNFEI_TTS_VOICE=                 # 讯飞必填，使用 V3 兼容的 vcn
-# 试用发音人示例，应用代码会在 2026-06-09 00:00 Asia/Shanghai 后停用：
-# XUNFEI_TTS_VOICE=x4_enus_catherine_profnews         # 英语男声
-# XUNFEI_TTS_VOICE_AMERICAN=x4_enus_ryan_assist      # 英语女声
+XUNFEI_TTS_VOICE=                 # 默认兜底 vcn；具体教练声音在设置页选择
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=

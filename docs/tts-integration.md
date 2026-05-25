@@ -62,33 +62,29 @@ TTS_PROVIDER=xunfei
 XUNFEI_APP_ID=your_app_id
 XUNFEI_API_KEY=your_api_key
 XUNFEI_API_SECRET=your_api_secret
-XUNFEI_TTS_VOICE=your_v3_voice_vcn_from_xunfei_console
-# Optional accent-specific overrides. These must also be V3-compatible vcn values.
-XUNFEI_TTS_VOICE_AMERICAN=your_american_v3_voice_vcn
-XUNFEI_TTS_VOICE_BRITISH=
-XUNFEI_TTS_VOICE_INDIAN=
+XUNFEI_TTS_VOICE=your_default_fallback_v3_voice_vcn
 ```
 
-6. In the app Settings page, select `Xunfei`.
+6. In the app Settings page, select `Xunfei`, then select the coach voice from the Xunfei voice catalog.
 
-Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice does not provide a hard-coded Xunfei voice fallback; configure `XUNFEI_TTS_VOICE` or an accent-specific override with the exact `vcn` authorized in the Xunfei console. The current online TTS WebSocket API uses the `business.vcn` field. Some Xunfei product pages call the same concept `voice_name` for other API versions; use the value currently authorized in the console for the same product/API version, not an unlicensed or legacy voice ID copied from older docs.
+Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice keeps `XUNFEI_TTS_VOICE` only as the default fallback `vcn`; the primary coach voice is selected from the app voice catalog and stored as a user preference. The current online TTS WebSocket API uses the `business.vcn` field. Some Xunfei product pages call the same concept `voice_name` for other API versions; use the value currently authorized in the console for the same product/API version, not an unlicensed or legacy voice ID copied from older docs.
 
 The adapter sends MP3 output with `aue=lame` and `sfl=1`, matching Xunfei's online TTS requirement for MP3 streaming.
 
-Current trial voice IDs, if still active in the Xunfei console:
+Current featured voice IDs in the app catalog:
 
 ```env
-# English male trial voice.
-XUNFEI_TTS_VOICE=x4_enus_catherine_profnews
-# English female trial voice.
-XUNFEI_TTS_VOICE_AMERICAN=x4_enus_ryan_assist
+x4_enus_catherine_profnews  # English male
+x4_enus_ryan_assist         # English female
+x4_lingxiaolu_en            # Mandarin female
+x4_yezi                     # Mandarin female
 ```
 
-These two trial voices expire at `2026-06-09 00:00 Asia/Shanghai`. MeteorVoice will stop treating them as available after that time and will fall back to another available TTS provider or mock playback. This is only an application-side guard; cancel or confirm trial renewal/billing directly in the Xunfei console before expiry.
+The English voices and `x4_lingxiaolu_en` expire at `2026-06-09 00:00 Asia/Shanghai`. `x4_yezi` is a featured voice without a known expiry in the current console. MeteorVoice will stop treating expired voices as available after their configured expiry time and will fall back to another available voice/provider path. This is only an application-side guard; cancel or confirm trial renewal/billing directly in the Xunfei console before expiry.
 
-The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `x4_yezi`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. `x4_lingxiaolu_en` is also Mandarin female but is treated as a trial/featured voice in MeteorVoice. Do not use Mandarin-only voices as the English coaching default unless you intentionally want Chinese speech output; after the English trial voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
+The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. `x4_lingxiaolu_en` and `x4_yezi` are also Mandarin female voices but are treated as featured voices in MeteorVoice. Do not use Mandarin-only voices as the English coaching default unless you intentionally want Chinese speech output; after the English featured voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
 
-Settings shows the server-side Xunfei voice configuration when Xunfei is selected: configured env key, voice ID, language, gender, base/trial tier, active/expired status, and trial expiry when known. This is read-only because voice availability is controlled by server environment variables and Xunfei console authorization.
+Settings shows the server-side Xunfei voice configuration when Xunfei is selected: configured env key, voice ID, language, gender, base/featured tier, active/expired status, and expiry when known. The selected coach voice is stored as `theme_preferences.tts_voice_id`.
 
 ## Volcengine Setup
 

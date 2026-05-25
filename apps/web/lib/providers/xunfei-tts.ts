@@ -31,7 +31,7 @@ export function createXunfeiTTS(): TTSProvider {
   const apiSecret = requireEnv('XUNFEI_API_SECRET')
 
   return {
-    synthesize(text: string, options?: { accent?: string; speed?: number }): Promise<TTSResult> {
+    synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult> {
       return new Promise((resolve, reject) => {
         const ws = new WebSocket(createAuthUrl(apiKey, apiSecret))
         const chunks: Buffer[] = []
@@ -46,7 +46,7 @@ export function createXunfeiTTS(): TTSProvider {
             business: {
               aue: 'lame',
               sfl: 1,
-              vcn: resolveXunfeiVoiceForAccent(options?.accent),
+              vcn: resolveXunfeiVoiceForAccent(options?.accent, process.env, Date.now(), options?.voiceId),
               speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
               volume: 50,
               pitch: 50,
