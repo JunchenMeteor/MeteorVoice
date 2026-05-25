@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { hasXunfeiVoiceConfig } from '@/lib/providers/xunfei-tts'
+import { getConfiguredXunfeiVoices, hasXunfeiVoiceConfig, xunfeiVoiceCatalog, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-tts'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
 export type ProductizedPreferences = {
   tts_provider: TTSProviderPreference
   available_providers: TTSProviderPreference[]
+  xunfei_voices: {
+    configured: XunfeiConfiguredVoiceInfo[]
+    catalog: XunfeiVoiceInfo[]
+  }
   locale: Locale
   default_scenario_key: string
   default_accent_key: string
@@ -65,10 +69,15 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const availableProviders = getAvailableProviders()
+  const xunfeiVoices = {
+    configured: getConfiguredXunfeiVoices(),
+    catalog: xunfeiVoiceCatalog,
+  }
   if (!user) {
     return {
       tts_provider: resolveTTSProviderPreference(),
       available_providers: availableProviders,
+      xunfei_voices: xunfeiVoices,
       locale: 'en',
       default_scenario_key: 'small-talk',
       default_accent_key: 'american',
@@ -86,6 +95,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
   return {
     tts_provider: resolveTTSProviderPreference(data?.tts_provider),
     available_providers: availableProviders,
+    xunfei_voices: xunfeiVoices,
     locale: normalizeLocale(data?.locale),
     default_scenario_key: normalizeScenarioKey(data?.default_scenario_key),
     default_accent_key: normalizeAccentKey(data?.default_accent_key),
@@ -136,6 +146,10 @@ export async function setPreferences(input: {
   return {
     tts_provider: normalized,
     available_providers: available,
+    xunfei_voices: {
+      configured: getConfiguredXunfeiVoices(),
+      catalog: xunfeiVoiceCatalog,
+    },
     locale,
     default_scenario_key: defaultScenarioKey,
     default_accent_key: defaultAccentKey,

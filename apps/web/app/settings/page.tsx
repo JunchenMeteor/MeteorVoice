@@ -9,6 +9,18 @@ import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
 
+type XunfeiConfiguredVoice = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'trial' | 'base'
+  expiresAt?: string
+  envKey: string
+  usage: string
+  status: 'active' | 'expired'
+}
+
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
   { key: 'xunfei', labelKey: 'settings.tts_provider_xunfei' },
@@ -18,6 +30,15 @@ const allTtsProviders = [
 
 function formatTtsSpeed(speed: number) {
   return `${speed.toFixed(2).replace(/0$/, '')}x`
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Shanghai',
+  }).format(new Date(value))
 }
 
 function initialDefaultAccent() {
@@ -33,6 +54,7 @@ export default function SettingsPage() {
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiConfiguredVoice[]>([])
 
   useEffect(() => {
     async function loadTtsProvider() {
@@ -42,9 +64,11 @@ export default function SettingsPage() {
           tts_provider?: string
           available_providers?: string[]
           tts_speed?: number
+          xunfei_voices?: { configured?: XunfeiConfiguredVoice[] }
         }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
+        if (data.xunfei_voices?.configured) setXunfeiVoices(data.xunfei_voices.configured)
         if (typeof data.tts_speed === 'number') {
           const serverSpeed = data.tts_speed
           const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
@@ -209,6 +233,51 @@ export default function SettingsPage() {
           <p className="text-xs text-[var(--theme-text-muted)] mt-3">
             {t('settings.tts_provider_hint')}
           </p>
+          {ttsProvider === 'xunfei' && (
+            <div className="mt-4 rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                  {t('settings.xunfei_voice_config')}
+                </p>
+                <span className={`status-badge ${availableProviders.includes('xunfei') ? 'success' : 'warning'}`}>
+                  {availableProviders.includes('xunfei') ? t('settings.xunfei_voice_available') : t('settings.xunfei_voice_unavailable')}
+                </span>
+              </div>
+              {xunfeiVoices.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {xunfeiVoices.map(voice => (
+                    <div
+                      key={`${voice.envKey}-${voice.id}`}
+                      className="rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-[var(--theme-text-primary)]">{voice.name}</span>
+                        <span className="text-xs text-[var(--theme-text-muted)]">{voice.id}</span>
+                        <span className={`status-badge ${voice.status === 'active' ? 'success' : 'warning'}`}>
+                          {voice.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.xunfei_voice_expired')}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
+                        {voice.envKey} · {voice.usage} · {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
+                      </p>
+                      {voice.expiresAt && (
+                        <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
+                          {t('settings.xunfei_voice_expires').replace('{date}', formatDateTime(voice.expiresAt))}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--theme-text-muted)]">
+                  {t('settings.xunfei_voice_empty')}
+                </p>
+              )}
+              <p className="mt-3 text-xs text-[var(--theme-text-muted)]">
+                {t('settings.xunfei_voice_billing_hint')}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -178,6 +178,9 @@ XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
 XUNFEI_TTS_VOICE=                 # required for Xunfei; use a V3-compatible vcn
+# Trial examples, guarded in app code until 2026-06-09 00:00 Asia/Shanghai:
+# XUNFEI_TTS_VOICE=x4_enus_catherine_profnews         # English male
+# XUNFEI_TTS_VOICE_AMERICAN=x4_enus_ryan_assist      # English female
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
