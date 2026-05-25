@@ -20,7 +20,86 @@ export interface EndpointResult {
 
 const COMPLETE_ENDING_PATTERN = /[.!?。！？]$/
 
-const SHORT_COMPLETE_PHRASES = /^(?:yes|no|yeah|nope|ok|okay|sure|right|exactly|absolutely|definitely|maybe|perhaps|please|thanks|thank you|sorry|good|great|fine|got it|I see|I understand|of course|not really|I agree|I don't know|I'm not sure|me too|me neither|never mind|go ahead|let me try|I'll try|hello|hi|hey|bye|goodbye)[\s,，.。!?！？]*$/i
+const SHORT_COMPLETE_PHRASE_LIST = [
+  'yes',
+  'no',
+  'yeah',
+  'yep',
+  'yup',
+  'nope',
+  'nah',
+  'ok',
+  'okay',
+  'sure',
+  'right',
+  'correct',
+  'exactly',
+  'absolutely',
+  'definitely',
+  'maybe',
+  'perhaps',
+  'probably',
+  'please',
+  'thanks',
+  'thank you',
+  'sorry',
+  'good',
+  'great',
+  'nice',
+  'fine',
+  'not bad',
+  'not much',
+  'pretty good',
+  'very good',
+  'all good',
+  "I'm good",
+  'I am good',
+  "I'm fine",
+  'I am fine',
+  "I'm okay",
+  'I am okay',
+  "I'm ready",
+  'I am ready',
+  'ready',
+  'got it',
+  'gotcha',
+  'I see',
+  'I understand',
+  'understood',
+  'of course',
+  'not really',
+  'I agree',
+  'I disagree',
+  "I don't know",
+  "I don't understand",
+  "I'm not sure",
+  'not sure',
+  'me too',
+  'me neither',
+  'never mind',
+  'go ahead',
+  'let me try',
+  "I'll try",
+  'try again',
+  'say again',
+  'one more time',
+  'repeat please',
+  'please repeat',
+  'hello',
+  'hi',
+  'hey',
+  'good morning',
+  'good afternoon',
+  'good evening',
+  'good night',
+  'bye',
+  'goodbye',
+]
+
+const SHORT_COMPLETE_PHRASES = new RegExp(
+  `^(?:${SHORT_COMPLETE_PHRASE_LIST.map(escapeRegExp).join('|')})[\\s,，.。!?！？]*$`,
+  'i',
+)
 
 const SHORT_PHRASE_MAX_WORDS = 3
 
@@ -159,4 +238,8 @@ function countWords(text: string): number {
     .replace(/[一-鿿]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean).length
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

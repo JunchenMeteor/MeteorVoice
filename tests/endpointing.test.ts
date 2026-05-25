@@ -40,6 +40,14 @@ describe('L1 fast path: isTurnDefinitelyComplete', () => {
     expect(isTurnDefinitelyComplete('Hello')).toBe(true)
     expect(isTurnDefinitelyComplete('Hi')).toBe(true)
     expect(isTurnDefinitelyComplete('Hey')).toBe(true)
+    expect(isTurnDefinitelyComplete('Good morning')).toBe(true)
+    expect(isTurnDefinitelyComplete('Not much')).toBe(true)
+    expect(isTurnDefinitelyComplete("I'm fine")).toBe(true)
+    expect(isTurnDefinitelyComplete('Please repeat')).toBe(true)
+    expect(isTurnDefinitelyComplete('One more time')).toBe(true)
+    expect(isTurnDefinitelyComplete("I don't understand")).toBe(true)
+    expect(isTurnDefinitelyComplete('Not sure')).toBe(true)
+    expect(isTurnDefinitelyComplete('Try again')).toBe(true)
   })
 
   it('submits complete punctuated sentences', () => {
@@ -47,10 +55,8 @@ describe('L1 fast path: isTurnDefinitelyComplete', () => {
     expect(isTurnDefinitelyComplete('What time is it?')).toBe(true)
   })
 
-  it('does not treat unpunctuated short phrases as incomplete by default', () => {
-    expect(isTurnDefinitelyComplete('Good morning')).toBe(false)
-    expect(isTurnDefinitelyComplete('Not much')).toBe(false)
-    expect(isTurnDefinitelyComplete('I am fine')).toBe(false)
+  it('does not submit arbitrary unpunctuated phrases by default', () => {
+    expect(isTurnDefinitelyComplete('I want to go')).toBe(false)
   })
 
   it('leaves structurally incomplete text to the incomplete guard', () => {
@@ -71,8 +77,6 @@ describe('judgeTurnLocally', () => {
     expect(judgeTurnLocally('I want to')).toBe('uncertain')
     expect(judgeTurnLocally('I went there and')).toBe('uncertain')
     expect(judgeTurnLocally('I think that um')).toBe('uncertain')
-    expect(judgeTurnLocally('Good morning')).toBe('uncertain')
-    expect(judgeTurnLocally('Not much')).toBe('uncertain')
     expect(judgeTurnLocally('I want to go')).toBe('uncertain')
   })
 })
