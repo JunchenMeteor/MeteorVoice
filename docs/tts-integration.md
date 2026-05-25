@@ -86,7 +86,7 @@ XUNFEI_TTS_VOICE_AMERICAN=x4_enus_ryan_assist
 
 These two trial voices expire at `2026-06-09 00:00 Asia/Shanghai`. MeteorVoice will stop treating them as available after that time and will fall back to another available TTS provider or mock playback. This is only an application-side guard; cancel or confirm trial renewal/billing directly in the Xunfei console before expiry.
 
-The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `x4_yezi`, `x4_lingxiaolu_en`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. Do not use Mandarin-only base voices as the English coaching default unless you intentionally want Chinese speech output; after the English trial voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
+The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `x4_yezi`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. `x4_lingxiaolu_en` is also Mandarin female but is treated as a trial/featured voice in MeteorVoice. Do not use Mandarin-only voices as the English coaching default unless you intentionally want Chinese speech output; after the English trial voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
 
 Settings shows the server-side Xunfei voice configuration when Xunfei is selected: configured env key, voice ID, language, gender, base/trial tier, active/expired status, and trial expiry when known. This is read-only because voice availability is controlled by server environment variables and Xunfei console authorization.
 
@@ -148,6 +148,32 @@ TENCENT_TTS_VOICE=101001
 - `tencent`: server-side signed Tencent Cloud API request
 
 If a selected provider is not configured, the frontend falls back to browser mock speech.
+
+## Latency and Streaming Direction
+
+Current production behavior is intentionally conservative:
+
+1. Wait for the AI coach reply text.
+2. Send the complete reply text to the selected TTS provider.
+3. Wait for a complete playable audio result.
+4. Play the reply once.
+
+This keeps Web and iOS browser playback stable. Xunfei's WebSocket API returns audio in chunks, but MeteorVoice currently buffers those chunks into one MP3 data URL before playback. The app does not currently stream partial audio chunks into the browser player.
+
+Do not implement Web chunk-by-chunk playback as a quick optimization. On Web, especially iOS Safari/Chrome, continuously appending MP3 chunks can introduce autoplay failures, small gaps, clipped starts, or inconsistent AudioContext behavior. A low-latency implementation needs a dedicated audio queue, cancellation rules, pause/resume handling, and browser-specific fallback paths.
+
+Near-term latency strategy:
+
+- Keep replies short and direct so complete-text TTS remains fast.
+- Keep one complete TTS audio playback per coach reply.
+- Prefer provider-side speed control when supported, and avoid browser playback-rate stacking unless it is the fallback path.
+
+Deferred upgrade options:
+
+1. **Complete text + streamed audio playback**: send one complete coach reply to TTS, but start playback when the first audio chunks arrive. This may be worth exploring on native mobile first, where AVQueuePlayer/ExoPlayer-style queues are more reliable than Web audio chunk appending.
+2. **LLM streaming + TTS sentence queue**: stream the AI reply text, split into stable sentences, synthesize each segment, and play through an ordered queue. This is higher risk because sentence boundaries, cancellation, user interruption, and cross-segment naturalness must be handled carefully.
+
+Decision: keep Web on complete-reply playback for now. Record streaming playback as a future native-first audio architecture task, not as a small Web patch.
 
 ## Accent Capability Status
 
