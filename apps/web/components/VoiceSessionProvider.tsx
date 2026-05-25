@@ -32,7 +32,7 @@ import type { ConversationMessage, ConversationResponse } from '@/lib/providers/
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
-import { ttsVoiceIdChangeEvent } from '@/lib/tts-voice'
+import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import { useT } from '@/components/LanguageProvider'
 
 const mockTTS = createMockTTS()
@@ -529,7 +529,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
-  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
   const [playbackBlocked, setPlaybackBlocked] = useState(false)
@@ -630,7 +630,11 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       .then(res => res.json())
       .then((data: { tts_provider?: string; tts_speed?: number; tts_voice_id?: string | null }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
-        if ('tts_voice_id' in data) setTtsVoiceId(data.tts_voice_id ?? null)
+        if ('tts_voice_id' in data) {
+          const serverVoiceId = data.tts_voice_id ?? readTTSVoiceIdPreference()
+          setTtsVoiceId(serverVoiceId)
+          writeTTSVoiceIdPreference(serverVoiceId)
+        }
         if (typeof data.tts_speed === 'number') {
           const serverSpeed = normalizeTTSSpeed(data.tts_speed)
           setTtsSpeed(serverSpeed)

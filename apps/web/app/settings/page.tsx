@@ -5,7 +5,7 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
-import { ttsVoiceIdChangeEvent } from '@/lib/tts-voice'
+import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
@@ -82,7 +82,10 @@ export default function SettingsPage() {
         }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
-        if ('tts_voice_id' in data) setTtsVoiceId(data.tts_voice_id ?? null)
+        if ('tts_voice_id' in data) {
+          setTtsVoiceId(data.tts_voice_id ?? null)
+          writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
+        }
         if (data.xunfei_voices?.configured) setXunfeiVoices(data.xunfei_voices.configured)
         if (data.xunfei_voices?.catalog) setXunfeiVoiceCatalog(data.xunfei_voices.catalog)
         if (typeof data.tts_speed === 'number') {
@@ -124,7 +127,7 @@ export default function SettingsPage() {
 
   function handleTtsVoiceChange(voiceId: string) {
     setTtsVoiceId(voiceId)
-    window.dispatchEvent(new CustomEvent(ttsVoiceIdChangeEvent, { detail: { voiceId } }))
+    writeTTSVoiceIdPreference(voiceId)
     void persistPreference('tts_voice_id', voiceId)
   }
 
@@ -272,15 +275,17 @@ export default function SettingsPage() {
                       key={`${voice.envKey}-${voice.id}`}
                       className="rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-sm font-medium text-[var(--theme-text-primary)]">{voice.name}</span>
-                        <span className="text-xs text-[var(--theme-text-muted)]">{voice.id}</span>
-                        <span className={`status-badge ${voice.status === 'active' ? 'success' : 'warning'}`}>
-                          {voice.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.xunfei_voice_expired')}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="status-badge">{t('settings.xunfei_voice_default')}</span>
+                          <span className={`status-badge ${voice.status === 'active' ? 'success' : 'warning'}`}>
+                            {voice.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.xunfei_voice_expired')}
+                          </span>
+                        </div>
                       </div>
                       <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
-                        {voice.envKey} · {voice.usage} · {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
+                        {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
                       </p>
                       {voice.expiresAt && (
                         <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
