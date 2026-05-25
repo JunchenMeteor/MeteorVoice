@@ -62,10 +62,16 @@ TTS_PROVIDER=xunfei
 XUNFEI_APP_ID=your_app_id
 XUNFEI_API_KEY=your_api_key
 XUNFEI_API_SECRET=your_api_secret
-XUNFEI_TTS_VOICE=x4_EnUs_Laura_education
+XUNFEI_TTS_VOICE=your_v3_voice_vcn_from_xunfei_console
+# Optional accent-specific overrides. These must also be V3-compatible vcn values.
+XUNFEI_TTS_VOICE_AMERICAN=your_american_v3_voice_vcn
+XUNFEI_TTS_VOICE_BRITISH=
+XUNFEI_TTS_VOICE_INDIAN=
 ```
 
 6. In the app Settings page, select `Xunfei`.
+
+Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice does not provide a hard-coded Xunfei voice fallback; configure `XUNFEI_TTS_VOICE` or an accent-specific override with the exact `vcn` authorized in the Xunfei console. The current WebSocket API uses the `business.vcn` field. If a Xunfei product page uses `voice_name` for another API version, use the corresponding value from the same V3 voice catalog rather than the old `x4_*` defaults.
 
 ## Volcengine Setup
 
@@ -120,7 +126,7 @@ TENCENT_TTS_VOICE=101001
 ## Provider Behavior
 
 - `mock`: browser speech synthesis fallback
-- `xunfei`: server-side WebSocket provider
+- `xunfei`: server-side WebSocket provider; requires explicit V3-compatible `XUNFEI_TTS_VOICE`
 - `volcengine`: server-side HTTP provider
 - `tencent`: server-side signed Tencent Cloud API request
 

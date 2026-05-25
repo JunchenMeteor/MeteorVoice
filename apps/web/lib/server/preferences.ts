@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { hasXunfeiVoiceConfig } from '@/lib/providers/xunfei-tts'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
@@ -27,7 +28,7 @@ export function resolveTTSProviderPreference(storedValue?: string | null) {
 
 export function getAvailableProviders(): TTSProviderPreference[] {
   const providers: TTSProviderPreference[] = ['mock']
-  if (process.env.XUNFEI_APP_ID && process.env.XUNFEI_API_KEY && process.env.XUNFEI_API_SECRET) {
+  if (process.env.XUNFEI_APP_ID && process.env.XUNFEI_API_KEY && process.env.XUNFEI_API_SECRET && hasXunfeiVoiceConfig()) {
     providers.push('xunfei')
   }
   if (process.env.VOLCENGINE_TTS_APP_ID && process.env.VOLCENGINE_TTS_ACCESS_TOKEN) {

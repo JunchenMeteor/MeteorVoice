@@ -177,6 +177,7 @@ TTS provider keys (all optional — mock TTS works without them):
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
+XUNFEI_TTS_VOICE=                 # required for Xunfei; use a V3-compatible vcn
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
