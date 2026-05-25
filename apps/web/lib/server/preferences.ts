@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getConfiguredXunfeiVoices, hasXunfeiVoiceConfig, xunfeiVoiceCatalog, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
+import { getConfiguredXunfeiVoices, getDefaultXunfeiVoiceId, getSelectableXunfeiVoices, hasXunfeiVoiceConfig, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
@@ -8,8 +8,9 @@ export type ProductizedPreferences = {
   available_providers: TTSProviderPreference[]
   xunfei_voices: {
     configured: XunfeiConfiguredVoiceInfo[]
-    catalog: XunfeiVoiceInfo[]
+    catalog: (XunfeiVoiceInfo & { status: 'active' | 'expired' })[]
   }
+  tts_voice_id: string | null
   locale: Locale
   default_scenario_key: string
   default_accent_key: string
@@ -65,19 +66,28 @@ function normalizeTTSSpeed(value?: number | string | null) {
   return Math.min(1.3, Math.max(0.7, Number(speed!.toFixed(2))))
 }
 
+function normalizeTTSVoiceId(value?: string | null) {
+  const voiceId = value?.trim()
+  if (!voiceId) return getDefaultXunfeiVoiceId()
+  const voice = getSelectableXunfeiVoices().find(item => item.id === voiceId)
+  if (!voice || voice.status === 'expired') return getDefaultXunfeiVoiceId()
+  return voice.id
+}
+
 export async function getPreferences(): Promise<ProductizedPreferences> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const availableProviders = getAvailableProviders()
   const xunfeiVoices = {
     configured: getConfiguredXunfeiVoices(),
-    catalog: xunfeiVoiceCatalog,
+    catalog: getSelectableXunfeiVoices(),
   }
   if (!user) {
     return {
       tts_provider: resolveTTSProviderPreference(),
       available_providers: availableProviders,
       xunfei_voices: xunfeiVoices,
+      tts_voice_id: normalizeTTSVoiceId(),
       locale: 'en',
       default_scenario_key: 'small-talk',
       default_accent_key: 'american',
@@ -87,7 +97,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
 
   const { data, error } = await supabase
     .from('theme_preferences')
-    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed')
+    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -96,6 +106,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
     tts_provider: resolveTTSProviderPreference(data?.tts_provider),
     available_providers: availableProviders,
     xunfei_voices: xunfeiVoices,
+    tts_voice_id: normalizeTTSVoiceId(data?.tts_voice_id),
     locale: normalizeLocale(data?.locale),
     default_scenario_key: normalizeScenarioKey(data?.default_scenario_key),
     default_accent_key: normalizeAccentKey(data?.default_accent_key),
@@ -114,6 +125,7 @@ export async function setPreferences(input: {
   default_scenario_key?: string
   default_accent_key?: string
   tts_speed?: number
+  tts_voice_id?: string | null
 }) {
   const previous = await getPreferences()
   const supabase = await createClient()
@@ -130,6 +142,7 @@ export async function setPreferences(input: {
   const defaultScenarioKey = normalizeScenarioKey(input.default_scenario_key ?? previous.default_scenario_key)
   const defaultAccentKey = normalizeAccentKey(input.default_accent_key ?? previous.default_accent_key)
   const ttsSpeed = normalizeTTSSpeed(input.tts_speed ?? previous.tts_speed)
+  const ttsVoiceId = normalizeTTSVoiceId(input.tts_voice_id ?? previous.tts_voice_id)
   const { error } = await supabase
     .from('theme_preferences')
     .upsert({
@@ -139,6 +152,7 @@ export async function setPreferences(input: {
       default_scenario_key: defaultScenarioKey,
       default_accent_key: defaultAccentKey,
       tts_speed: ttsSpeed,
+      tts_voice_id: ttsVoiceId,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
@@ -148,8 +162,9 @@ export async function setPreferences(input: {
     available_providers: available,
     xunfei_voices: {
       configured: getConfiguredXunfeiVoices(),
-      catalog: xunfeiVoiceCatalog,
+      catalog: getSelectableXunfeiVoices(),
     },
+    tts_voice_id: ttsVoiceId,
     locale,
     default_scenario_key: defaultScenarioKey,
     default_accent_key: defaultAccentKey,

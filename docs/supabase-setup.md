@@ -6,6 +6,7 @@
 - `supabase/migrations/002_rls.sql` enables row-level security and user-owned access policies.
 - `supabase/migrations/003_tts_preferences.sql` adds the per-user TTS provider preference.
 - `supabase/migrations/004_productized_preferences.sql` adds locale, default scenario/accent, and TTS speed preferences for Web/Mobile sync.
+- `supabase/migrations/005_tts_voice_preferences.sql` adds the selected TTS coach voice id.
 - The app uses Supabase Auth with a MeteorTest-style username/phone account input.
 
 ## Username + Phone Login Mode
@@ -51,6 +52,7 @@ This gives you a single login surface with two formal account types:
 - Learning history and theme preferences are user-scoped.
 - The selected TTS provider is stored on `theme_preferences.tts_provider` and protected by the same user-owned policy.
 - Locale, default scenario/accent, and TTS speed are stored on `theme_preferences` and protected by the same user-owned policy.
+- The selected TTS coach voice id is stored on `theme_preferences.tts_voice_id` and protected by the same user-owned policy.
 - Accent profiles and scenarios are readable by authenticated users.
 
 ## Notes on Admin Accounts

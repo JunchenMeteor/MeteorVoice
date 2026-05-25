@@ -14,13 +14,14 @@ function createProvider(provider: TTSProviderPreference): TTSProvider {
 
 export async function synthesizeSpeech(
   text: string,
-  options?: { accent?: string; speed?: number; provider?: string },
+  options?: { accent?: string; speed?: number; provider?: string; voiceId?: string },
 ): Promise<TTSResult> {
   const requestedProvider = normalizeTTSProvider(options?.provider ?? process.env.TTS_PROVIDER)
   const provider = getAvailableProviders().includes(requestedProvider) ? requestedProvider : 'mock'
   return createProvider(provider).synthesize(text, {
     accent: options?.accent,
     speed: options?.speed,
+    voiceId: options?.voiceId,
   })
 }
 
@@ -29,6 +30,7 @@ export async function synthesizeSpeechFromRequest(input: {
   accent?: string
   speed?: number
   provider?: string
+  voiceId?: string
 }) {
   if (!input.text?.trim()) {
     return { error: 'Text is required', status: 400 as const }

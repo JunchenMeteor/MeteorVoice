@@ -32,6 +32,7 @@ import type { ConversationMessage, ConversationResponse } from '@/lib/providers/
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
+import { ttsVoiceIdChangeEvent } from '@/lib/tts-voice'
 import { useT } from '@/components/LanguageProvider'
 
 const mockTTS = createMockTTS()
@@ -528,6 +529,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
   const [playbackBlocked, setPlaybackBlocked] = useState(false)
@@ -544,6 +546,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const accentRef = useRef(accent)
   const ttsProviderRef = useRef(ttsProvider)
   const ttsSpeedRef = useRef(ttsSpeed)
+  const ttsVoiceIdRef = useRef<string | null>(null)
   const activeSessionRef = useRef(initialState.isSessionActive)
   const activeTurnRef = useRef(0)
   const canListenOnRouteRef = useRef(isSessionRoute)
@@ -582,6 +585,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [ttsSpeed])
 
   useEffect(() => {
+    ttsVoiceIdRef.current = ttsVoiceId
+  }, [ttsVoiceId])
+
+  useEffect(() => {
     const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
 
     function handleSpeedChange(event: Event) {
@@ -589,15 +596,22 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       setTtsSpeed(customEvent.detail?.speed ?? readTTSSpeedPreference())
     }
 
+    function handleVoiceIdChange(event: Event) {
+      const customEvent = event as CustomEvent<{ voiceId?: string | null }>
+      setTtsVoiceId(customEvent.detail?.voiceId ?? null)
+    }
+
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') syncSpeedPreference()
     }
 
     window.addEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+    window.addEventListener(ttsVoiceIdChangeEvent, handleVoiceIdChange)
     window.addEventListener('focus', syncSpeedPreference)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       window.removeEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+      window.removeEventListener(ttsVoiceIdChangeEvent, handleVoiceIdChange)
       window.removeEventListener('focus', syncSpeedPreference)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
@@ -614,8 +628,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     void flushPendingPreferences()
     fetch('/api/preferences')
       .then(res => res.json())
-      .then((data: { tts_provider?: string; tts_speed?: number }) => {
+      .then((data: { tts_provider?: string; tts_speed?: number; tts_voice_id?: string | null }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
+        if ('tts_voice_id' in data) setTtsVoiceId(data.tts_voice_id ?? null)
         if (typeof data.tts_speed === 'number') {
           const serverSpeed = normalizeTTSSpeed(data.tts_speed)
           setTtsSpeed(serverSpeed)
@@ -875,7 +890,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed }),
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
         })
         const result = await res.json() as { audioUrl?: string; error?: string }
         if (!res.ok) throw new Error(result.error || `TTS request failed: ${res.status}`)

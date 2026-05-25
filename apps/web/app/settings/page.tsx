@@ -5,6 +5,7 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+import { ttsVoiceIdChangeEvent } from '@/lib/tts-voice'
 import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
@@ -14,10 +15,20 @@ type XunfeiConfiguredVoice = {
   name: string
   language: 'en' | 'zh'
   gender: 'male' | 'female'
-  tier: 'trial' | 'base'
+  tier: 'featured' | 'base'
   expiresAt?: string
   envKey: string
   usage: string
+  status: 'active' | 'expired'
+}
+
+type XunfeiVoiceOption = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  expiresAt?: string
   status: 'active' | 'expired'
 }
 
@@ -53,8 +64,10 @@ export default function SettingsPage() {
   const [defaultAccent, setDefaultAccent] = useState(initialDefaultAccent)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
   const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiConfiguredVoice[]>([])
+  const [xunfeiVoiceCatalog, setXunfeiVoiceCatalog] = useState<XunfeiVoiceOption[]>([])
 
   useEffect(() => {
     async function loadTtsProvider() {
@@ -64,11 +77,14 @@ export default function SettingsPage() {
           tts_provider?: string
           available_providers?: string[]
           tts_speed?: number
-          xunfei_voices?: { configured?: XunfeiConfiguredVoice[] }
+          tts_voice_id?: string | null
+          xunfei_voices?: { configured?: XunfeiConfiguredVoice[]; catalog?: XunfeiVoiceOption[] }
         }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
+        if ('tts_voice_id' in data) setTtsVoiceId(data.tts_voice_id ?? null)
         if (data.xunfei_voices?.configured) setXunfeiVoices(data.xunfei_voices.configured)
+        if (data.xunfei_voices?.catalog) setXunfeiVoiceCatalog(data.xunfei_voices.catalog)
         if (typeof data.tts_speed === 'number') {
           const serverSpeed = data.tts_speed
           const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
@@ -104,6 +120,12 @@ export default function SettingsPage() {
     const next = ttsSpeedOptions[index] ?? 1
     setTtsSpeed(next)
     void persistTTSSpeedPreference(next)
+  }
+
+  function handleTtsVoiceChange(voiceId: string) {
+    setTtsVoiceId(voiceId)
+    window.dispatchEvent(new CustomEvent(ttsVoiceIdChangeEvent, { detail: { voiceId } }))
+    void persistPreference('tts_voice_id', voiceId)
   }
 
   return (
@@ -276,6 +298,32 @@ export default function SettingsPage() {
               <p className="mt-3 text-xs text-[var(--theme-text-muted)]">
                 {t('settings.xunfei_voice_billing_hint')}
               </p>
+              {xunfeiVoiceCatalog.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                    {t('settings.xunfei_voice_select')}
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {xunfeiVoiceCatalog.map(voice => {
+                      const isExpired = voice.status === 'expired'
+                      return (
+                        <button
+                          key={voice.id}
+                          type="button"
+                          disabled={isExpired}
+                          onClick={() => handleTtsVoiceChange(voice.id)}
+                          className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${ttsVoiceId === voice.id ? 'is-active' : ''} ${isExpired ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <span className="text-sm font-medium">{voice.name}</span>
+                          <span className="text-xs text-[var(--theme-text-muted)]">
+                            {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
