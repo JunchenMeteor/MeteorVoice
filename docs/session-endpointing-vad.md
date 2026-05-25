@@ -25,7 +25,7 @@
 
 当前实现遵循现有双端架构边界：
 
-- `packages/session-core` 保存 endpointing 纯规则：文本保护、voice activity snapshot、动态 hold 计算。
+- `packages/session-core` 保存 endpointing 纯规则：明确完成快通道、voice activity snapshot、动态 hold 计算。
 - `apps/web` 只负责采集 Browser Speech/Web Audio 信号，不复制业务判断。
 - `apps/mobile` 只负责采集 Expo native speech 事件，不复制业务判断。
 - 页面组件不直接判断“是否说完”，只消费 session/provider/adapter 输出的结果。
@@ -115,7 +115,7 @@ localStorage.removeItem('meteorvoice-debug-vad')
 
 `packages/session-core` SHOULD 只保存纯规则：
 
-- `looksLikeIncompleteSpeech`，仅用于延迟保护
+- `isTurnDefinitelyComplete`，仅用于短应答和明确完整句的快通道
 - `getSpeechEndpointDelay`
 - voice activity snapshot/update/hold 判断
 
@@ -146,11 +146,11 @@ localStorage.removeItem('meteorvoice-debug-vad')
 
 | 层 | 方式 | 延迟 | 成本 |
 |----|------|------|------|
-| L1 本地快速判断 | 正则 + 结构分析 | <1ms | 0 |
+| L1 本地快速判断 | 只判断高置信完成短句/完整句 | <1ms | 0 |
 | L2 LLM 语义判停 | DeepSeek 单 token 判断 done/thinking | 目标 200-400ms，最多 1.5s | ~50 tokens |
 | L3 安全网超时 | 45s 单次 utterance 上限，8s 异常静默上限 | — | 0 |
 
-LLM 语义判停不应替代当前文本保护规则，而是作为 `uncertain` 场景的第二层判断。当前所有正则规则（filler、trailing conjunction、中英混输）保持不变，只在"正则无法确定"时才调 LLM。
+LLM 语义判停负责 `uncertain` 场景，包括看起来可能未完成的连接词、介词、filler 和普通短句。L1 不维护大规模 incomplete 正则库，只保留高置信完成快通道，避免短句问候、`yes/no`、`good morning` 这类有效 utterance 被本地规则卡住。
 
 时间窗口 MUST 分层理解：
 
