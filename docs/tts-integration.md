@@ -71,7 +71,24 @@ XUNFEI_TTS_VOICE_INDIAN=
 
 6. In the app Settings page, select `Xunfei`.
 
-Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice does not provide a hard-coded Xunfei voice fallback; configure `XUNFEI_TTS_VOICE` or an accent-specific override with the exact `vcn` authorized in the Xunfei console. The current WebSocket API uses the `business.vcn` field. If a Xunfei product page uses `voice_name` for another API version, use the corresponding value from the same V3 voice catalog rather than the old `x4_*` defaults.
+Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice does not provide a hard-coded Xunfei voice fallback; configure `XUNFEI_TTS_VOICE` or an accent-specific override with the exact `vcn` authorized in the Xunfei console. The current online TTS WebSocket API uses the `business.vcn` field. Some Xunfei product pages call the same concept `voice_name` for other API versions; use the value currently authorized in the console for the same product/API version, not an unlicensed or legacy voice ID copied from older docs.
+
+The adapter sends MP3 output with `aue=lame` and `sfl=1`, matching Xunfei's online TTS requirement for MP3 streaming.
+
+Current trial voice IDs, if still active in the Xunfei console:
+
+```env
+# English male trial voice.
+XUNFEI_TTS_VOICE=x4_enus_catherine_profnews
+# English female trial voice.
+XUNFEI_TTS_VOICE_AMERICAN=x4_enus_ryan_assist
+```
+
+These two trial voices expire at `2026-06-09 00:00 Asia/Shanghai`. MeteorVoice will stop treating them as available after that time and will fall back to another available TTS provider or mock playback. This is only an application-side guard; cancel or confirm trial renewal/billing directly in the Xunfei console before expiry.
+
+The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `x4_yezi`, `x4_lingxiaolu_en`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. Do not use Mandarin-only base voices as the English coaching default unless you intentionally want Chinese speech output; after the English trial voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
+
+Settings shows the server-side Xunfei voice configuration when Xunfei is selected: configured env key, voice ID, language, gender, base/trial tier, active/expired status, and trial expiry when known. This is read-only because voice availability is controlled by server environment variables and Xunfei console authorization.
 
 ## Volcengine Setup
 

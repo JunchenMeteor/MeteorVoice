@@ -3,7 +3,7 @@ import { createTencentTTS } from '@/lib/providers/tencent-tts'
 import { createVolcengineTTS } from '@/lib/providers/volcengine-tts'
 import { createXunfeiTTS } from '@/lib/providers/xunfei-tts'
 import type { TTSProvider, TTSResult } from '@/lib/providers/types'
-import { normalizeTTSProvider, type TTSProviderPreference } from './preferences'
+import { getAvailableProviders, normalizeTTSProvider, type TTSProviderPreference } from './preferences'
 
 function createProvider(provider: TTSProviderPreference): TTSProvider {
   if (provider === 'xunfei') return createXunfeiTTS()
@@ -16,7 +16,8 @@ export async function synthesizeSpeech(
   text: string,
   options?: { accent?: string; speed?: number; provider?: string },
 ): Promise<TTSResult> {
-  const provider = normalizeTTSProvider(options?.provider ?? process.env.TTS_PROVIDER)
+  const requestedProvider = normalizeTTSProvider(options?.provider ?? process.env.TTS_PROVIDER)
+  const provider = getAvailableProviders().includes(requestedProvider) ? requestedProvider : 'mock'
   return createProvider(provider).synthesize(text, {
     accent: options?.accent,
     speed: options?.speed,

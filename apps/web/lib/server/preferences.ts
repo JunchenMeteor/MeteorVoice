@@ -1,11 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { hasXunfeiVoiceConfig } from '@/lib/providers/xunfei-tts'
+import { getConfiguredXunfeiVoices, hasXunfeiVoiceConfig, xunfeiVoiceCatalog, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-tts'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
 export type ProductizedPreferences = {
   tts_provider: TTSProviderPreference
   available_providers: TTSProviderPreference[]
+  xunfei_voices: {
+    configured: XunfeiConfiguredVoiceInfo[]
+    catalog: XunfeiVoiceInfo[]
+  }
   locale: Locale
   default_scenario_key: string
   default_accent_key: string
@@ -18,10 +22,13 @@ export function normalizeTTSProvider(value?: string | null): TTSProviderPreferen
 }
 
 export function resolveTTSProviderPreference(storedValue?: string | null) {
-  const fallback = normalizeTTSProvider(process.env.TTS_PROVIDER)
+  const available = getAvailableProviders()
+  const envFallback = normalizeTTSProvider(process.env.TTS_PROVIDER)
+  const fallback = available.includes(envFallback) ? envFallback : 'mock'
   const stored = normalizeTTSProvider(storedValue)
 
   if (!storedValue) return fallback
+  if (!available.includes(stored)) return fallback
   if (stored === 'mock' && fallback !== 'mock') return fallback
   return stored
 }
@@ -62,10 +69,15 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const availableProviders = getAvailableProviders()
+  const xunfeiVoices = {
+    configured: getConfiguredXunfeiVoices(),
+    catalog: xunfeiVoiceCatalog,
+  }
   if (!user) {
     return {
       tts_provider: resolveTTSProviderPreference(),
       available_providers: availableProviders,
+      xunfei_voices: xunfeiVoices,
       locale: 'en',
       default_scenario_key: 'small-talk',
       default_accent_key: 'american',
@@ -83,6 +95,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
   return {
     tts_provider: resolveTTSProviderPreference(data?.tts_provider),
     available_providers: availableProviders,
+    xunfei_voices: xunfeiVoices,
     locale: normalizeLocale(data?.locale),
     default_scenario_key: normalizeScenarioKey(data?.default_scenario_key),
     default_accent_key: normalizeAccentKey(data?.default_accent_key),
@@ -109,11 +122,10 @@ export async function setPreferences(input: {
     throw new Error('Unauthorized')
   }
 
-  const normalized = normalizeTTSProvider(input.tts_provider ?? previous.tts_provider)
   const available = getAvailableProviders()
-  if (!available.includes(normalized)) {
-    throw new Error(`TTS provider "${normalized}" is not configured`)
-  }
+  const requestedProvider = normalizeTTSProvider(input.tts_provider ?? previous.tts_provider)
+  const fallbackProvider = resolveTTSProviderPreference()
+  const normalized = available.includes(requestedProvider) ? requestedProvider : fallbackProvider
   const locale = normalizeLocale(input.locale ?? previous.locale)
   const defaultScenarioKey = normalizeScenarioKey(input.default_scenario_key ?? previous.default_scenario_key)
   const defaultAccentKey = normalizeAccentKey(input.default_accent_key ?? previous.default_accent_key)
@@ -134,6 +146,10 @@ export async function setPreferences(input: {
   return {
     tts_provider: normalized,
     available_providers: available,
+    xunfei_voices: {
+      configured: getConfiguredXunfeiVoices(),
+      catalog: xunfeiVoiceCatalog,
+    },
     locale,
     default_scenario_key: defaultScenarioKey,
     default_accent_key: defaultAccentKey,
