@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   XUNFEI_TRIAL_VOICE_CATHERINE,
   XUNFEI_TRIAL_VOICE_EXPIRES_AT,
+  XUNFEI_TRIAL_VOICE_LINGXIAOLU,
   XUNFEI_TRIAL_VOICE_RYAN,
   getConfiguredXunfeiVoices,
   hasXunfeiVoiceConfig,
   resolveXunfeiVoiceForAccent,
-} from '@/lib/providers/xunfei-tts'
+} from '@/lib/providers/xunfei-voices'
 
 const beforeTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT) - 1
 const afterTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT)
@@ -50,6 +51,9 @@ describe('Xunfei TTS voice config', () => {
     }, afterTrialExpiry)).toThrow('expired at 2026-06-09 00:00 Asia/Shanghai')
     expect(hasXunfeiVoiceConfig({
       XUNFEI_TTS_VOICE: XUNFEI_TRIAL_VOICE_CATHERINE,
+    }, afterTrialExpiry)).toBe(false)
+    expect(hasXunfeiVoiceConfig({
+      XUNFEI_TTS_VOICE: XUNFEI_TRIAL_VOICE_LINGXIAOLU,
     }, afterTrialExpiry)).toBe(false)
   })
 

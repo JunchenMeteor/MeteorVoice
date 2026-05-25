@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getConfiguredXunfeiVoices, hasXunfeiVoiceConfig, xunfeiVoiceCatalog, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-tts'
+import { getConfiguredXunfeiVoices, hasXunfeiVoiceConfig, xunfeiVoiceCatalog, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
