@@ -17,6 +17,15 @@ export type ProductizedPreferences = {
   tts_speed: number
 }
 
+type PreferenceRow = {
+  tts_provider?: string | null
+  locale?: string | null
+  default_scenario_key?: string | null
+  default_accent_key?: string | null
+  tts_speed?: number | string | null
+  tts_voice_id?: string | null
+} | null
+
 export function normalizeTTSProvider(value?: string | null): TTSProviderPreference {
   if (value === 'xunfei' || value === 'volcengine' || value === 'tencent') return value
   return 'mock'
@@ -74,6 +83,16 @@ function normalizeTTSVoiceId(value?: string | null) {
   return voice.id
 }
 
+function isMissingColumnError(error: unknown, column: string) {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: string }).code === '42703' &&
+    JSON.stringify(error).includes(column),
+  )
+}
+
 export async function getPreferences(): Promise<ProductizedPreferences> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -95,11 +114,21 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
     }
   }
 
-  const { data, error } = await supabase
+  let { data, error }: { data: PreferenceRow; error: unknown } = await supabase
     .from('theme_preferences')
     .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id')
     .eq('user_id', user.id)
     .maybeSingle()
+
+  if (error && isMissingColumnError(error, 'tts_voice_id')) {
+    const fallback = await supabase
+      .from('theme_preferences')
+      .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    data = fallback.data as PreferenceRow
+    error = fallback.error
+  }
 
   if (error) throw error
   return {
@@ -143,7 +172,7 @@ export async function setPreferences(input: {
   const defaultAccentKey = normalizeAccentKey(input.default_accent_key ?? previous.default_accent_key)
   const ttsSpeed = normalizeTTSSpeed(input.tts_speed ?? previous.tts_speed)
   const ttsVoiceId = normalizeTTSVoiceId(input.tts_voice_id ?? previous.tts_voice_id)
-  const { error } = await supabase
+  let { error } = await supabase
     .from('theme_preferences')
     .upsert({
       user_id: user.id,
@@ -155,6 +184,21 @@ export async function setPreferences(input: {
       tts_voice_id: ttsVoiceId,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
+
+  if (error && isMissingColumnError(error, 'tts_voice_id')) {
+    const fallback = await supabase
+      .from('theme_preferences')
+      .upsert({
+        user_id: user.id,
+        tts_provider: normalized,
+        locale,
+        default_scenario_key: defaultScenarioKey,
+        default_accent_key: defaultAccentKey,
+        tts_speed: ttsSpeed,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+    error = fallback.error
+  }
 
   if (error) throw error
   return {
