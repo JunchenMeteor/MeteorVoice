@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-`packages/session-core/src/workflow.ts` 已有基于正则的本地快速判断（即 Layer 1）：
+`packages/session-core/src/workflow.ts` 已有基于正则的文本保护能力，但三合一判停不再把大规模 incomplete 正则作为 Layer 1 主判断：
 
 - `looksLikeIncompleteSpeech()` — 检测 trailing "and/but/because/that/就是/然后"、filler "um/嗯/啊"、leading "I mean/那个/就是"、短于 3 词无标点句
 - `endsWithThinkingFiller()` — 检测尾部的 um/uh/嗯/啊
@@ -12,10 +12,7 @@
 - `getSilenceFinalizeDelay()` — 根据模式返回不同静默时长（1700/2200/2600/3400ms）
 - `getSpeechEndpointDelay()` — 组合模式判断 + VAD hold
 
-**问题**：纯正则无法处理微妙场景，比如：
-- "I think it's very important to..." — 结尾 to 被判为 incomplete（对），用户确实在想
-- "I went there because my friend asked" — 结尾 asked 前面有 because，但因为句子足够完整，正则可能误判
-- "The weather today is really nice" — 这是个完整句，但如果用户语速慢在中间刻意停顿，没有正则标记
+**取舍**：纯正则无法稳定覆盖自然口语里的完整/未完成边界。L1 只做“高置信完成”的快通道，例如 `yes`、`hello`、`OK` 和明确标点结尾句；其余普通短句、filler、连接词、介词结尾等都交给 L2 LLM 语义判停。这样避免 `good morning`、`not much`、`I'm fine` 这类短句被本地 incomplete 规则卡住。
 
 ## 目标架构
 
@@ -24,19 +21,16 @@
     │
     ▼
 ┌─────────────────────────────────────────────┐
-│  Layer 1: 本地快速判断（现有逻辑增强）          │
+│  Layer 1: 本地完成快通道                        │
 │  - 每次收到中间结果立即执行                      │
 │  - 延迟：<1ms                                 │
 │  - 成本：0                                    │
-│  - 输出：complete | incomplete | uncertain     │
+│  - 输出：complete | uncertain                  │
 │                                               │
 │  判断依据：                                    │
 │  - COMPLETE_ENDING: 句号/问号/感叹号结尾        │
-│  - TRAILING_CONJUNCTION: and/but/所以/因为...  │
-│  - FILLER: um/uh/嗯/啊...                     │
 │  - SHORT_COMPLETE: 短应答("Yes"/"I see"/"OK") │
-│  - 中英混杂检测                                │
-│  - 词数统计 + 主谓结构检测                      │
+│  - 普通短句和疑似未完成句全部交给 L2              │
 └─────────────────────────────────────────────┘
     │
     │ uncertain（无法确定）
@@ -105,7 +99,6 @@
 type EndpointJudgment = 'submit' | 'continue'
 type EndpointJudgmentReason = 
   | 'confident_complete'       // L1: 标点结尾 + 足够词数
-  | 'confident_incomplete'      // L1: filler/trailing conjunction
   | 'llm_done'                  // L2: LLM 判定 done
   | 'llm_thinking'              // L2: LLM 判定 thinking
   | 'max_listening_timeout'     // L3: 单次 utterance 太长，强制提交
@@ -150,17 +143,14 @@ function judgeEndpoint(input: {
 
 ```typescript
 // 导出类型
-type TurnJudgment = 'complete' | 'incomplete' | 'uncertain'
+type TurnJudgment = 'complete' | 'uncertain'
 
 // 核心函数
 function judgeTurnLocally(transcript: string): TurnJudgment
-  // 增强版 looksLikeIncompleteSpeech，返回三态而非二态
+  // L1 只做高置信完成判断，其余返回 uncertain
 
 function canEndTurnConfidently(transcript: string): boolean
-  // Layer 1 确定可以结束（标点结尾 + 足够词数 + 不触发 incomplete 模式）
-
-function mustExtendListening(transcript: string): boolean
-  // Layer 1 确定必须延长（filler、trailing conjunction、leading continuation）
+  // Layer 1 确定可以结束（短应答 / 明确标点完整句）
 
 interface SemanticCheckResult {
   isComplete: boolean
@@ -278,7 +268,7 @@ Reply with exactly one word: done or thinking.
 ## 验收
 
 - `npm run lint` + `npm test`
-- Layer 1 本地判断：100% 覆盖 `complete` / `incomplete` / `uncertain` 三类输出
+- Layer 1 本地判断：覆盖高置信 `complete` 和进入 L2 的 `uncertain`
 - Layer 2 语义判停：在不确定的中间句上正确返回 thinking，完整句上返回 done
 - Layer 3 安全网：45s 单次 utterance 上限、8s 异常静默上限、1.5s LLM 判停超时
 - Web 端：在 `/session` 实际对话中验证延迟改善

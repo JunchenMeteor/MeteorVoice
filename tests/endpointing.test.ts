@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isTurnDefinitelyComplete,
   judgeEndpoint,
   judgeTurnLocally,
   type JudgeEndpointInput,
@@ -29,90 +30,109 @@ function voiceActivity(overrides: Partial<VoiceActivitySnapshot> = {}): VoiceAct
   }
 }
 
-describe('judgeTurnLocally (L1)', () => {
-  it('returns complete for sentence ending with period', () => {
-    expect(judgeTurnLocally('The weather is nice today.')).toBe('complete')
+describe('L1 fast path: isTurnDefinitelyComplete', () => {
+  it('submits obvious short answers and greetings', () => {
+    expect(isTurnDefinitelyComplete('Yes')).toBe(true)
+    expect(isTurnDefinitelyComplete('No')).toBe(true)
+    expect(isTurnDefinitelyComplete('I see')).toBe(true)
+    expect(isTurnDefinitelyComplete('Got it')).toBe(true)
+    expect(isTurnDefinitelyComplete('OK')).toBe(true)
+    expect(isTurnDefinitelyComplete('Hello')).toBe(true)
+    expect(isTurnDefinitelyComplete('Hi')).toBe(true)
+    expect(isTurnDefinitelyComplete('Hey')).toBe(true)
   })
 
-  it('returns complete for sentence ending with question mark', () => {
-    expect(judgeTurnLocally('What time is it?')).toBe('complete')
+  it('submits complete punctuated sentences', () => {
+    expect(isTurnDefinitelyComplete('The weather is nice today.')).toBe(true)
+    expect(isTurnDefinitelyComplete('What time is it?')).toBe(true)
   })
 
-  it('returns complete for short answers', () => {
-    expect(judgeTurnLocally('Yes')).toBe('complete')
-    expect(judgeTurnLocally('No')).toBe('complete')
-    expect(judgeTurnLocally('I see')).toBe('complete')
-    expect(judgeTurnLocally('Got it')).toBe('complete')
-    expect(judgeTurnLocally('OK')).toBe('complete')
+  it('does not treat unpunctuated short phrases as incomplete by default', () => {
+    expect(isTurnDefinitelyComplete('Good morning')).toBe(false)
+    expect(isTurnDefinitelyComplete('Not much')).toBe(false)
+    expect(isTurnDefinitelyComplete('I am fine')).toBe(false)
   })
 
-  it('returns incomplete for trailing conjunction', () => {
-    expect(judgeTurnLocally('I went there and')).toBe('incomplete')
-    expect(judgeTurnLocally('The reason is because')).toBe('incomplete')
-  })
-
-  it('returns incomplete for filler endings', () => {
-    expect(judgeTurnLocally('I think that um')).toBe('incomplete')
-    expect(judgeTurnLocally('Maybe we should uh')).toBe('incomplete')
-  })
-
-  it('returns incomplete for trailing articles', () => {
-    expect(judgeTurnLocally('I saw a')).toBe('incomplete')
-    expect(judgeTurnLocally('This is the')).toBe('incomplete')
-  })
-
-  it('returns uncertain for long sentence without punctuation', () => {
-    expect(judgeTurnLocally('I think the most important thing is that we should consider all options')).toBe('uncertain')
-  })
-
-  it('returns incomplete for short 2-word phrase (likely mid-sentence)', () => {
-    expect(judgeTurnLocally('I want')).toBe('incomplete')
-  })
-
-  it('returns uncertain for moderate-length text without clear ending', () => {
-    expect(judgeTurnLocally('I want to go')).toBe('uncertain')
-  })
-
-  it('returns uncertain for empty string', () => {
-    expect(judgeTurnLocally('')).toBe('uncertain')
-    expect(judgeTurnLocally('   ')).toBe('uncertain')
-  })
-
-  it('returns complete for complete sentence with punctuation', () => {
-    expect(judgeTurnLocally('I went to the store')).toBe('uncertain')
-    expect(judgeTurnLocally('I went to the store.')).toBe('complete')
+  it('leaves structurally incomplete text to the incomplete guard', () => {
+    expect(isTurnDefinitelyComplete('I want to')).toBe(false)
+    expect(isTurnDefinitelyComplete('I went there and')).toBe(false)
+    expect(isTurnDefinitelyComplete('I think that um')).toBe(false)
+    expect(isTurnDefinitelyComplete('I saw a')).toBe(false)
   })
 })
 
-describe('judgeEndpoint (orchestration)', () => {
+describe('judgeTurnLocally', () => {
+  it('returns complete for high-confidence completed turns', () => {
+    expect(judgeTurnLocally('Yes')).toBe('complete')
+    expect(judgeTurnLocally('The weather is nice today.')).toBe('complete')
+  })
+
+  it('returns uncertain for everything that should go to L2', () => {
+    expect(judgeTurnLocally('I want to')).toBe('uncertain')
+    expect(judgeTurnLocally('I went there and')).toBe('uncertain')
+    expect(judgeTurnLocally('I think that um')).toBe('uncertain')
+    expect(judgeTurnLocally('Good morning')).toBe('uncertain')
+    expect(judgeTurnLocally('Not much')).toBe('uncertain')
+    expect(judgeTurnLocally('I want to go')).toBe('uncertain')
+  })
+})
+
+describe('judgeEndpoint', () => {
   it('submits immediately when L1 is confident complete', async () => {
     const result = await judgeEndpoint(baseInput({
       transcript: 'The weather is really nice today.',
-      listeningDurationMs: 3000,
+      listeningDurationMs: 1000,
     }))
     expect(result.judgment).toBe('submit')
     expect(result.reason).toBe('confident_complete')
   })
 
-  it('continues when L1 is confident incomplete', async () => {
+  it('submits short answers immediately', async () => {
     const result = await judgeEndpoint(baseInput({
-      transcript: 'I want to go to the',
-      listeningDurationMs: 2000,
+      transcript: 'Yes',
+      listeningDurationMs: 500,
     }))
+    expect(result.judgment).toBe('submit')
+    expect(result.reason).toBe('confident_complete')
+  })
+
+  it('submits short greeting phrases when no semantic check exists', async () => {
+    const result = await judgeEndpoint(baseInput({
+      transcript: 'Good morning',
+      listeningDurationMs: 500,
+      lastVoiceAtMs: Date.now() - 1000,
+    }))
+    expect(result.judgment).toBe('submit')
+    expect(result.reason).toBe('confident_complete')
+  })
+
+  it('uses L2 for structurally incomplete-looking endings', async () => {
+    const calls: string[] = []
+    const result = await judgeEndpoint(baseInput({
+      transcript: 'I want to',
+      listeningDurationMs: 1200,
+      lastVoiceAtMs: Date.now() - 1000,
+      semanticCheck: async (transcript) => {
+        calls.push(transcript)
+        return 'thinking'
+      },
+    }))
+    expect(calls).toEqual(['I want to'])
     expect(result.judgment).toBe('continue')
-    expect(result.reason).toBe('confident_incomplete')
+    expect(result.reason).toBe('llm_thinking')
   })
 
   it('continues when voice is still active', async () => {
     const result = await judgeEndpoint(baseInput({
-      transcript: 'I think it is important but not sure',
-      listeningDurationMs: 5000,
+      transcript: 'I think it is important',
+      listeningDurationMs: 3000,
       voiceActivity: voiceActivity({ isVoiceActive: true, lastVoiceAt: Date.now(), level: 0.5 }),
+      semanticCheck: async () => 'done',
     }))
     expect(result.judgment).toBe('continue')
   })
 
-  it('continues when no transcript yet', async () => {
+  it('continues when no transcript exists yet', async () => {
     const result = await judgeEndpoint(baseInput({
       transcript: '',
       listeningDurationMs: 8000,
@@ -121,68 +141,49 @@ describe('judgeEndpoint (orchestration)', () => {
     expect(result.reason).toBe('no_transcript_yet')
   })
 
-  it('submits on max listening timeout after 45s', async () => {
+  it('submits on max listening timeout', async () => {
     const result = await judgeEndpoint(baseInput({
       transcript: 'I was thinking that maybe we could',
-      listeningDurationMs: 46000, // > 45s max listening
+      listeningDurationMs: 46000,
     }))
     expect(result.judgment).toBe('submit')
     expect(result.reason).toBe('max_listening_timeout')
   })
 
-  it('submits on max silence timeout after 8s of no voice', async () => {
+  it('submits on max silence timeout', async () => {
     const result = await judgeEndpoint(baseInput({
-      transcript: 'I think the most important thing is that we should consider',
+      transcript: 'I have something to say',
       listeningDurationMs: 5000,
-      lastVoiceAtMs: Date.now() - 9000, // > 8s silence
+      lastVoiceAtMs: Date.now() - 10000,
     }))
     expect(result.judgment).toBe('submit')
     expect(result.reason).toBe('max_silence_timeout')
   })
 
-  it('calls LLM for uncertain transcript after pause (no isFinalResult bypass)', async () => {
-    const results: string[] = []
+  it('calls L2 for uncertain transcript after pause', async () => {
+    const calls: string[] = []
     const result = await judgeEndpoint(baseInput({
       transcript: 'I think the most important thing is that we should',
       listeningDurationMs: 3000,
-      isFinalResult: false,
       voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 1000 }),
-      messages: [
-        { role: 'user' as const, content: 'What do you think about AI?' },
-        { role: 'assistant' as const, content: 'AI is a fascinating topic. What specific aspect interests you?' },
-      ],
+      lastVoiceAtMs: Date.now() - 1000,
       semanticCheck: async (transcript) => {
-        results.push(transcript)
+        calls.push(transcript)
         return 'thinking'
       },
     }))
-    expect(results).toHaveLength(1)
+    expect(calls).toEqual(['I think the most important thing is that we should'])
     expect(result.judgment).toBe('continue')
     expect(result.reason).toBe('llm_thinking')
   })
 
-  it('calls LLM and returns done', async () => {
-    const result = await judgeEndpoint(baseInput({
-      transcript: 'I think AI will change the world',
-      listeningDurationMs: 3000,
-      isFinalResult: false,
-      voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
-      messages: [
-        { role: 'user' as const, content: 'What do you think about AI?' },
-        { role: 'assistant' as const, content: 'AI is a fascinating topic.' },
-      ],
-      semanticCheck: async () => 'done',
-    }))
-    expect(result.judgment).toBe('submit')
-    expect(result.reason).toBe('llm_done')
-  })
-
-  it('calls LLM even when this is the first turn without history', async () => {
+  it('calls L2 even when this is the first turn without history', async () => {
     const calls: string[] = []
     const result = await judgeEndpoint(baseInput({
       transcript: 'I think the best part is',
       listeningDurationMs: 3000,
       voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
+      lastVoiceAtMs: Date.now() - 2000,
       messages: [],
       semanticCheck: async (transcript) => {
         calls.push(transcript)
@@ -194,26 +195,36 @@ describe('judgeEndpoint (orchestration)', () => {
     expect(result.reason).toBe('llm_thinking')
   })
 
-  it('submits when semantic endpoint check times out', async () => {
+  it('submits when L2 returns done', async () => {
+    const result = await judgeEndpoint(baseInput({
+      transcript: 'I think AI will change the world',
+      listeningDurationMs: 3000,
+      voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
+      lastVoiceAtMs: Date.now() - 2000,
+      semanticCheck: async () => 'done',
+    }))
+    expect(result.judgment).toBe('submit')
+    expect(result.reason).toBe('llm_done')
+  })
+
+  it('submits when L2 times out', async () => {
     const result = await judgeEndpoint(baseInput({
       transcript: 'I think the weather is nice today',
       listeningDurationMs: 3000,
       voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
+      lastVoiceAtMs: Date.now() - 2000,
       semanticCheck: () => new Promise<'thinking'>(() => {}),
     }), { semanticTimeoutMs: 1 })
     expect(result.judgment).toBe('submit')
     expect(result.reason).toBe('llm_done')
   })
 
-  it('falls back to submit when L2 semanticCheck throws', async () => {
+  it('falls back to submit when L2 throws', async () => {
     const result = await judgeEndpoint(baseInput({
       transcript: 'I was wondering about something',
       listeningDurationMs: 3000,
       voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
-      messages: [
-        { role: 'user' as const, content: 'Hello' },
-        { role: 'assistant' as const, content: 'Hi, how can I help?' },
-      ],
+      lastVoiceAtMs: Date.now() - 2000,
       semanticCheck: async () => { throw new Error('Network error') },
     }))
     expect(result.judgment).toBe('submit')
@@ -222,37 +233,12 @@ describe('judgeEndpoint (orchestration)', () => {
 
   it('continues when pause is too short for L2', async () => {
     const result = await judgeEndpoint(baseInput({
-      transcript: 'I think the most important thing is that we should',
+      transcript: 'I think the most important thing',
       listeningDurationMs: 3000,
-      lastVoiceAtMs: Date.now() - 200, // < 500ms pause
-      messages: [
-        { role: 'user' as const, content: 'Hello' },
-        { role: 'assistant' as const, content: 'Hi!' },
-      ],
+      lastVoiceAtMs: Date.now() - 200,
       semanticCheck: async () => 'done',
     }))
     expect(result.judgment).toBe('continue')
-    expect(result.reason).toBe('confident_incomplete')
-  })
-
-  it('submits when no transcript and silence timeout exceeded', async () => {
-    const result = await judgeEndpoint(baseInput({
-      transcript: '',
-      listeningDurationMs: 10000,
-      lastVoiceAtMs: Date.now() - 10000, // > 8s silence
-    }))
-    expect(result.judgment).toBe('submit')
-    expect(result.reason).toBe('max_silence_timeout')
-  })
-
-  it('submits with confident_complete when no semanticCheck provided', async () => {
-    const result = await judgeEndpoint(baseInput({
-      transcript: 'I think the weather is nice today',
-      listeningDurationMs: 3000,
-      voiceActivity: voiceActivity({ lastVoiceAt: Date.now() - 2000 }),
-      // no semanticCheck
-    }))
-    expect(result.judgment).toBe('submit')
-    expect(result.reason).toBe('confident_complete')
+    expect(result.reason).toBe('no_transcript_yet')
   })
 })
