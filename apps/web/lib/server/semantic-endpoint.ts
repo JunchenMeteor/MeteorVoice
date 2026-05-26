@@ -4,18 +4,20 @@ import type { ConversationMessage } from '@meteorvoice/shared'
 
 const ENDPOINT_PROMPT = `You are a turn-taking detector for an English conversation practice app.
 
-Based on the conversation context (scenario and message history) and the user's current speech, judge whether the user has finished expressing a complete thought and is waiting for a reply, or is still formulating their sentence.
+Judge if the user has finished their turn. Default to "done" — only reply "thinking" if the sentence clearly trails off mid-clause (ends with a conjunction, preposition, article, or incomplete dependent clause).
 
-Reply with exactly one word: done (user is finished) or thinking (user is still mid-thought).
+Reply with exactly one word: done or thinking.
 
 Examples:
 - "I went to the store yesterday" → done
+- "Yes" → done
+- "The weather today is really nice" → done
+- "I'm doing well, thanks" → done
+- "How about you" → done
 - "I think the most important thing is" → thinking
 - "For example, my favorite food is pizza because" → thinking
-- "The weather today is really nice" → done
-- "I want to ask you about" → thinking
-- "Yes" → done
-- "So I was wondering if" → thinking`
+- "So I was wondering if" → thinking
+- "I want to ask you about the" → thinking`
 
 let deepseekClient: ReturnType<typeof createDeepSeek> | null = null
 let deepseekInit = false
@@ -92,14 +94,5 @@ function mockSemanticCheck(transcript: string): 'done' | 'thinking' {
     return 'done'
   }
 
-  // 标点结尾 + 足够长
-  const hasEndPunctuation = /[.!?。！？]$/.test(normalized)
-  const wordCount = normalized
-    .replace(/[一-鿿]+/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean).length
-
-  if (hasEndPunctuation && wordCount >= 3) return 'done'
-  if (wordCount < 3) return 'thinking'
   return 'done'
 }
