@@ -864,9 +864,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const next = pickRandomAccent()
     accentRef.current = next
     setAccent(next)
-    setAccentBanner(`${tr('session.accent_changed')} ${next.name}`)
     return next
-  }, [tr])
+  }, [])
 
   const speakText = useCallback(async (text: string, accentName: string) => {
     const updatePlaybackLevel = (level: number | null) => {
@@ -1191,7 +1190,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
     const currentSnapshot = snapshotRef.current
     const currentAccent = accentRef.current
-    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : currentAccent
+    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 10 === 0 ? rotateAccent() : currentAccent
     const currentScenario = scenarioRef.current
 
     setStatusText(tr('session.preparing_reply'))
