@@ -30,6 +30,7 @@ interface Props {
   authMode: 'sign-in' | 'sign-up'
   apiBaseUrl: string
   onSetLocale: (l: string) => void
+  onSetTheme: (k: ThemeKey) => void
   onSaveProvider: (p: string) => void
   onAdjustSpeed: (delta: number) => void
   onSavePracticePreferences: () => void
@@ -50,11 +51,11 @@ export function SettingsScreen({
   remoteAccents, accentProfiles, selectedAccentKey,
   settingsLoading, settingsMessage,
   auth, email, password, authMode, apiBaseUrl,
-  onSetLocale, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
+  onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectAccent, onSelectVoice,
   onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
 }: Props) {
-  const { C, themeKey, setTheme } = useTheme()
+  const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
 
 
@@ -150,7 +151,7 @@ export function SettingsScreen({
         <Text style={styles.cardTitle}>{tr('settings.theme')}</Text>
         <View style={styles.chipGrid}>
           {(Object.keys(themeLabels) as ThemeKey[]).map(k => (
-            <Pressable key={k} onPress={() => setTheme(k)} style={[styles.chip, themeKey === k && styles.chipActive]}>
+            <Pressable key={k} onPress={() => onSetTheme(k)} style={[styles.chip, themeKey === k && styles.chipActive]}>
               <Text style={[styles.chipTxt, themeKey === k && styles.chipTxtActive]}>
                 {locale === 'zh' ? themeLabels[k].zh : themeLabels[k].en}
               </Text>

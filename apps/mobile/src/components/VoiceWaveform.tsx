@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Animated, StyleSheet, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
 
@@ -7,9 +7,11 @@ export type WaveformMode = 'idle' | 'listening' | 'transcribing' | 'thinking' | 
 const BAR_HEIGHTS = [18, 32, 44, 54, 44, 32, 18]
 const BAR_DELAYS = [0, 80, 160, 240, 160, 80, 0]
 
+// Animated.Value[] is stable across renders — initialized once outside component
+const animsRef = BAR_HEIGHTS.map(() => new Animated.Value(1))
+
 export function VoiceWaveform({ mode }: { mode: WaveformMode }) {
   const { C } = useTheme()
-  const anims = useRef(BAR_HEIGHTS.map(() => new Animated.Value(1))).current
 
   const modeConfig = useMemo(() => ({
     idle:        { color: C.textMuted,  duration: 2800, animate: false, minScale: 0.5,  maxScale: 0.5 },
@@ -23,9 +25,9 @@ export function VoiceWaveform({ mode }: { mode: WaveformMode }) {
 
   useEffect(() => {
     const cfg = modeConfig[mode]
-    anims.forEach(a => a.setValue(cfg.minScale))
+    animsRef.forEach(a => a.setValue(cfg.minScale))
     if (!cfg.animate) return
-    const loops = anims.map((anim, i) => {
+    const loops = animsRef.map((anim, i) => {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.delay(BAR_DELAYS[i]),
@@ -37,12 +39,12 @@ export function VoiceWaveform({ mode }: { mode: WaveformMode }) {
       return loop
     })
     return () => loops.forEach(l => l.stop())
-  }, [mode, anims, modeConfig])
+  }, [mode, modeConfig])
 
   const cfg = modeConfig[mode]
   return (
     <View style={styles.row}>
-      {anims.map((anim, i) => (
+      {animsRef.map((anim, i) => (
         <Animated.View key={i} style={[styles.bar, { height: BAR_HEIGHTS[i], backgroundColor: cfg.color, transform: [{ scaleY: anim }] }]} />
       ))}
     </View>

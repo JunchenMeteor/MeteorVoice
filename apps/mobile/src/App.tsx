@@ -25,7 +25,6 @@ import {
   createPlaybackQueueSnapshot,
   createInitialSnapshot,
   endActiveSession,
-  getNextSessionAction,
   getPlaybackCompletionEffects,
   judgeEndpoint,
   receiveCoachReply,
@@ -58,7 +57,6 @@ import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
 import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
 import { ThemeProvider, useTheme } from './ThemeProvider'
-import type { ThemeKey } from './theme'
 import { SessionScreen } from './screens/SessionScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
@@ -113,7 +111,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { C, themeKey, setTheme: setThemeLocal } = useTheme()
+  const { C, setTheme: setThemeLocal } = useTheme()
   const [activeTab, setActiveTab] = useState<Tab>('session')
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl)
   const [messages, setMessages] = useState<ConversationMessage[]>([])
@@ -151,7 +149,7 @@ function AppInner() {
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [apiSessionId, setApiSessionId] = useState<string | null>(null)
+  const [apiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
@@ -171,12 +169,13 @@ function AppInner() {
     baseUrl: apiBaseUrl.trim(),
     headers: getAuthHeaders,
   }), [apiBaseUrl, getAuthHeaders])
+  const applyThemeLocal = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
+    setThemeLocal(k)
+  }, [setThemeLocal])
   const setTheme = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
     setThemeLocal(k)
     void api.updatePreferences({ ui_theme: k }).catch(() => {})
   }, [setThemeLocal, api])
-  const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
-  const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
   function startSession() {
@@ -193,6 +192,7 @@ function AppInner() {
     setSummary(null)
     setIsSessionActive(true)
     setStatus('session.status.listening')
+    void speechStartListeningRef.current('en-US')
   }
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
@@ -324,7 +324,7 @@ function AppInner() {
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, isSessionActive,
-    messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech, tr,
+    messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -369,7 +369,7 @@ function AppInner() {
 
     pendingNativeTranscriptRef.current = ''
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn, tr])
+  }, [apiBaseUrl, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn])
 
   const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
 
@@ -617,8 +617,8 @@ function AppInner() {
     if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
     if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
     if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
-    if (prefs.uiTheme) setTheme(prefs.uiTheme as Parameters<typeof setTheme>[0])
-  }, [setTheme])
+    if (prefs.uiTheme) applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+  }, [applyThemeLocal])
 
   // 登录后自动拉取偏好
   useEffect(() => {
@@ -715,6 +715,7 @@ function AppInner() {
             authMode={authMode}
             apiBaseUrl={apiBaseUrl}
             onSetLocale={l => setLocale(l as Locale)}
+            onSetTheme={setTheme}
             onSaveProvider={p => void saveProvider(p)}
             onAdjustSpeed={adjustSpeed}
             onSavePracticePreferences={() => void savePracticePreferences()}
