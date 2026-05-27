@@ -91,6 +91,7 @@ export const ttsProviderCapabilities = {
   },
   azure: {
     accents: ['american', 'british', 'australian', 'indian', 'singapore', 'african'],
+    speedControl: 'client' as const,
   },
 } as const
 
