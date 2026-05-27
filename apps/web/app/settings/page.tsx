@@ -37,6 +37,7 @@ const allTtsProviders = [
   { key: 'xunfei', labelKey: 'settings.tts_provider_xunfei' },
   { key: 'volcengine', labelKey: 'settings.tts_provider_volcengine' },
   { key: 'tencent', labelKey: 'settings.tts_provider_tencent' },
+  { key: 'azure', labelKey: 'settings.tts_provider_azure' },
 ] as const
 
 function formatTtsSpeed(speed: number) {

@@ -8,13 +8,13 @@ For users in China, use domestic TTS providers first:
 2. Volcengine
 3. Tencent Cloud
 
-Google Cloud TTS remains a future option, but it is not the default path because account and billing setup can be blocked by region/payment constraints.
+For full accent coverage (British, Australian, Indian, Singapore, African), use Azure Neural TTS. It has a permanent free tier (500K characters/month) and supports all accents in MeteorVoice.
 
 ## Runtime Switching
 
 The app supports runtime provider switching:
 
-- Settings page: choose `Mock / Browser`, `Xunfei`, `Volcengine`, or `Tencent Cloud`
+- Settings page: choose `Mock / Browser`, `Xunfei`, `Volcengine`, `Tencent Cloud`, or `Azure Neural TTS`
 - Server route: `POST /api/tts`
 - Provider adapters: `apps/web/lib/providers/*`
 - User preference storage: `theme_preferences.tts_provider`
@@ -136,12 +136,52 @@ TENCENT_TTS_VOICE=101001
 
 5. In the app Settings page, select `Tencent Cloud`.
 
+## Azure Neural TTS Setup
+
+Azure Neural TTS supports all accents and has a permanent free tier (500K characters/month, F0 tier).
+
+1. Sign in to Azure Portal with a Microsoft account:
+
+```text
+https://portal.azure.com
+```
+
+2. Search for `Speech` and create a resource:
+   - Region: `East Asia` (Hong Kong, lowest latency for Asia)
+   - Pricing tier: `Free F0`
+
+3. Go to **Keys and Endpoint**, copy **KEY 1** and **Location** (e.g. `eastasia`).
+
+4. Configure:
+
+```env
+TTS_PROVIDER=azure
+AZURE_SPEECH_KEY=your_key_1
+AZURE_SPEECH_REGION=eastasia
+```
+
+5. In the app Settings page, select `Azure Neural TTS`.
+
+Default voices per accent:
+
+| Accent | Voice |
+|---|---|
+| American | en-US-JennyNeural |
+| British | en-GB-SoniaNeural |
+| Australian | en-AU-NatashaNeural |
+| Indian | en-IN-NeerjaNeural |
+| Singapore | en-SG-LunaNeural |
+| African | en-ZA-LeahNeural |
+
+Override any voice with environment variables, e.g. `AZURE_TTS_VOICE_BRITISH=en-GB-RyanNeural`.
+
 ## Provider Behavior
 
 - `mock`: browser speech synthesis fallback
 - `xunfei`: server-side WebSocket provider; requires explicit V3-compatible `XUNFEI_TTS_VOICE`
 - `volcengine`: server-side HTTP provider
 - `tencent`: server-side signed Tencent Cloud API request
+- `azure`: server-side Azure Neural TTS REST API, supports all accents
 
 If a selected provider is not configured, the frontend falls back to browser mock speech.
 
@@ -183,6 +223,7 @@ Current conservative mapping:
 | Xunfei | American only |
 | Volcengine | American only |
 | Tencent Cloud | American only |
+| Azure Neural TTS | British, American, Indian, Australian, Singapore, African |
 
 ## Future Accent Direction
 
@@ -194,7 +235,7 @@ Open additional accents only after the exact provider voice IDs are confirmed an
 
 ## Completion Status
 
-- Implemented: provider switching UI, server-side `/api/tts`, Xunfei/Volcengine/Tencent provider adapters, Supabase-backed user preference, accent capability gating.
+- Implemented: provider switching UI, server-side `/api/tts`, Xunfei/Volcengine/Tencent/Azure provider adapters, Supabase-backed user preference, accent capability gating.
 - Requires user configuration: provider account creation, server environment variables, `003_tts_preferences.sql`.
 - Not fully verified without credentials: real provider audio output and exact provider-specific voice IDs.
 
