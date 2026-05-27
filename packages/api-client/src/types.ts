@@ -21,6 +21,16 @@ export type ApiErrorBody = {
   error: string
 }
 
+export type XunfeiVoiceEntry = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  status: 'active' | 'expired'
+  expiresAt?: string
+}
+
 export type PreferencesResponse = {
   tts_provider?: string
   available_providers?: string[]
@@ -30,6 +40,7 @@ export type PreferencesResponse = {
   tts_speed?: number
   tts_voice_id?: string | null
   ui_theme?: string
+  xunfei_voices?: { configured?: XunfeiVoiceEntry[]; catalog?: XunfeiVoiceEntry[] }
 }
 
 export type UpdatePreferencesRequest = {

@@ -157,6 +157,7 @@ function AppInner() {
   const auth = useMobileAuth()
   const getAuthHeaders = auth.getAuthHeaders
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
   const endpointRequestRef = useRef(0)
@@ -494,11 +495,7 @@ function AppInner() {
     setSettingsLoading(true)
     setSettingsMessage(null)
     try {
-      type ExtendedPrefs = Awaited<ReturnType<typeof api.getPreferences>> & {
-        xunfei_voices?: { configured?: XunfeiVoice[]; catalog?: XunfeiVoice[] }
-        tts_voice_id?: string | null
-      }
-      const preferences = await api.getPreferences() as ExtendedPrefs
+      const preferences = await api.getPreferences()
       setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
       setTtsProvider(preferences.tts_provider ?? 'mock')
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
@@ -612,12 +609,15 @@ function AppInner() {
     setTtsSpeed(prefs.ttsSpeed)
     setAvailableProviders(prefs.availableProviders)
     setTtsVoiceId(prefs.ttsVoiceId)
-    setXunfeiVoices(prefs.xunfeiVoices)
-    setXunfeiVoiceCatalog(prefs.xunfeiVoiceCatalog)
+    if (prefs.xunfeiVoices.length > 0) setXunfeiVoices(prefs.xunfeiVoices)
+    if (prefs.xunfeiVoiceCatalog.length > 0) setXunfeiVoiceCatalog(prefs.xunfeiVoiceCatalog)
     if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
     if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
     if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
-    if (prefs.uiTheme) applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+    if (prefs.uiTheme && !themeInitializedRef.current) {
+      themeInitializedRef.current = true
+      applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+    }
   }, [applyThemeLocal])
 
   // 登录后自动拉取偏好
