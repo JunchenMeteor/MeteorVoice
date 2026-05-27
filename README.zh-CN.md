@@ -88,7 +88,7 @@ flowchart TB
         API[Next.js API Routes<br/>TTS / Chat / Session / Turns]
         Supabase[Supabase<br/>Auth / DB / 偏好]
         AI[AI Provider<br/>DeepSeek via Vercel AI SDK]
-        TTS[TTS 服务商<br/>讯飞 / 火山 / 腾讯]
+        TTS[TTS 服务商<br/>讯飞 / 火山 / 腾讯 / Azure]
     end
 
     subgraph Shared[packages/]
@@ -182,6 +182,8 @@ VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
 TENCENT_SECRET_KEY=
+AZURE_SPEECH_KEY=
+AZURE_SPEECH_REGION=eastasia
 ```
 
 ### 4. 配置 Supabase 认证
@@ -245,6 +247,7 @@ eas build --platform ios --profile preview
 | 火山引擎 | `volcengine` | 字节跳动 TTS |
 | 腾讯云 | `tencent` | 备选方案 |
 | Mock / 浏览器 | `mock` | 默认，无需密钥 |
+| Azure Neural TTS | `azure` | 支持全部口音，永久免费额度 |
 
 用户选择的服务商保存在 Supabase 中，服务商密钥只存在服务端环境变量里。
 

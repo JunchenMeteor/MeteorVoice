@@ -89,6 +89,9 @@ export const ttsProviderCapabilities = {
     accents: ['american'],
     speedControl: 'client' as const,
   },
+  azure: {
+    accents: ['american', 'british', 'australian', 'indian', 'singapore', 'african'],
+  },
 } as const
 
 export type TTSProviderKey = keyof typeof ttsProviderCapabilities

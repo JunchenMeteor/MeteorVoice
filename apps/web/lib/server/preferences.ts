@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getConfiguredXunfeiVoices, getDefaultXunfeiVoiceId, getSelectableXunfeiVoices, hasXunfeiVoiceConfig, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
 import { accentProfiles, scenarios, type Locale } from '@meteorvoice/shared'
 
-export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent'
+export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent' | 'azure'
 export type ProductizedPreferences = {
   tts_provider: TTSProviderPreference
   available_providers: TTSProviderPreference[]
@@ -27,7 +27,7 @@ type PreferenceRow = {
 } | null
 
 export function normalizeTTSProvider(value?: string | null): TTSProviderPreference {
-  if (value === 'xunfei' || value === 'volcengine' || value === 'tencent') return value
+  if (value === 'xunfei' || value === 'volcengine' || value === 'tencent' || value === 'azure') return value
   return 'mock'
 }
 
@@ -53,6 +53,9 @@ export function getAvailableProviders(): TTSProviderPreference[] {
   }
   if (process.env.TENCENT_SECRET_ID && process.env.TENCENT_SECRET_KEY) {
     providers.push('tencent')
+  }
+  if (process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION) {
+    providers.push('azure')
   }
   return providers
 }

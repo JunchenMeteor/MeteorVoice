@@ -88,7 +88,7 @@ flowchart TB
         API[Next.js API Routes<br/>TTS / Chat / Session / Turns]
         Supabase[Supabase<br/>Auth / DB / Preferences]
         AI[AI Provider<br/>DeepSeek via Vercel AI SDK]
-        TTS[TTS Providers<br/>Xunfei / Volcengine / Tencent]
+        TTS[TTS Providers<br/>Xunfei / Volcengine / Tencent / Azure]
     end
 
     subgraph Shared[packages/]
@@ -182,6 +182,8 @@ VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
 TENCENT_SECRET_KEY=
+AZURE_SPEECH_KEY=
+AZURE_SPEECH_REGION=eastasia
 ```
 
 ### 4. Configure Supabase Authentication
@@ -245,6 +247,7 @@ Domestic providers are the recommended real voice path:
 | Volcengine | `volcengine` | Bytedance TTS |
 | Tencent Cloud | `tencent` | Alternative |
 | Mock / Browser | `mock` | Default, no key needed |
+| Azure Neural TTS | `azure` | Full accent support, permanent free tier |
 
 Each user's selected provider is stored in Supabase. Provider credentials stay in server-side environment variables only.
 
