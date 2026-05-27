@@ -157,6 +157,7 @@ function AppInner() {
   const auth = useMobileAuth()
   const getAuthHeaders = auth.getAuthHeaders
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
   const endpointRequestRef = useRef(0)
@@ -617,7 +618,10 @@ function AppInner() {
     if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
     if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
     if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
-    if (prefs.uiTheme) applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+    if (prefs.uiTheme && !themeInitializedRef.current) {
+      themeInitializedRef.current = true
+      applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+    }
   }, [applyThemeLocal])
 
   // 登录后自动拉取偏好

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
 import type { ScenarioDto, AccentDto } from '@meteorvoice/api-client'
 import { getAccentLabel, type accentProfiles as AccentsType, type Locale } from '@meteorvoice/shared'
@@ -61,6 +61,7 @@ export function SettingsScreen({
 
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
+    scrollView: { flex: 1 },
     content: { paddingHorizontal: 16, gap: 14 },
     title: { color: C.textPrimary, fontSize: 22, fontWeight: '800' },
     card: {
@@ -128,8 +129,9 @@ export function SettingsScreen({
     voiceCatalogMeta: { color: C.textMuted, fontSize: 11 },
   }), [C])
   return (
+    <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView
-      style={styles.shell}
+      style={styles.scrollView}
       contentContainerStyle={styles.content}
     >
       <Text style={styles.title}>{tr('settings.title')}</Text>
@@ -338,6 +340,7 @@ export function SettingsScreen({
         )}
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   )
 }
 
