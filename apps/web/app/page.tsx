@@ -1,17 +1,45 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { getDifficultyLabel, getScenarioDescription, getScenarioLabel, scenarios, pickRandomAccent } from '@/lib/scenarios'
 import { useLocale, useT } from '@/components/LanguageProvider'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import { Button } from '@/components/ui/button'
 
 export default function HomePage() {
   const router = useRouter()
   const { locale } = useLocale()
   const t = useT()
+  const { accent, endSession, isSessionActive, scenario: activeScenario } = useVoiceSession()
+  const [pendingScenarioKey, setPendingScenarioKey] = useState<string | null>(null)
 
   function startSession(scenarioKey: string) {
-    const accent = pickRandomAccent()
-    router.push(`/session?scenario=${scenarioKey}&accent=${accent.key}`)
+    if (isSessionActive) {
+      if (scenarioKey === activeScenario.key) {
+        router.push(`/session?scenario=${activeScenario.key}&accent=${accent.key}`)
+        return
+      }
+      setPendingScenarioKey(scenarioKey)
+      return
+    }
+
+    const nextAccent = pickRandomAccent()
+    router.push(`/session?scenario=${scenarioKey}&accent=${nextAccent.key}`)
+  }
+
+  function returnToSession() {
+    setPendingScenarioKey(null)
+    router.push(`/session?scenario=${activeScenario.key}&accent=${accent.key}`)
+  }
+
+  async function startOver() {
+    const nextScenarioKey = pendingScenarioKey
+    if (!nextScenarioKey) return
+    setPendingScenarioKey(null)
+    await endSession()
+    const nextAccent = pickRandomAccent()
+    router.push(`/session?scenario=${nextScenarioKey}&accent=${nextAccent.key}`)
   }
 
   return (
@@ -38,6 +66,21 @@ export default function HomePage() {
           </button>
         ))}
       </div>
+
+      {pendingScenarioKey && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'var(--theme-overlay)' }}>
+          <div className="w-full max-w-sm rounded-lg border p-4 shadow-xl" style={{ background: 'var(--theme-bg-card)', borderColor: 'var(--theme-border)' }}>
+            <h2 className="text-base font-semibold text-[var(--theme-text-primary)]">{t('home.active_session_dialog_title')}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--theme-text-secondary)]">
+              {t('home.active_session_dialog_desc')}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" onClick={returnToSession}>{t('session.return')}</Button>
+              <Button variant="danger" onClick={startOver}>{t('home.start_over')}</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

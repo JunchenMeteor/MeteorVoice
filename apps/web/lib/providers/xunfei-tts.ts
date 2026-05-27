@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import WebSocket from 'ws'
 import type { TTSProvider, TTSResult } from './types'
+import { resolveXunfeiVoiceForAccent } from './xunfei-voices'
 
 const host = 'tts-api.xfyun.cn'
 const path = '/v2/tts'
@@ -24,21 +25,13 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
   return `wss://${host}${path}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${host}`
 }
 
-function voiceForAccent(accent?: string) {
-  const normalized = accent?.toLowerCase() ?? ''
-  if (normalized.includes('british')) return process.env.XUNFEI_TTS_VOICE_BRITISH || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  if (normalized.includes('american')) return process.env.XUNFEI_TTS_VOICE_AMERICAN || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  if (normalized.includes('indian')) return process.env.XUNFEI_TTS_VOICE_INDIAN || process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-  return process.env.XUNFEI_TTS_VOICE || 'x4_EnUs_Laura_education'
-}
-
 export function createXunfeiTTS(): TTSProvider {
   const appId = requireEnv('XUNFEI_APP_ID')
   const apiKey = requireEnv('XUNFEI_API_KEY')
   const apiSecret = requireEnv('XUNFEI_API_SECRET')
 
   return {
-    synthesize(text: string, options?: { accent?: string; speed?: number }): Promise<TTSResult> {
+    synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult> {
       return new Promise((resolve, reject) => {
         const ws = new WebSocket(createAuthUrl(apiKey, apiSecret))
         const chunks: Buffer[] = []
@@ -52,8 +45,9 @@ export function createXunfeiTTS(): TTSProvider {
             common: { app_id: appId },
             business: {
               aue: 'lame',
-              vcn: voiceForAccent(options?.accent),
-              speed: Math.round((options?.speed ?? 1) * 50),
+              sfl: 1,
+              vcn: resolveXunfeiVoiceForAccent(options?.accent, process.env, Date.now(), options?.voiceId),
+              speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
               volume: 50,
               pitch: 50,
               bgs: 0,

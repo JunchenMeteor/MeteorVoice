@@ -1,6 +1,15 @@
 # Native Mobile Architecture Plan
 
-本文档定义 MeteorVoice 从单一 Web 应用升级为 Web + Native Mobile 双端架构的落地方案。后续 AI agent 在处理 mobile、React Native、Expo、共享包、会话引擎或跨端 API 任务前，MUST 先读本文件。
+本文档定义 MeteorVoice 从单一 Web 应用升级为 Web + Native Mobile 双端架构的落地方案。当前架构骨架已合入 `main`；后续产品化任务 MUST 优先读取 `docs/architecture-productization-roadmap.md`，再回看本文的历史设计背景。
+
+## 当前状态
+
+- Web 已迁入 `apps/web`。
+- Native mobile app 已落在 `apps/mobile`。
+- 共享类型/i18n/scenario/accent/speech capability 已落在 `packages/shared`。
+- Typed API client 已落在 `packages/api-client`。
+- 平台无关 session workflow 和 turn guard 已落在 `packages/session-core`。
+- 后续重点不再是“是否采用双端架构”，而是 API 契约、session-core、native speech/audio 和 workspace 工程化的产品化。
 
 ## 目标
 
@@ -14,7 +23,7 @@
 ## 非目标
 
 - 本阶段不追求 TestFlight、App Store、Android 上架或团队分发。
-- 本阶段不把现有 Next.js 项目一次性迁移到 `apps/web`。
+- 本历史阶段不追求一次性迁移所有 Web 代码；当前 `main` 已完成 Web 迁入 `apps/web`。
 - 本阶段不做 WebView 壳 App。
 - 本阶段不复制一套 mobile-only prompt、scenario、accent 或 correction 数据模型。
 - 本阶段不为了 monorepo 外观大规模搬迁无关代码。
@@ -25,7 +34,7 @@
 ```text
 MeteorVoice/
   apps/
-    web/                       # Next.js Web app，架构升级后期迁入
+    web/                       # Next.js Web app
     mobile/                    # Expo React Native native client
   packages/
     shared/                    # 跨端类型、scenario、accent、i18n key、基础校验
@@ -34,15 +43,15 @@ MeteorVoice/
     server/                    # 可选：后期承载 Web API/server-only orchestration
 ```
 
-短期允许 `app/`、`components/`、`lib/` 继续留在仓库根目录。完整架构升级后期 MUST 将 Web 迁入 `apps/web`，但迁移必须在 mobile 业务闭环和 shared/session-core 边界稳定后单独执行，不能混入 session-core 或 native audio PR。
+历史迁移期曾短期允许 `app/`、`components/`、`lib/` 留在仓库根目录。当前 `main` 不应再新增根目录 Web app 代码；Web-only 代码 MUST 放在 `apps/web` 下。
 
 ## 分层规则
 
 ### Web/API 层
 
-- 迁移前 `app/api/*` 继续作为现有 API 入口；迁移后 `apps/web/app/api/*` 成为 API 入口。
-- API route SHOULD 调用 `lib/server/*` 或 provider/service helper，不应内联复杂业务。
-- Web UI MAY 继续使用 `components/VoiceSessionProvider.tsx`，但新增共享逻辑 SHOULD 优先进入 `packages/session-core`。
+- `apps/web/app/api/*` 是当前 API 入口。
+- API route SHOULD 调用 `apps/web/lib/server/*` 或 provider/service helper，不应内联复杂业务。
+- Web UI MAY 继续使用 `apps/web/components/VoiceSessionProvider.tsx`，但新增共享逻辑 SHOULD 优先进入 `packages/session-core`。
 - Secrets MUST 只存在 server-side 环境变量，禁止进入 mobile bundle。
 - Web 迁入 `apps/web` 时，Web-only UI、Next config、global CSS、public assets 和 route handlers MUST 一起迁移，禁止把 Web app 拆成半根目录半 `apps/web` 的状态长期保留。
 
@@ -98,7 +107,7 @@ Mobile Phase 0 的目的不是证明 iOS 能不能播放声音，而是证明 Me
 
 ### 探针验收
 
-- Mobile 不 import `app/*`、`components/*`、Next-only module 或 server-only provider。
+- Mobile 不 import `apps/web/*`、Next-only module 或 server-only provider。
 - Mobile 不依赖 browser `localStorage`、`sessionStorage`、`window`、DOM、Web Audio 或 Web Speech API。
 - Mobile 使用 `packages/shared` 类型和配置。
 - Mobile 使用 `packages/api-client` 调用后端。
@@ -137,7 +146,7 @@ Mobile client 需要稳定 API，而不是页面内部状态。后续 API 调整
 
 ## Session Core 目标
 
-现有 Web 会话规则集中在 `components/VoiceSessionProvider.tsx`。Mobile 探针后 SHOULD 逐步抽出平台无关核心。
+现有 Web 会话规则仍有一部分集中在 `apps/web/components/VoiceSessionProvider.tsx`。后续 SHOULD 按 `docs/architecture-productization-roadmap.md` 继续抽出平台无关核心。
 
 目标接口示意：
 

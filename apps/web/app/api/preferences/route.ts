@@ -1,11 +1,9 @@
 import { jsonApiResult, jsonServerError } from '@/lib/server/http'
-import { getTTSProviderPreference, setTTSProviderPreference, getAvailableProviders } from '@/lib/server/preferences'
+import { getPreferences, setPreferences } from '@/lib/server/preferences'
 
 export async function GET() {
   try {
-    const ttsProvider = await getTTSProviderPreference()
-    const availableProviders = getAvailableProviders()
-    return jsonApiResult({ tts_provider: ttsProvider, available_providers: availableProviders })
+    return jsonApiResult(await getPreferences())
   } catch (error) {
     return jsonServerError(error, 'Failed to load preferences')
   }
@@ -13,9 +11,15 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const body = await request.json() as { tts_provider?: string }
-    const ttsProvider = await setTTSProviderPreference(body.tts_provider ?? 'mock')
-    return jsonApiResult({ tts_provider: ttsProvider })
+    const body = await request.json() as {
+      tts_provider?: string
+      locale?: string
+      default_scenario_key?: string
+      default_accent_key?: string
+      tts_speed?: number
+      tts_voice_id?: string | null
+    }
+    return jsonApiResult(await setPreferences(body))
   } catch (error) {
     return jsonServerError(error, 'Failed to save preferences')
   }

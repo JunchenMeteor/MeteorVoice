@@ -12,13 +12,16 @@
     "start": "npm --workspace @meteorvoice/web run start",
     "lint": "eslint",
     "web:dev": "npm --workspace @meteorvoice/web run dev",
+    "web:lint": "npm --workspace @meteorvoice/web run lint",
     "web:build": "npm --workspace @meteorvoice/web run build",
     "web:start": "npm --workspace @meteorvoice/web run start",
     "mobile:start": "npm --workspace @meteorvoice/mobile run start",
     "mobile:ios": "npm --workspace @meteorvoice/mobile run ios",
     "mobile:android": "npm --workspace @meteorvoice/mobile run android",
     "mobile:config": "npm --workspace @meteorvoice/mobile exec expo config -- --type public",
-    "test": "vitest run && npm run build"
+    "mobile:typecheck": "npm --workspace @meteorvoice/mobile run typecheck",
+    "packages:test": "vitest run tests/api-client.test.ts tests/session-core.test.ts",
+    "test": "vitest run && npm run web:build"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",

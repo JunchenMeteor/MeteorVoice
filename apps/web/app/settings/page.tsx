@@ -4,10 +4,33 @@ import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
 import { supportsAccent } from '@/lib/providers/tts-capabilities'
-import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import type { Locale } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
+
+type XunfeiConfiguredVoice = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  expiresAt?: string
+  envKey: string
+  usage: string
+  status: 'active' | 'expired'
+}
+
+type XunfeiVoiceOption = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  expiresAt?: string
+  status: 'active' | 'expired'
+}
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
@@ -15,6 +38,19 @@ const allTtsProviders = [
   { key: 'volcengine', labelKey: 'settings.tts_provider_volcengine' },
   { key: 'tencent', labelKey: 'settings.tts_provider_tencent' },
 ] as const
+
+function formatTtsSpeed(speed: number) {
+  return `${speed.toFixed(2).replace(/0$/, '')}x`
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Shanghai',
+  }).format(new Date(value))
+}
 
 function initialDefaultAccent() {
   if (typeof window === 'undefined') return 'american'
@@ -28,15 +64,38 @@ export default function SettingsPage() {
   const [defaultAccent, setDefaultAccent] = useState(initialDefaultAccent)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiConfiguredVoice[]>([])
+  const [xunfeiVoiceCatalog, setXunfeiVoiceCatalog] = useState<XunfeiVoiceOption[]>([])
 
   useEffect(() => {
     async function loadTtsProvider() {
       try {
         const res = await fetch('/api/preferences')
-        const data = await res.json() as { tts_provider?: string; available_providers?: string[] }
+        const data = await res.json() as {
+          tts_provider?: string
+          available_providers?: string[]
+          tts_speed?: number
+          tts_voice_id?: string | null
+          xunfei_voices?: { configured?: XunfeiConfiguredVoice[]; catalog?: XunfeiVoiceOption[] }
+        }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
+        if ('tts_voice_id' in data) {
+          setTtsVoiceId(data.tts_voice_id ?? null)
+          writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
+        }
+        if (data.xunfei_voices?.configured) setXunfeiVoices(data.xunfei_voices.configured)
+        if (data.xunfei_voices?.catalog) setXunfeiVoiceCatalog(data.xunfei_voices.catalog)
+        if (typeof data.tts_speed === 'number') {
+          const serverSpeed = data.tts_speed
+          const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
+            Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
+          ttsSpeedOptions[2])
+          setTtsSpeed(nextSpeed)
+          writeTTSSpeedPreference(nextSpeed)
+        }
       } catch {}
     }
 
@@ -47,6 +106,7 @@ export default function SettingsPage() {
     if (!supportsAccent(ttsProvider, key)) return
     setDefaultAccent(key)
     localStorage.setItem('coach-default-accent', key)
+    void persistPreference('default_accent_key', key)
   }
 
   function handleTtsProviderChange(key: string) {
@@ -54,18 +114,21 @@ export default function SettingsPage() {
     if (!supportsAccent(key, defaultAccent)) {
       setDefaultAccent('american')
       localStorage.setItem('coach-default-accent', 'american')
+      void persistPreference('default_accent_key', 'american')
     }
-    fetch('/api/preferences', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tts_provider: key }),
-    }).catch(() => {})
+    void persistPreference('tts_provider', key)
   }
 
   function handleTtsSpeedChange(index: number) {
     const next = ttsSpeedOptions[index] ?? 1
     setTtsSpeed(next)
-    writeTTSSpeedPreference(next)
+    void persistTTSSpeedPreference(next)
+  }
+
+  function handleTtsVoiceChange(voiceId: string) {
+    setTtsVoiceId(voiceId)
+    writeTTSVoiceIdPreference(voiceId)
+    void persistPreference('tts_voice_id', voiceId)
   }
 
   return (
@@ -91,7 +154,7 @@ export default function SettingsPage() {
                 onClick={() => setTheme(th.key)}
                 className={`chip-action ${th.key === theme ? 'is-active' : ''}`}
               >
-                {th.label}
+                {t(th.labelKey)}
               </button>
             ))}
           </div>
@@ -195,6 +258,79 @@ export default function SettingsPage() {
           <p className="text-xs text-[var(--theme-text-muted)] mt-3">
             {t('settings.tts_provider_hint')}
           </p>
+          {ttsProvider === 'xunfei' && (
+            <div className="mt-4 rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                  {t('settings.xunfei_voice_config')}
+                </p>
+                <span className={`status-badge ${availableProviders.includes('xunfei') ? 'success' : 'warning'}`}>
+                  {availableProviders.includes('xunfei') ? t('settings.xunfei_voice_available') : t('settings.xunfei_voice_unavailable')}
+                </span>
+              </div>
+              {xunfeiVoices.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {xunfeiVoices.map(voice => (
+                    <div
+                      key={`${voice.envKey}-${voice.id}`}
+                      className="rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-[var(--theme-text-primary)]">{voice.name}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="status-badge">{t('settings.xunfei_voice_default')}</span>
+                          <span className={`status-badge ${voice.status === 'active' ? 'success' : 'warning'}`}>
+                            {voice.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.xunfei_voice_expired')}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
+                        {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
+                      </p>
+                      {voice.expiresAt && (
+                        <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
+                          {t('settings.xunfei_voice_expires').replace('{date}', formatDateTime(voice.expiresAt))}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--theme-text-muted)]">
+                  {t('settings.xunfei_voice_empty')}
+                </p>
+              )}
+              <p className="mt-3 text-xs text-[var(--theme-text-muted)]">
+                {t('settings.xunfei_voice_billing_hint')}
+              </p>
+              {xunfeiVoiceCatalog.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                    {t('settings.xunfei_voice_select')}
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {xunfeiVoiceCatalog.map(voice => {
+                      const isExpired = voice.status === 'expired'
+                      return (
+                        <button
+                          key={voice.id}
+                          type="button"
+                          disabled={isExpired}
+                          onClick={() => handleTtsVoiceChange(voice.id)}
+                          className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${ttsVoiceId === voice.id ? 'is-active' : ''} ${isExpired ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <span className="text-sm font-medium">{voice.name}</span>
+                          <span className="text-xs text-[var(--theme-text-muted)]">
+                            {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -207,7 +343,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm font-medium text-[var(--theme-text-primary)]">
               <span>{t('settings.tts_speed_slow')}</span>
-              <span className="status-badge success">{ttsSpeed.toFixed(2).replace(/0$/, '')}x</span>
+              <span className="status-badge success">{formatTtsSpeed(ttsSpeed)}</span>
               <span>{t('settings.tts_speed_fast')}</span>
             </div>
             <input
@@ -220,9 +356,11 @@ export default function SettingsPage() {
               className="w-full accent-[var(--theme-accent)]"
               aria-label={t('settings.tts_speed')}
             />
-            <div className="grid grid-cols-5 text-center text-xs text-[var(--theme-text-muted)]">
+            <div className="flex justify-between text-xs text-[var(--theme-text-muted)]">
               {ttsSpeedOptions.map(speed => (
-                <span key={speed}>{speed === 1 ? t('settings.tts_speed_normal') : `${speed}x`}</span>
+                <span key={speed} className="min-w-0 text-center first:text-left last:text-right">
+                  {speed === 1 ? t('settings.tts_speed_normal') : formatTtsSpeed(speed)}
+                </span>
               ))}
             </div>
           </div>

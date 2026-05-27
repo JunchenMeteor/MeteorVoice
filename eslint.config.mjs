@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
         rootDir: "apps/web/",
       },
     },
+    rules: {
+      "@next/next/no-html-link-for-pages": "off",
+    },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([

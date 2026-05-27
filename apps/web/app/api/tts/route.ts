@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       accent?: string
       speed?: number
       provider?: string
+      voiceId?: string
     }
 
     const result = await synthesizeSpeechFromRequest(body)

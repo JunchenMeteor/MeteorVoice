@@ -1,8 +1,10 @@
 import type {
+  AccentProfile,
   ConversationContext,
   ConversationMessage,
   ConversationResponse,
   CorrectionItem,
+  Scenario,
   TTSResult,
 } from '@meteorvoice/shared'
 
@@ -22,14 +24,29 @@ export type ApiErrorBody = {
 export type PreferencesResponse = {
   tts_provider?: string
   available_providers?: string[]
+  locale?: 'en' | 'zh'
+  default_scenario_key?: string
+  default_accent_key?: string
+  tts_speed?: number
+  tts_voice_id?: string | null
 }
 
 export type UpdatePreferencesRequest = {
   tts_provider?: string
+  locale?: 'en' | 'zh'
+  default_scenario_key?: string
+  default_accent_key?: string
+  tts_speed?: number
+  tts_voice_id?: string | null
 }
 
 export type UpdatePreferencesResponse = {
   tts_provider: string
+  locale: 'en' | 'zh'
+  default_scenario_key: string
+  default_accent_key: string
+  tts_speed: number
+  tts_voice_id: string | null
 }
 
 export type GenerateCoachReplyRequest = {
@@ -93,11 +110,13 @@ export type GenerateSummaryResponse = {
 }
 
 export type HistorySession = {
-  id: unknown
+  id: string
   scenario: string
+  scenario_key?: string | null
   accent: string
+  accent_key?: string | null
   date: string
-  status: unknown
+  status: string
   summary: string | null
 }
 
@@ -114,4 +133,55 @@ export type CreateTurnRequest = {
 
 export type CreateTurnResponse = {
   turn_id?: string
+}
+
+export type ScenarioDto = Pick<Scenario, 'key' | 'name' | 'description' | 'labels' | 'descriptions' | 'difficulty' | 'icon'> & {
+  label: string
+  localized_description: string
+}
+
+export type ListScenariosResponse = {
+  scenarios: ScenarioDto[]
+}
+
+export type AccentDto = Pick<AccentProfile, 'key' | 'name' | 'region' | 'description' | 'labels' | 'regions' | 'descriptions'> & {
+  label: string
+  localized_region: string
+  localized_description: string
+  supported_providers: string[]
+  supported: boolean
+  disabled_reason: string | null
+}
+
+export type ListAccentsResponse = {
+  accents: AccentDto[]
+  provider: string
+  available_providers: string[]
+}
+
+export type SessionTurnCorrectionDto = {
+  id: string
+  type: string
+  originalText: string
+  suggestedText: string
+  explanation: string
+  severity: string
+  audioUrl: string | null
+  createdAt: string
+}
+
+export type SessionTurnDto = {
+  id: string
+  sessionId: string
+  speaker: string
+  transcript: string
+  translatedText: string | null
+  audioUrl: string | null
+  createdAt: string
+  corrections: SessionTurnCorrectionDto[]
+}
+
+export type ListSessionTurnsResponse = {
+  session_id: string
+  turns: SessionTurnDto[]
 }

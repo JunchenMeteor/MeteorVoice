@@ -177,6 +177,7 @@ TTS provider keys (all optional — mock TTS works without them):
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
+XUNFEI_TTS_VOICE=                 # default fallback vcn; coach voice is selectable in Settings
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
@@ -267,3 +268,15 @@ flowchart LR
 
     MVP --> Polish --> Distribution --> Growth
 ```
+
+### Technical Evolution
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **MVP** | Voice loop, corrections, TTS, Web app functional | ✅ Delivered |
+| **Dual-platform architecture** | `apps/web` + `apps/mobile` + `packages/*` monorepo | ✅ Delivered |
+| **Immersive UI** | Voice waveform, desktop/mobile layouts, real-time subtitles | ✅ Delivered |
+| **Productization** | History with expansion/pagination, cross-device preferences sync, CI parallel jobs, mobile audio hardening | ✅ Delivered |
+| **Semantic endpointing** | L1 local rules + L2 LLM-based end-of-turn detection + L3 safety net, replacing fixed silence timeout | 🚧 In implementation |
+| **Accent capabilities** | TTS provider voice catalog, multi-accent speakers (US/UK/Indian/Australian) | 📋 Planned |
+| **Distribution** | TestFlight beta, EAS production build | 📋 Planned |

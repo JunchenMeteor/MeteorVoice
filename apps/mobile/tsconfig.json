@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "paths": {
+      "@meteorvoice/api-client": ["../../packages/api-client/src/index.ts"],
+      "@meteorvoice/api-client/*": ["../../packages/api-client/src/*"],
+      "@meteorvoice/session-core": ["../../packages/session-core/src/index.ts"],
+      "@meteorvoice/session-core/*": ["../../packages/session-core/src/*"],
+      "@meteorvoice/shared": ["../../packages/shared/src/index.ts"],
+      "@meteorvoice/shared/*": ["../../packages/shared/src/*"]
+    },
+    "types": ["react", "react-native"]
+  },
+  "include": [
+    "index.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../../packages/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

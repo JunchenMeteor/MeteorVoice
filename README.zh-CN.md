@@ -177,6 +177,7 @@ TTS 服务商密钥（均可选，不填则使用 mock TTS）：
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
+XUNFEI_TTS_VOICE=                 # 默认兜底 vcn；具体教练声音在设置页选择
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
 TENCENT_SECRET_ID=
@@ -267,3 +268,15 @@ flowchart LR
 
     MVP --> Polish --> Distribution --> Growth
 ```
+
+### 技术演进
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| **MVP** | 语音循环、纠错、TTS、Web 端完整可用 | ✅ 已交付 |
+| **双端架构** | `apps/web` + `apps/mobile` + `packages/*` monorepo | ✅ 已交付 |
+| **沉浸式 UI** | 语音波形、桌面/移动双布局、实时字幕 | ✅ 已交付 |
+| **产品化** | 历史页详展/分页、Preferences 跨设备同步、CI 并行化、Mobile 音频硬化 | ✅ 已交付 |
+| **三合一层级判停** | L1 本地判断 + L2 LLM 语义判停 + L3 安全网，替代固定静默等待 | 🚧 实现中 |
+| **口音能力专项** | TTS provider voice catalog，多口音发音人（美式/英式/印度/澳式） | 📋 待排期 |
+| **分发** | TestFlight 内测、EAS 正式构建 | 📋 待排期 |

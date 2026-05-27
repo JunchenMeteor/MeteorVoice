@@ -9,6 +9,9 @@ import ActiveSessionBar from '@/components/ActiveSessionBar'
 export const metadata: Metadata = {
   title: 'MeteorVoice',
   description: 'Practice spoken English through voice conversation with an AI coach. Scenario-based learning with real-time corrections and accent adaptation.',
+  icons: {
+    icon: '/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -20,10 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <VoiceSessionProvider>
               <div className="flex h-full">
                 <Sidebar />
-                <main className="flex-1 overflow-auto min-w-0 pt-14 lg:pt-0">
+                <main className="flex-1 overflow-auto min-w-0 lg:pt-0">
+                  <ActiveSessionBar />
                   {children}
                 </main>
-                <ActiveSessionBar />
               </div>
             </VoiceSessionProvider>
           </LanguageProvider>
