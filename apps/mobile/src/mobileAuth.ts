@@ -2,8 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient, type Session, type SupabaseClient, type User } from '@supabase/supabase-js'
 import * as SecureStore from 'expo-secure-store'
 
+function resolveEmail(input: string): string {
+  const trimmed = input.trim().toLowerCase()
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return trimmed
+  return `${trimmed}@users.meteorvoice.local`
+}
+
 type AuthMode = 'sign-in' | 'sign-up'
 type AuthState = 'unconfigured' | 'loading' | 'signed-out' | 'signed-in' | 'error'
+
+export type MobileAuthState = ReturnType<typeof useMobileAuth>
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
@@ -75,9 +83,10 @@ export function useMobileAuth() {
     try {
       setState('loading')
       setMessage(null)
+      const resolvedEmail = resolveEmail(email)
       const result = mode === 'sign-up'
-        ? await client.auth.signUp({ email, password })
-        : await client.auth.signInWithPassword({ email, password })
+        ? await client.auth.signUp({ email: resolvedEmail, password })
+        : await client.auth.signInWithPassword({ email: resolvedEmail, password })
 
       if (result.error) {
         setState('signed-out')

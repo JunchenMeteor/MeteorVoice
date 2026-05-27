@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ActivityIndicator,
   AppState,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   type AppStateStatus,
 } from 'react-native'
@@ -42,6 +39,11 @@ import {
 } from '@meteorvoice/session-core'
 import {
   accentProfiles,
+  getAccentLabel,
+  getAccentRegion,
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
   getTTSSpeedRouting,
   scenarios,
   t,
@@ -50,23 +52,83 @@ import {
   type Locale,
 } from '@meteorvoice/shared'
 
+import * as SecureStore from 'expo-secure-store'
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
-import { pullMobilePreferences, syncMobilePreferences } from './mobilePreferences'
+import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
+import { ThemeProvider, useTheme } from './ThemeProvider'
+import type { ThemeKey } from './theme'
+import { SessionScreen } from './screens/SessionScreen'
+import { HomeScreen } from './screens/HomeScreen'
+import { HistoryScreen } from './screens/HistoryScreen'
+import { SettingsScreen } from './screens/SettingsScreen'
 
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
-type SessionTab = 'corrections' | 'transcript'
+type Tab = 'session' | 'home' | 'history' | 'settings'
+
+const TAB_LABELS: Record<Tab, string> = {
+  home: 'nav.home',
+  session: 'nav.practice',
+  history: 'nav.history',
+  settings: 'nav.settings',
+}
+
+function TabIcon({ tab, color }: { tab: Tab; color: string }) {
+  if (tab === 'home') return (
+    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'flex-end' }}>
+      <View style={{ width: 0, height: 0, borderLeftWidth: 9, borderRightWidth: 9, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: color, marginBottom: 1 }} />
+      <View style={{ width: 12, height: 8, backgroundColor: color, borderRadius: 1 }} />
+    </View>
+  )
+  if (tab === 'session') return (
+    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+      <View style={{ width: 8, height: 11, borderRadius: 4, borderWidth: 2, borderColor: color }} />
+      <View style={{ width: 12, height: 2, backgroundColor: color, borderRadius: 1 }} />
+    </View>
+  )
+  if (tab === 'history') return (
+    <View style={{ width: 18, height: 18, justifyContent: 'center', gap: 3 }}>
+      {[0, 1, 2].map(i => <View key={i} style={{ height: 2, backgroundColor: color, borderRadius: 1, width: i === 0 ? 18 : i === 1 ? 14 : 10 }} />)}
+    </View>
+  )
+  return (
+    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: color }} />
+      <View style={{ position: 'absolute', width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+        {[0, 45, 90, 135].map(deg => (
+          <View key={deg} style={{ position: 'absolute', width: 3, height: 3, borderRadius: 1.5, backgroundColor: color, transform: [{ rotate: `${deg}deg` }, { translateY: -8 }] }} />
+        ))}
+      </View>
+    </View>
+  )
+}
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  )
+}
+
+function AppInner() {
+  const { C, themeKey, setTheme: setThemeLocal } = useTheme()
+  const [activeTab, setActiveTab] = useState<Tab>('session')
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl)
-  const [input, setInput] = useState('Hello, I want to practice small talk.')
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueueSnapshot>(() => createPlaybackQueueSnapshot())
-  const [status, setStatus] = useState('Ready')
-  const [locale, setLocale] = useState<Locale>('en')
+  const [status, setStatus] = useState('session.ready')
+  const [locale, setLocaleState] = useState<Locale>('en')
+  useEffect(() => {
+    SecureStore.getItemAsync('app_locale').then(v => { if (v === 'zh' || v === 'en') setLocaleState(v) })
+  }, [])
+  const setLocale = useCallback((l: Locale) => {
+    setLocaleState(l)
+    void SecureStore.setItemAsync('app_locale', l)
+  }, [])
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -78,12 +140,14 @@ export default function App() {
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
+  const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiVoice[]>([])
+  const [xunfeiVoiceCatalog, setXunfeiVoiceCatalog] = useState<XunfeiVoice[]>([])
   const [remoteScenarios, setRemoteScenarios] = useState<ScenarioDto[]>([])
   const [remoteAccents, setRemoteAccents] = useState<AccentDto[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-session'))
-  const [activeTab, setActiveTab] = useState<SessionTab>('corrections')
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -107,17 +171,13 @@ export default function App() {
     baseUrl: apiBaseUrl.trim(),
     headers: getAuthHeaders,
   }), [apiBaseUrl, getAuthHeaders])
+  const setTheme = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
+    setThemeLocal(k)
+    void api.updatePreferences({ ui_theme: k }).catch(() => {})
+  }, [setThemeLocal, api])
   const latestUserMessage = [...messages].reverse().find(message => message.role === 'user')
   const latestAssistantMessage = [...messages].reverse().find(message => message.role === 'assistant')
-  const sessionAction = getNextSessionAction({
-    activeSession: isSessionActive,
-    canListenOnRoute: true,
-    workflowState: snapshot.state,
-  })
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
-  const workflowStateLabel = tr(`session.state.${snapshot.state}`)
-  const sessionActionLabel = tr(`session.action.${sessionAction}`)
-  const audioPhaseLabel = tr(`session.audio_phase.${audio.phase}`)
 
   function startSession() {
     listeningStartMsRef.current = Date.now()
@@ -132,7 +192,7 @@ export default function App() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
-    setStatus(tr('session.status.listening'))
+    setStatus('session.status.listening')
   }
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
@@ -163,12 +223,12 @@ export default function App() {
       setPlaybackQueue(nextQueue)
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
-        setStatus(tr('session.status.playing_reply'))
+        setStatus('session.status.playing_reply')
         setAudioUrl(nextQueue.currentAudioUrl)
         return
       }
 
-      setStatus(tr('session.status.reply_played'))
+      setStatus('session.status.reply_played')
     }
 
     const timeout = setTimeout(advanceQueue, 0)
@@ -198,12 +258,12 @@ export default function App() {
     setMessages(nextMessages)
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
-    listeningStartMsRef.current = 0 // turn 已提交，下一轮重新计时
+    listeningStartMsRef.current = 0
     pendingNativeTranscriptRef.current = ''
     setBusy(true)
 
     try {
-      setStatus(tr('session.status.requesting_reply'))
+      setStatus('session.status.requesting_reply')
       nextSnapshot = requestCoachReply(nextSnapshot)
       setSnapshot(nextSnapshot)
       const coachReply = await api.generateCoachReply({
@@ -226,26 +286,25 @@ export default function App() {
       setMessages(coachTurn.messages)
       setSnapshot(nextSnapshot)
 
-      setStatus(tr('session.status.requesting_voice'))
+      setStatus('session.status.requesting_voice')
       if (!coachReply.text.trim()) {
-        setStatus(tr('session.status.reply_without_text'))
+        setStatus('session.status.reply_without_text')
         return
       }
       const voice = await synthesizeCoachSpeech(coachReply.text)
 
       if (voice.audioUrl) {
-        setStatus(tr('session.status.playing_reply'))
+        setStatus('session.status.playing_reply')
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
       } else {
-        setStatus(tr('session.status.reply_without_audio'))
+        setStatus('session.status.reply_without_audio')
       }
       const completedTurn = completeCoachPlayback({
         snapshot: nextSnapshot,
         corrections: coachReply.corrections,
       })
-      const finalSnapshot = completedTurn.snapshot
-      setSnapshot(finalSnapshot)
+      setSnapshot(completedTurn.snapshot)
     } catch (error) {
       const recovery = recoverSessionError({
         snapshot: nextSnapshot,
@@ -264,18 +323,8 @@ export default function App() {
       setBusy(false)
     }
   }, [
-    accent.name,
-    accent.region,
-    api,
-    audio.isRecording,
-    busy,
-    isSessionActive,
-    messages,
-    scenario.description,
-    scenario.name,
-    snapshot,
-    synthesizeCoachSpeech,
-    tr,
+    accent.name, accent.region, api, audio.isRecording, busy, isSessionActive,
+    messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech, tr,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -286,14 +335,11 @@ export default function App() {
       .filter(Boolean)
       .join(' ')
 
-    setInput(endpointTranscript)
-
     if (!isSessionActive) {
-      setStatus(tr('session.status.speech_captured'))
+      setStatus('session.status.speech_captured')
       return
     }
 
-    // 三层判停：确认系统判断是否正确
     const baseUrl = apiBaseUrl.trim()
     const endpointRequestId = ++endpointRequestRef.current
     const endpointResult = await judgeEndpoint({
@@ -316,7 +362,7 @@ export default function App() {
 
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
-      setStatus(tr('session.status.listening'))
+      setStatus('session.status.listening')
       void speechStartListeningRef.current('en-US')
       return
     }
@@ -326,7 +372,6 @@ export default function App() {
   }, [apiBaseUrl, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn, tr])
 
   const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
-  const speechPhaseLabel = tr(`session.speech_phase.${speech.phase}`)
 
   useEffect(() => {
     speechStartListeningRef.current = speech.startListening
@@ -336,71 +381,71 @@ export default function App() {
     sessionActiveRef.current = isSessionActive
   }, [isSessionActive])
 
-  async function runTurn() {
-    await submitTurn(input)
+  async function continueSession() {
+    if (!isSessionActive || snapshot.state === 'session_ended') return
+    const nextSnapshot = continueListeningSnapshot(snapshot)
+    setSnapshot(nextSnapshot)
+    setStatus('session.status.listening')
   }
 
-  async function toggleNativeSpeech() {
-    if (speech.isListening) {
-      speech.stopListening()
-      setStatus(tr('session.status.finalizing_speech'))
-      return
-    }
+  async function endSession() {
+    if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
 
-    if (busy || audio.isPlaying || audio.isRecording) return
-    listeningStartMsRef.current = Date.now()
+    // 立即结束 session，不等 API
+    sessionActiveRef.current = false
+    endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
-    const started = await speech.startListening('en-US')
-    setStatus(started ? tr('session.status.native_speech_listening') : tr('session.status.native_speech_unavailable'))
-  }
-
-  async function toggleRecording() {
-    if (audio.isRecording) {
-      const recordingUri = await audio.stopRecording()
-      setStatus(recordingUri ? tr('session.status.recording_saved') : tr('session.status.recording_stopped'))
-      return
-    }
-
-    const started = await audio.startRecording()
-    setStatus(started ? tr('session.status.recording') : tr('session.status.recording_unavailable'))
-  }
-
-  async function submitAuth() {
-    const normalizedEmail = email.trim()
-    if (!normalizedEmail || !password || auth.state === 'loading') return
-
-    const success = await auth.submit(authMode, normalizedEmail, password)
-    if (success) {
-      setStatus(authMode === 'sign-in' ? tr('session.status.signed_in') : tr('session.status.account_submitted'))
-      setPassword('')
-    }
-  }
-
-  async function createApiSession() {
-    if (auth.state !== 'signed-in' || busy) return
+    const endedSnapshot = endActiveSession(snapshot).snapshot
+    setSnapshot(endedSnapshot)
+    setIsSessionActive(false)
+    setStatus('session.ended')
 
     setBusy(true)
+    const userTurns = messages.filter(m => m.role === 'user').length
     try {
-      setStatus(tr('session.status.creating_api_session'))
-      const session = await api.createSession()
-      const nextSessionId = typeof session.id === 'string' ? session.id : null
-      setApiSessionId(nextSessionId)
-      setStatus(nextSessionId ? tr('session.status.api_session_ready') : tr('session.status.api_session_created'))
-    } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Session request failed'
-      setStatus(message)
+      const result = await api.generateSummary({
+        sessionId: snapshot.sessionId,
+        scenario: scenario.name,
+        messages,
+        turnNumber: userTurns,
+      })
+      setSummary(result.summary)
+      await api.syncSession({
+        session_id: snapshot.sessionId,
+        scenario: scenario.name,
+        accent: accent.name,
+        turns: userTurns,
+        messages,
+        corrections: correctionHistory,
+      }).catch(() => undefined)
+    } catch {
+      // summary 失败不影响 session 已结束的状态
     } finally {
       setBusy(false)
     }
   }
 
+  function selectScenario(key: string) {
+    setSelectedScenarioKey(key)
+    setMessages([])
+    setCorrectionHistory([])
+    setAudioUrl(null)
+    setPlaybackQueue(createPlaybackQueueSnapshot())
+    setSummary(null)
+    setSnapshot(createInitialSnapshot('mobile-session'))
+    setIsSessionActive(false)
+    setStatus('session.status.scenario_selected')
+  }
+
+  function selectAccent(key: string) {
+    setSelectedAccentKey(key)
+    setAudioUrl(null)
+    setPlaybackQueue(createPlaybackQueueSnapshot())
+    setStatus('session.status.accent_selected')
+  }
+
   async function loadHistory() {
     if (historyLoading) return
-
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -411,12 +456,22 @@ export default function App() {
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'History request failed'
+        : error instanceof Error ? error.message : 'History request failed'
       setHistoryError(message)
     } finally {
       setHistoryLoading(false)
+    }
+  }
+
+  async function deleteSession(id: string) {
+    setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
+    try {
+      await fetch(`${apiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders() as Record<string, string>,
+      })
+    } catch {
+      // 静默失败
     }
   }
 
@@ -429,24 +484,28 @@ export default function App() {
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Turn detail request failed'
+        : error instanceof Error ? error.message : 'Turn detail request failed'
       setHistoryError(message)
     }
   }
 
   async function loadPreferences() {
     if (settingsLoading) return
-
     setSettingsLoading(true)
     setSettingsMessage(null)
     try {
-      const preferences = await api.getPreferences()
+      type ExtendedPrefs = Awaited<ReturnType<typeof api.getPreferences>> & {
+        xunfei_voices?: { configured?: XunfeiVoice[]; catalog?: XunfeiVoice[] }
+        tts_voice_id?: string | null
+      }
+      const preferences = await api.getPreferences() as ExtendedPrefs
       setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
       setTtsProvider(preferences.tts_provider ?? 'mock')
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
       setTtsSpeed(preferences.tts_speed ?? 1)
+      if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+      if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
+      if (preferences.xunfei_voices?.catalog) setXunfeiVoiceCatalog(preferences.xunfei_voices.catalog)
       if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
       if (preferences.default_accent_key) setSelectedAccentKey(preferences.default_accent_key)
       const [scenarioResult, accentResult] = await Promise.all([
@@ -459,9 +518,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Preferences request failed'
+        : error instanceof Error ? error.message : 'Preferences request failed'
       setSettingsMessage(message)
     } finally {
       setSettingsLoading(false)
@@ -485,9 +542,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Preferences save failed'
+        : error instanceof Error ? error.message : 'Preferences save failed'
       setSettingsMessage(message)
     } finally {
       setSettingsLoading(false)
@@ -510,9 +565,7 @@ export default function App() {
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
         ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Preferences save failed'
+        : error instanceof Error ? error.message : 'Preferences save failed'
       setSettingsMessage(message)
     } finally {
       setSettingsLoading(false)
@@ -522,7 +575,6 @@ export default function App() {
   function adjustSpeed(delta: number) {
     setTtsSpeed(previous => {
       const next = Math.min(1.3, Math.max(0.7, Number((previous + delta).toFixed(1))))
-      // Debounce 回写 API
       if (prefSyncTimerRef.current) clearTimeout(prefSyncTimerRef.current)
       prefSyncTimerRef.current = setTimeout(() => {
         void syncMobilePreferences({
@@ -538,999 +590,184 @@ export default function App() {
     })
   }
 
-  async function continueSession() {
-    if (!isSessionActive || snapshot.state === 'session_ended') return
-    const nextSnapshot = continueListeningSnapshot(snapshot)
-    setSnapshot(nextSnapshot)
-    setStatus(tr('session.status.listening'))
-  }
-
-  async function endSession() {
-    if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
-
-    setBusy(true)
-    sessionActiveRef.current = false
-    endpointRequestRef.current += 1
-    pendingNativeTranscriptRef.current = ''
+  async function selectVoice(voiceId: string) {
+    setTtsVoiceId(voiceId)
     try {
-      setStatus(tr('session.status.generating_summary'))
-      const userTurns = messages.filter(message => message.role === 'user').length
-      const result = await api.generateSummary({
-        sessionId: snapshot.sessionId,
-        scenario: scenario.name,
-        messages,
-        turnNumber: userTurns,
-      })
-      setSummary(result.summary)
-
-      await api.syncSession({
-        session_id: snapshot.sessionId,
-        scenario: scenario.name,
-        accent: accent.name,
-        turns: userTurns,
-        messages,
-        corrections: correctionHistory,
-      }).catch(() => undefined)
-
-      setSnapshot(endActiveSession(snapshot).snapshot)
-      setIsSessionActive(false)
-      setStatus(tr('session.ended'))
-    } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Summary request failed'
-      setStatus(message)
-    } finally {
-      setBusy(false)
+      await api.updatePreferences({ tts_voice_id: voiceId })
+    } catch {
+      // 静默失败
     }
   }
 
-  function selectScenario(key: string) {
-    setSelectedScenarioKey(key)
-    setMessages([])
-    setCorrectionHistory([])
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    setSummary(null)
-    setSnapshot(createInitialSnapshot('mobile-session'))
-    setIsSessionActive(false)
-    setStatus(tr('session.status.scenario_selected'))
+  async function submitAuth() {
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail || !password || auth.state === 'loading') return
+    const success = await auth.submit(authMode, normalizedEmail, password)
+    if (success) setPassword('')
   }
 
-  function selectAccent(key: string) {
-    setSelectedAccentKey(key)
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    setStatus(tr('session.status.accent_selected'))
-  }
+  const applyPrefs = useCallback((prefs: Awaited<ReturnType<typeof pullMobilePreferences>>) => {
+    if (!prefs) return
+    setTtsProvider(prefs.ttsProvider)
+    setTtsSpeed(prefs.ttsSpeed)
+    setAvailableProviders(prefs.availableProviders)
+    setTtsVoiceId(prefs.ttsVoiceId)
+    setXunfeiVoices(prefs.xunfeiVoices)
+    setXunfeiVoiceCatalog(prefs.xunfeiVoiceCatalog)
+    if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
+    if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
+    if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
+    if (prefs.uiTheme) setTheme(prefs.uiTheme as Parameters<typeof setTheme>[0])
+  }, [setTheme])
 
-  // 进入前台时从 API 拉取最新偏好配置（静默失败）
+  // 登录后自动拉取偏好
+  useEffect(() => {
+    if (auth.state !== 'signed-in') return
+    void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
+  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs])
+
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active') return
-      void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(prefs => {
-        if (!prefs) return
-        setTtsProvider(prefs.ttsProvider)
-        setTtsSpeed(prefs.ttsSpeed)
-        setAvailableProviders(prefs.availableProviders)
-        if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
-        if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
-        if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
-      })
+      void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
     })
     return () => subscription.remove()
-  }, [apiBaseUrl, auth.getAuthHeaders])
+  }, [apiBaseUrl, auth.getAuthHeaders, applyPrefs])
+
+  function playCorrection(text: string) {
+    void synthesizeCoachSpeech(text).then(voice => {
+      if (voice.audioUrl) setAudioUrl(voice.audioUrl)
+    }).catch(() => {})
+  }
+
+  function renderScreen() {
+    switch (activeTab) {
+      case 'session':
+        return (
+          <SessionScreen
+            tr={tr}
+            snapshot={snapshot}
+            messages={messages}
+            corrections={correctionHistory}
+            isSessionActive={isSessionActive}
+            status={status}
+            summary={summary}
+            busy={busy}
+            scenarioName={getScenarioLabel(scenario, locale)}
+            scenarioIcon={scenario.icon}
+            scenarioDifficulty={getDifficultyLabel(scenario.difficulty, locale)}
+            scenarioDescription={getScenarioDescription(scenario, locale)}
+            accentName={getAccentLabel(accent, locale)}
+            accentRegion={getAccentRegion(accent, locale)}
+            onStart={startSession}
+            onEnd={() => void endSession()}
+            onPlayCorrection={playCorrection}
+          />
+        )
+      case 'home':
+        return (
+          <HomeScreen
+            tr={tr}
+            locale={locale}
+            scenarios={scenarios}
+            remoteScenarios={remoteScenarios}
+            selectedScenarioKey={selectedScenarioKey}
+            isSessionActive={isSessionActive}
+            onSelectScenario={selectScenario}
+            onGoToSession={() => setActiveTab('session')}
+          />
+        )
+      case 'history':
+        return (
+          <HistoryScreen
+            tr={tr}
+            locale={locale}
+            sessions={historySessions}
+            loading={historyLoading}
+            error={historyError}
+            selectedHistory={selectedHistory}
+            selectedTurns={selectedHistoryTurns}
+            onLoad={() => void loadHistory()}
+            onSelect={item => void selectHistorySession(item)}
+            onDelete={id => void deleteSession(id)}
+          />
+        )
+      case 'settings':
+        return (
+          <SettingsScreen
+            tr={tr}
+            locale={locale}
+            ttsProvider={ttsProvider}
+            availableProviders={availableProviders}
+            ttsSpeed={ttsSpeed}
+            ttsVoiceId={ttsVoiceId}
+            xunfeiVoices={xunfeiVoices}
+            xunfeiVoiceCatalog={xunfeiVoiceCatalog}
+            remoteAccents={remoteAccents}
+            remoteScenarios={remoteScenarios}
+            accentProfiles={accentProfiles}
+            selectedAccentKey={selectedAccentKey}
+            settingsLoading={settingsLoading}
+            settingsMessage={settingsMessage}
+            auth={auth}
+            email={email}
+            password={password}
+            authMode={authMode}
+            apiBaseUrl={apiBaseUrl}
+            onSetLocale={l => setLocale(l as Locale)}
+            onSaveProvider={p => void saveProvider(p)}
+            onAdjustSpeed={adjustSpeed}
+            onSavePracticePreferences={() => void savePracticePreferences()}
+            onLoadPreferences={() => void loadPreferences()}
+            onSelectAccent={selectAccent}
+            onSelectVoice={id => void selectVoice(id)}
+            onSetEmail={setEmail}
+            onSetPassword={setPassword}
+            onSetAuthMode={setAuthMode}
+            onSubmitAuth={() => void submitAuth()}
+            onSignOut={() => void auth.signOut()}
+            onSetApiBaseUrl={setApiBaseUrl}
+          />
+        )
+    }
+  }
+
+  const styles = makeStyles()
 
   return (
     <SafeAreaView style={styles.shell}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>MeteorVoice</Text>
-          <Text style={styles.title}>Voice Practice</Text>
-          <Text style={styles.subtitle}>
-            Practice one spoken turn at a time with native speech input, coach voice playback, and focused feedback.
-          </Text>
+      <View style={styles.content}>{renderScreen()}</View>
+      <View style={styles.tabBarWrapper}>
+        <View style={styles.tabBar}>
+          {(['home', 'session', 'history', 'settings'] as Tab[]).map(tab => (
+            <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}>
+              <TabIcon tab={tab} color={activeTab === tab ? C.cream : C.textMuted} />
+              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
+                {tr(TAB_LABELS[tab])}
+              </Text>
+            </Pressable>
+          ))}
         </View>
-
-        <View style={styles.stage}>
-          <Text style={styles.status}>{status}</Text>
-          <Text style={styles.audioState}>
-            {tr('session.mobile_session_label')} {workflowStateLabel} · {tr('session.mobile_turn_label')} {snapshot.turnNumber}
-          </Text>
-          <View style={styles.voiceMark}>
-            <Text style={styles.voiceMarkText}>{snapshot.state === 'speaking' ? 'AI' : 'You'}</Text>
-          </View>
-          <View style={styles.waveRow}>
-            {[0, 1, 2, 3, 4, 5, 6].map(index => (
-              <View
-                key={index}
-                style={[
-                  styles.waveBar,
-                  (snapshot.state === 'listening' || snapshot.state === 'speaking') && styles.waveBarActive,
-                  { height: 14 + ((index % 4) * 10) },
-                ]}
-              />
-            ))}
-          </View>
-          <Text style={styles.speaker}>Coach</Text>
-          <Text style={styles.reply}>
-            {latestAssistantMessage?.content ?? 'Your coach reply will appear here.'}
-          </Text>
-          <Text style={styles.speaker}>You</Text>
-          <Text style={styles.userSubtitle}>
-            {latestUserMessage?.content ?? 'Start the session, then speak or type your first line.'}
-          </Text>
-          <View style={styles.stageActions}>
-            <Pressable
-              disabled={audio.isPlaying}
-              onPress={toggleRecording}
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                audio.isRecording && styles.recordingButton,
-                audio.isPlaying && styles.buttonDisabled,
-                pressed && !audio.isPlaying && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.secondaryButtonText}>
-                {audio.isRecording ? 'Stop mic test' : 'Mic test'}
-              </Text>
-            </Pressable>
-            {audioUrl && (
-              <Pressable onPress={() => void audio.playReply()} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Replay voice</Text>
-              </Pressable>
-            )}
-          </View>
-          <Text style={styles.audioState}>
-            {tr('session.mobile_audio_label')} {audioPhaseLabel} · {tr('session.mobile_speech_label')} {speechPhaseLabel} · {tr('session.mobile_next_label')} {sessionActionLabel}
-          </Text>
-          {audio.lastRecordingUri && (
-            <Text style={styles.recordingUri} numberOfLines={1}>
-              Recording: {audio.lastRecordingUri}
-            </Text>
-          )}
-          {audio.errorMessage && (
-            <Text style={styles.audioError}>{audio.errorMessage}</Text>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.inputHeader}>
-            <Text style={styles.label}>Your line</Text>
-            <View style={styles.sessionControls}>
-              {!isSessionActive && snapshot.state !== 'session_ended' ? (
-                <Pressable onPress={startSession} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Start</Text>
-                </Pressable>
-              ) : (
-                <>
-                  <Pressable
-                    disabled={busy || snapshot.state === 'session_ended'}
-                    onPress={continueSession}
-                    style={[styles.smallButton, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
-                  >
-                    <Text style={styles.smallButtonText}>Continue</Text>
-                  </Pressable>
-                  <Pressable
-                    disabled={busy || snapshot.state === 'session_ended'}
-                    onPress={endSession}
-                    style={[styles.smallButtonMuted, (busy || snapshot.state === 'session_ended') && styles.buttonDisabled]}
-                  >
-                    <Text style={styles.smallButtonMutedText}>End</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          </View>
-          <TextInput
-            multiline
-            onChangeText={setInput}
-            style={[styles.input, styles.textarea]}
-            value={input}
-          />
-          <View style={styles.turnActionRow}>
-            <Pressable disabled={busy || audio.isRecording || !isSessionActive} onPress={runTurn} style={({ pressed }) => [
-              styles.button,
-              styles.turnAction,
-              (busy || audio.isRecording || !isSessionActive) && styles.buttonDisabled,
-              pressed && !busy && !audio.isRecording && isSessionActive && styles.buttonPressed,
-            ]}>
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Send</Text>}
-            </Pressable>
-            <Pressable
-              disabled={busy || audio.isPlaying || audio.isRecording}
-              onPress={toggleNativeSpeech}
-              style={({ pressed }) => [
-                styles.secondaryInputButton,
-                styles.turnAction,
-                speech.isListening && styles.nativeSpeechButtonActive,
-                (busy || audio.isPlaying || audio.isRecording) && styles.buttonDisabled,
-                pressed && !busy && !audio.isPlaying && !audio.isRecording && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.secondaryInputButtonText}>
-                {speech.isListening ? 'Stop' : 'Speak'}
-              </Text>
-            </Pressable>
-          </View>
-          {(speech.partialTranscript || speech.finalTranscript || speech.errorMessage) && (
-            <Text style={speech.errorMessage ? styles.audioError : styles.authHint}>
-              {speech.errorMessage ?? speech.partialTranscript ?? speech.finalTranscript}
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.tabs}>
-            <Pressable
-              onPress={() => setActiveTab('corrections')}
-              style={[styles.tabButton, activeTab === 'corrections' && styles.tabButtonActive]}
-            >
-              <Text style={[styles.tabText, activeTab === 'corrections' && styles.tabTextActive]}>
-                Corrections
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setActiveTab('transcript')}
-              style={[styles.tabButton, activeTab === 'transcript' && styles.tabButtonActive]}
-            >
-              <Text style={[styles.tabText, activeTab === 'transcript' && styles.tabTextActive]}>
-                Transcript
-              </Text>
-            </Pressable>
-          </View>
-
-          {activeTab === 'corrections' ? (
-            correctionHistory.length ? correctionHistory.map((correction, index) => (
-              <View key={`${correction.type}-${index}`} style={styles.correction}>
-                <Text style={styles.correctionType}>{correction.type}</Text>
-                <Text style={styles.correctionText}>{correction.originalText} {'->'} {correction.suggestedText}</Text>
-                <Text style={styles.correctionHint}>{correction.explanation}</Text>
-              </View>
-            )) : (
-              <Text style={styles.empty}>No corrections yet.</Text>
-            )
-          ) : (
-            messages.length ? messages.map((message, index) => (
-              <View key={`${message.role}-${index}`} style={styles.transcriptItem}>
-                <Text style={styles.correctionType}>{message.role === 'user' ? 'You' : 'Coach'}</Text>
-                <Text style={styles.correctionHint}>{message.content}</Text>
-              </View>
-            )) : (
-              <Text style={styles.empty}>No transcript yet.</Text>
-            )
-          )}
-
-          {summary && (
-            <View style={styles.summaryBox}>
-              <Text style={styles.correctionType}>Summary</Text>
-              <Text style={styles.correctionHint}>{summary}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.selectorPanel}>
-          <View style={styles.selectorHeader}>
-            <View>
-              <Text style={styles.label}>Practice setup</Text>
-              <Text style={styles.authHint}>{scenario.name} · {accent.name}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.metaLabel}>Scenario</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
-            {scenarios.map(item => {
-              const remoteScenario = remoteScenarios.find(remote => remote.key === item.key)
-              const active = item.key === scenario.key
-              return (
-                <Pressable
-                  key={item.key}
-                  onPress={() => selectScenario(item.key)}
-                  style={[styles.optionCard, active && styles.optionCardActive]}
-                >
-                  <Text style={styles.optionIcon}>{item.icon}</Text>
-                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
-                    {remoteScenario?.label ?? item.name}
-                  </Text>
-                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.difficulty}</Text>
-                </Pressable>
-              )
-            })}
-          </ScrollView>
-
-          <Text style={styles.metaLabel}>Accent</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
-            {accentProfiles.map(item => {
-              const remoteAccent = remoteAccents.find(remote => remote.key === item.key)
-              const active = item.key === accent.key
-              return (
-                <Pressable
-                  key={item.key}
-                  onPress={() => selectAccent(item.key)}
-                  style={[styles.accentChip, active && styles.optionCardActive]}
-                >
-                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>
-                    {remoteAccent?.label ?? item.name}
-                  </Text>
-                  <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>
-                    {remoteAccent?.supported === false ? 'Unavailable' : item.region}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </ScrollView>
-        </View>
-
-        <View style={styles.authPanel}>
-          <View style={styles.authHeader}>
-            <View>
-              <Text style={styles.label}>Mobile API session</Text>
-              <Text style={styles.authHint}>
-                {auth.user?.email ?? auth.message ?? auth.state}
-              </Text>
-            </View>
-            {auth.state === 'signed-in' ? (
-              <View style={styles.signedInActions}>
-                <Pressable disabled={busy} onPress={createApiSession} style={styles.smallButton}>
-                  <Text style={styles.smallButtonText}>Create session</Text>
-                </Pressable>
-                <Pressable onPress={() => void auth.signOut()} style={styles.smallButtonMuted}>
-                  <Text style={styles.smallButtonMutedText}>Sign out</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.modeSwitch}>
-                <Pressable onPress={() => setAuthMode('sign-in')} style={[
-                  styles.modeButton,
-                  authMode === 'sign-in' && styles.modeButtonActive,
-                ]}>
-                  <Text style={[styles.modeButtonText, authMode === 'sign-in' && styles.modeButtonTextActive]}>
-                    Sign in
-                  </Text>
-                </Pressable>
-                <Pressable onPress={() => setAuthMode('sign-up')} style={[
-                  styles.modeButton,
-                  authMode === 'sign-up' && styles.modeButtonActive,
-                ]}>
-                  <Text style={[styles.modeButtonText, authMode === 'sign-up' && styles.modeButtonTextActive]}>
-                    Sign up
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-
-          {auth.state !== 'signed-in' && (
-            <View style={styles.authForm}>
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                inputMode="email"
-                onChangeText={setEmail}
-                placeholder="email@example.com"
-                style={styles.input}
-                value={email}
-              />
-              <TextInput
-                autoCapitalize="none"
-                onChangeText={setPassword}
-                placeholder="Password"
-                secureTextEntry
-                style={styles.input}
-                value={password}
-              />
-              <Pressable
-                disabled={auth.state === 'loading'}
-                onPress={submitAuth}
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  auth.state === 'loading' && styles.buttonDisabled,
-                  pressed && auth.state !== 'loading' && styles.buttonPressed,
-                ]}
-              >
-                <Text style={styles.smallButtonText}>
-                  {auth.state === 'loading' ? 'Loading...' : authMode === 'sign-in' ? 'Sign in' : 'Create account'}
-                </Text>
-              </Pressable>
-            </View>
-          )}
-          {apiSessionId && (
-            <Text style={styles.authHint} numberOfLines={1}>
-              API session: {apiSessionId}
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.historyPanel}>
-          <View style={styles.authHeader}>
-            <View>
-              <Text style={styles.label}>History and review</Text>
-              <Text style={styles.authHint}>
-                {selectedHistory ? `${selectedHistory.scenario} · ${selectedHistory.date}` : 'Load synced sessions'}
-              </Text>
-            </View>
-            <Pressable disabled={historyLoading} onPress={loadHistory} style={styles.smallButton}>
-              <Text style={styles.smallButtonText}>{historyLoading ? 'Loading...' : 'Load'}</Text>
-            </Pressable>
-          </View>
-          {historyError && <Text style={styles.audioError}>{historyError}</Text>}
-          {historySessions.length ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
-              {historySessions.map(item => {
-                const active = item.id === selectedHistory?.id
-                return (
-                  <Pressable
-                    key={String(item.id)}
-                    onPress={() => void selectHistorySession(item)}
-                    style={[styles.historyCard, active && styles.optionCardActive]}
-                  >
-                    <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{item.scenario}</Text>
-                    <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.accent}</Text>
-                    <Text style={[styles.optionMeta, active && styles.optionMetaActive]}>{item.date}</Text>
-                  </Pressable>
-                )
-              })}
-            </ScrollView>
-          ) : (
-            <Text style={styles.empty}>No synced sessions loaded.</Text>
-          )}
-          {selectedHistory && (
-            <View style={styles.summaryBox}>
-              <Text style={styles.correctionType}>Review</Text>
-              <Text style={styles.correctionHint}>
-                {selectedHistory.summary ?? 'No summary saved for this session yet.'}
-              </Text>
-              <Text style={styles.optionMeta}>
-                Status: {String(selectedHistory.status)}
-              </Text>
-              {selectedHistoryTurns.length > 0 && (
-                <Text style={styles.optionMeta}>
-                  Turns: {selectedHistoryTurns.length} · Latest {selectedHistoryTurns[selectedHistoryTurns.length - 1].speaker}
-                </Text>
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.settingsPanel}>
-          <View style={styles.authHeader}>
-            <View>
-              <Text style={styles.label}>Settings</Text>
-              <Text style={styles.authHint}>
-                Voice {ttsProvider} · Speed {ttsSpeed.toFixed(1)}x · Default {scenario.name}
-              </Text>
-            </View>
-            <Pressable disabled={settingsLoading} onPress={loadPreferences} style={styles.smallButton}>
-              <Text style={styles.smallButtonText}>{settingsLoading ? 'Loading...' : 'Load'}</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.metaLabel}>API base URL</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            inputMode="url"
-            onChangeText={setApiBaseUrl}
-            placeholder="http://localhost:3000"
-            style={styles.input}
-            value={apiBaseUrl}
-          />
-          <Text style={styles.metaLabel}>TTS provider</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionRow}>
-            {availableProviders.map(provider => {
-              const active = provider === ttsProvider
-              return (
-                <Pressable
-                  disabled={settingsLoading}
-                  key={provider}
-                  onPress={() => void saveProvider(provider)}
-                  style={[styles.providerChip, active && styles.optionCardActive]}
-                >
-                  <Text style={[styles.optionTitle, active && styles.optionTitleActive]}>{provider}</Text>
-                </Pressable>
-              )
-            })}
-          </ScrollView>
-          <View style={styles.speedRow}>
-            <Pressable onPress={() => adjustSpeed(-0.1)} style={styles.smallButtonMuted}>
-              <Text style={styles.smallButtonMutedText}>Slower</Text>
-            </Pressable>
-            <Text style={styles.speedValue}>{ttsSpeed.toFixed(1)}x</Text>
-            <Pressable onPress={() => adjustSpeed(0.1)} style={styles.smallButtonMuted}>
-              <Text style={styles.smallButtonMutedText}>Faster</Text>
-            </Pressable>
-            <Pressable disabled={settingsLoading} onPress={savePracticePreferences} style={styles.smallButton}>
-              <Text style={styles.smallButtonText}>Save setup</Text>
-            </Pressable>
-          </View>
-          {settingsMessage && <Text style={styles.authHint}>{settingsMessage}</Text>}
-        </View>
-
-      </ScrollView>
+      </View>
     </SafeAreaView>
   )
+
+  function makeStyles() {
+    return StyleSheet.create({
+      shell: { flex: 1, backgroundColor: C.bg },
+      content: { flex: 1 },
+      tabBarWrapper: { paddingHorizontal: 16, paddingBottom: 8, paddingTop: 6, backgroundColor: C.bg },
+      tabBar: {
+        flexDirection: 'row',
+        backgroundColor: C.surface,
+        borderRadius: 24, borderWidth: 1, borderColor: C.border,
+        paddingVertical: 4, paddingHorizontal: 4,
+      },
+      tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8, gap: 2, borderRadius: 20 },
+      tabItemActive: { backgroundColor: C.accent },
+      tabLabel: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
+      tabLabelActive: { color: C.cream },
+    })
+  }
 }
 
-const styles = StyleSheet.create({
-  shell: {
-    flex: 1,
-    backgroundColor: '#f6f3ef',
-  },
-  content: {
-    gap: 18,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    gap: 8,
-    paddingTop: 12,
-  },
-  eyebrow: {
-    color: '#6f7f70',
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: '#17211b',
-    fontSize: 30,
-    fontWeight: '800',
-  },
-  subtitle: {
-    color: '#5f6b62',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  section: {
-    gap: 10,
-  },
-  inputHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  label: {
-    color: '#253128',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  input: {
-    borderColor: '#d8d0c5',
-    borderRadius: 8,
-    borderWidth: 1,
-    color: '#17211b',
-    fontSize: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    backgroundColor: '#fffaf3',
-  },
-  textarea: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-  },
-  sessionControls: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'flex-end',
-  },
-  turnActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  turnAction: {
-    flex: 1,
-  },
-  button: {
-    alignItems: 'center',
-    backgroundColor: '#315f48',
-    borderRadius: 8,
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.65,
-  },
-  buttonPressed: {
-    opacity: 0.86,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryInputButton: {
-    alignItems: 'center',
-    borderColor: '#315f48',
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 46,
-    justifyContent: 'center',
-  },
-  secondaryInputButtonText: {
-    color: '#315f48',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  nativeSpeechButtonActive: {
-    backgroundColor: '#e4dacc',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  metaItem: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    gap: 4,
-    padding: 12,
-  },
-  metaLabel: {
-    color: '#79857b',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  metaValue: {
-    color: '#17211b',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  selectorPanel: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 10,
-    padding: 12,
-  },
-  selectorHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  optionRow: {
-    gap: 10,
-    paddingRight: 4,
-  },
-  optionCard: {
-    backgroundColor: '#f6f0e7',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 6,
-    minHeight: 92,
-    padding: 12,
-    width: 144,
-  },
-  accentChip: {
-    backgroundColor: '#f6f0e7',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 5,
-    minHeight: 68,
-    padding: 12,
-    width: 154,
-  },
-  historyCard: {
-    backgroundColor: '#f6f0e7',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 5,
-    minHeight: 94,
-    padding: 12,
-    width: 168,
-  },
-  providerChip: {
-    alignItems: 'center',
-    backgroundColor: '#f6f0e7',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  optionCardActive: {
-    backgroundColor: '#315f48',
-    borderColor: '#315f48',
-  },
-  optionIcon: {
-    fontSize: 20,
-  },
-  optionTitle: {
-    color: '#17211b',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  optionTitleActive: {
-    color: '#fff',
-  },
-  optionMeta: {
-    color: '#6f7f70',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  optionMetaActive: {
-    color: '#dbe8db',
-  },
-  authPanel: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 12,
-    padding: 12,
-  },
-  historyPanel: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 12,
-    padding: 12,
-  },
-  settingsPanel: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 12,
-    padding: 12,
-  },
-  authHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  authHint: {
-    color: '#6f7f70',
-    fontSize: 12,
-    marginTop: 3,
-  },
-  authForm: {
-    gap: 10,
-  },
-  modeSwitch: {
-    backgroundColor: '#eee6da',
-    borderRadius: 8,
-    flexDirection: 'row',
-    padding: 3,
-  },
-  modeButton: {
-    borderRadius: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-  modeButtonActive: {
-    backgroundColor: '#315f48',
-  },
-  modeButtonText: {
-    color: '#253128',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  modeButtonTextActive: {
-    color: '#fff',
-  },
-  smallButton: {
-    alignItems: 'center',
-    backgroundColor: '#315f48',
-    borderRadius: 8,
-    justifyContent: 'center',
-    minHeight: 38,
-    paddingHorizontal: 12,
-  },
-  smallButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  smallButtonMuted: {
-    alignItems: 'center',
-    backgroundColor: '#e4dacc',
-    borderRadius: 8,
-    justifyContent: 'center',
-    minHeight: 38,
-    paddingHorizontal: 12,
-  },
-  smallButtonMutedText: {
-    color: '#253128',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  signedInActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'flex-end',
-  },
-  speedRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  speedValue: {
-    color: '#17211b',
-    fontSize: 16,
-    fontWeight: '800',
-    minWidth: 52,
-    textAlign: 'center',
-  },
-  stage: {
-    alignItems: 'center',
-    backgroundColor: '#16211b',
-    borderRadius: 10,
-    gap: 12,
-    padding: 22,
-  },
-  voiceMark: {
-    alignItems: 'center',
-    backgroundColor: '#fffaf3',
-    borderRadius: 999,
-    height: 72,
-    justifyContent: 'center',
-    width: 72,
-  },
-  voiceMarkText: {
-    color: '#16211b',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  waveRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    height: 54,
-    justifyContent: 'center',
-  },
-  waveBar: {
-    backgroundColor: '#6f7f70',
-    borderRadius: 999,
-    opacity: 0.45,
-    width: 5,
-  },
-  waveBarActive: {
-    backgroundColor: '#d6c486',
-    opacity: 1,
-  },
-  status: {
-    color: '#b7c5b9',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  audioState: {
-    color: '#8fa394',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  speaker: {
-    color: '#d6c486',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  reply: {
-    color: '#fffaf3',
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 30,
-    textAlign: 'center',
-  },
-  userSubtitle: {
-    color: '#dbe8db',
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 23,
-    textAlign: 'center',
-  },
-  secondaryButton: {
-    borderColor: '#d6c486',
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  secondaryButtonText: {
-    color: '#fffaf3',
-    fontWeight: '800',
-  },
-  stageActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'center',
-  },
-  recordingButton: {
-    backgroundColor: '#7c2f28',
-    borderColor: '#d8a097',
-  },
-  recordingUri: {
-    color: '#b7c5b9',
-    fontSize: 12,
-    maxWidth: '100%',
-  },
-  audioError: {
-    color: '#ffb8ac',
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  tabs: {
-    backgroundColor: '#eee6da',
-    borderRadius: 8,
-    flexDirection: 'row',
-    padding: 3,
-  },
-  tabButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    minHeight: 38,
-    justifyContent: 'center',
-  },
-  tabButtonActive: {
-    backgroundColor: '#315f48',
-  },
-  tabText: {
-    color: '#253128',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  tabTextActive: {
-    color: '#fff',
-  },
-  correction: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 6,
-    padding: 12,
-  },
-  correctionType: {
-    color: '#8b6f28',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  correctionText: {
-    color: '#17211b',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  correctionHint: {
-    color: '#5f6b62',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  empty: {
-    color: '#6f7f70',
-    fontSize: 14,
-  },
-  transcriptItem: {
-    backgroundColor: '#fffaf3',
-    borderColor: '#e1d8cb',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 6,
-    padding: 12,
-  },
-  summaryBox: {
-    backgroundColor: '#eef5ef',
-    borderColor: '#c7d9ca',
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 6,
-    padding: 12,
-  },
-})

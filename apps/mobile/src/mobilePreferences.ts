@@ -1,5 +1,15 @@
 import { createMeteorVoiceApiClient } from '@meteorvoice/api-client'
 
+export type XunfeiVoice = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  status: 'active' | 'expired'
+  expiresAt?: string
+}
+
 type PrefInput = {
   apiBaseUrl: string
   getAuthHeaders: () => HeadersInit
@@ -7,6 +17,8 @@ type PrefInput = {
   ttsSpeed?: number
   defaultScenarioKey?: string
   defaultAccentKey?: string
+  ttsVoiceId?: string | null
+  uiTheme?: string
 }
 
 // 内存中记录同步失败的 key，下次成功 sync 时重试
@@ -28,6 +40,8 @@ export async function syncMobilePreferences(input: PrefInput) {
   if (input.ttsSpeed !== undefined) body.tts_speed = input.ttsSpeed
   if (input.defaultScenarioKey !== undefined) body.default_scenario_key = input.defaultScenarioKey
   if (input.defaultAccentKey !== undefined) body.default_accent_key = input.defaultAccentKey
+  if (input.ttsVoiceId !== undefined) body.tts_voice_id = input.ttsVoiceId
+  if (input.uiTheme !== undefined) body.ui_theme = input.uiTheme
 
   if (Object.keys(body).length === 0) return
 
@@ -54,6 +68,10 @@ export async function pullMobilePreferences(
   defaultAccentKey: string
   locale: string
   availableProviders: string[]
+  ttsVoiceId: string | null
+  xunfeiVoices: XunfeiVoice[]
+  xunfeiVoiceCatalog: XunfeiVoice[]
+  uiTheme: string
 } | null> {
   if (!apiBaseUrl) return null
 
@@ -62,15 +80,24 @@ export async function pullMobilePreferences(
 
   try {
     const api = createMeteorVoiceApiClient({ baseUrl: apiBaseUrl, headers: getAuthHeaders })
-    const prefs = await api.getPreferences()
+    const raw = await api.getPreferences() as {
+      tts_provider?: string; tts_speed?: number; default_scenario_key?: string
+      default_accent_key?: string; locale?: string; available_providers?: string[]
+      tts_voice_id?: string | null; ui_theme?: string
+      xunfei_voices?: { configured?: XunfeiVoice[]; catalog?: XunfeiVoice[] }
+    }
     pendingSyncKeys.clear()
     return {
-      ttsProvider: prefs.tts_provider ?? 'mock',
-      ttsSpeed: prefs.tts_speed ?? 1,
-      defaultScenarioKey: prefs.default_scenario_key ?? 'small-talk',
-      defaultAccentKey: prefs.default_accent_key ?? 'american',
-      locale: prefs.locale ?? 'en',
-      availableProviders: prefs.available_providers ?? [],
+      ttsProvider: raw.tts_provider ?? 'mock',
+      ttsSpeed: raw.tts_speed ?? 1,
+      defaultScenarioKey: raw.default_scenario_key ?? 'small-talk',
+      defaultAccentKey: raw.default_accent_key ?? 'american',
+      locale: raw.locale ?? 'en',
+      availableProviders: raw.available_providers ?? [],
+      ttsVoiceId: raw.tts_voice_id ?? null,
+      xunfeiVoices: raw.xunfei_voices?.configured ?? [],
+      xunfeiVoiceCatalog: raw.xunfei_voices?.catalog ?? [],
+      uiTheme: raw.ui_theme ?? 'forest',
     }
   } catch {
     return null
