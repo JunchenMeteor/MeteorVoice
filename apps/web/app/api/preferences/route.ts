@@ -18,6 +18,7 @@ export async function PATCH(request: Request) {
       default_accent_key?: string
       tts_speed?: number
       tts_voice_id?: string | null
+      ui_theme?: string
     }
     return jsonApiResult(await setPreferences(body))
   } catch (error) {

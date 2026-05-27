@@ -29,6 +29,7 @@ export type PreferencesResponse = {
   default_accent_key?: string
   tts_speed?: number
   tts_voice_id?: string | null
+  ui_theme?: string
 }
 
 export type UpdatePreferencesRequest = {
@@ -38,6 +39,7 @@ export type UpdatePreferencesRequest = {
   default_accent_key?: string
   tts_speed?: number
   tts_voice_id?: string | null
+  ui_theme?: string
 }
 
 export type UpdatePreferencesResponse = {
@@ -47,6 +49,7 @@ export type UpdatePreferencesResponse = {
   default_accent_key: string
   tts_speed: number
   tts_voice_id: string | null
+  ui_theme: string
 }
 
 export type GenerateCoachReplyRequest = {

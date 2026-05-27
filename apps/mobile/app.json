@@ -6,12 +6,16 @@
     "orientation": "portrait",
     "scheme": "meteorvoice",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jcmeteor.meteorvoice",
+      "deploymentTarget": "18.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -23,7 +27,9 @@
         {
           "microphonePermission": "MeteorVoice uses the microphone for voice practice sessions.",
           "speechRecognitionPermission": "MeteorVoice uses speech recognition to turn your practice speech into text.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ],
       [
@@ -34,7 +40,8 @@
           "enableBackgroundRecording": true,
           "enableBackgroundPlayback": true
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
