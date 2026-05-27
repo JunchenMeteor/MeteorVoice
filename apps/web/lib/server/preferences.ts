@@ -15,6 +15,7 @@ export type ProductizedPreferences = {
   default_scenario_key: string
   default_accent_key: string
   tts_speed: number
+  ui_theme: string
 }
 
 type PreferenceRow = {
@@ -24,6 +25,7 @@ type PreferenceRow = {
   default_accent_key?: string | null
   tts_speed?: number | string | null
   tts_voice_id?: string | null
+  ui_theme?: string | null
 } | null
 
 export function normalizeTTSProvider(value?: string | null): TTSProviderPreference {
@@ -111,12 +113,13 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
       default_scenario_key: 'small-talk',
       default_accent_key: 'american',
       tts_speed: 1,
+      ui_theme: 'forest',
     }
   }
 
   let { data, error }: { data: PreferenceRow; error: unknown } = await supabase
     .from('theme_preferences')
-    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id')
+    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id, ui_theme')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -140,6 +143,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
     default_scenario_key: normalizeScenarioKey(data?.default_scenario_key),
     default_accent_key: normalizeAccentKey(data?.default_accent_key),
     tts_speed: normalizeTTSSpeed(data?.tts_speed),
+    ui_theme: data?.ui_theme ?? 'forest',
   }
 }
 
@@ -155,6 +159,7 @@ export async function setPreferences(input: {
   default_accent_key?: string
   tts_speed?: number
   tts_voice_id?: string | null
+  ui_theme?: string
 }) {
   const previous = await getPreferences()
   const supabase = await createClient()
@@ -172,6 +177,7 @@ export async function setPreferences(input: {
   const defaultAccentKey = normalizeAccentKey(input.default_accent_key ?? previous.default_accent_key)
   const ttsSpeed = normalizeTTSSpeed(input.tts_speed ?? previous.tts_speed)
   const ttsVoiceId = normalizeTTSVoiceId(input.tts_voice_id ?? previous.tts_voice_id)
+  const uiTheme = input.ui_theme ?? previous.ui_theme
   let { error } = await supabase
     .from('theme_preferences')
     .upsert({
@@ -182,6 +188,7 @@ export async function setPreferences(input: {
       default_accent_key: defaultAccentKey,
       tts_speed: ttsSpeed,
       tts_voice_id: ttsVoiceId,
+      ui_theme: uiTheme,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
@@ -213,6 +220,7 @@ export async function setPreferences(input: {
     default_scenario_key: defaultScenarioKey,
     default_accent_key: defaultAccentKey,
     tts_speed: ttsSpeed,
+    ui_theme: uiTheme,
   } satisfies ProductizedPreferences
 }
 
