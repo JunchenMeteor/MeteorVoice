@@ -80,12 +80,7 @@ export async function pullMobilePreferences(
 
   try {
     const api = createMeteorVoiceApiClient({ baseUrl: apiBaseUrl, headers: getAuthHeaders })
-    const raw = await api.getPreferences() as {
-      tts_provider?: string; tts_speed?: number; default_scenario_key?: string
-      default_accent_key?: string; locale?: string; available_providers?: string[]
-      tts_voice_id?: string | null; ui_theme?: string
-      xunfei_voices?: { configured?: XunfeiVoice[]; catalog?: XunfeiVoice[] }
-    }
+    const raw = await api.getPreferences()
     pendingSyncKeys.clear()
     return {
       ttsProvider: raw.tts_provider ?? 'mock',
