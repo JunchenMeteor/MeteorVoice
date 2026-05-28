@@ -233,6 +233,10 @@ function AppInner() {
       }
 
       setStatus('session.status.reply_played')
+      if (sessionActiveRef.current) {
+        setStatus('session.status.listening')
+        void speechStartListeningRef.current('en-US')
+      }
     }
 
     const timeout = setTimeout(advanceQueue, 0)
