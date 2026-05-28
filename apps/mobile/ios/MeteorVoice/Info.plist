@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>meteorvoice</string>
-          <string>com.jcmeteor.meteorvoice</string>
+          <string>com.tzcpa.meteorvoice</string>
         </array>
       </dict>
     </array>
