@@ -40,6 +40,7 @@ export type PreferencesResponse = {
   tts_speed?: number
   tts_voice_id?: string | null
   ui_theme?: string
+  ui_theme_updated_at?: string
   xunfei_voices?: { configured?: XunfeiVoiceEntry[]; catalog?: XunfeiVoiceEntry[] }
 }
 

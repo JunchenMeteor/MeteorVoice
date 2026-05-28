@@ -133,6 +133,8 @@ export function SettingsScreen({
     <ScrollView
       style={styles.scrollView}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
     >
       <Text style={styles.title}>{tr('settings.title')}</Text>
 

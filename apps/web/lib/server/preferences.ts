@@ -16,6 +16,7 @@ export type ProductizedPreferences = {
   default_accent_key: string
   tts_speed: number
   ui_theme: string
+  ui_theme_updated_at: string
 }
 
 type PreferenceRow = {
@@ -26,6 +27,7 @@ type PreferenceRow = {
   tts_speed?: number | string | null
   tts_voice_id?: string | null
   ui_theme?: string | null
+  ui_theme_updated_at?: string | null
 } | null
 
 export function normalizeTTSProvider(value?: string | null): TTSProviderPreference {
@@ -117,12 +119,13 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
       default_accent_key: 'american',
       tts_speed: 1,
       ui_theme: 'forest',
+      ui_theme_updated_at: new Date(0).toISOString(),
     }
   }
 
   let { data, error }: { data: PreferenceRow; error: unknown } = await supabase
     .from('theme_preferences')
-    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id, ui_theme')
+    .select('tts_provider, locale, default_scenario_key, default_accent_key, tts_speed, tts_voice_id, ui_theme, ui_theme_updated_at')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -147,6 +150,7 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
     default_accent_key: normalizeAccentKey(data?.default_accent_key),
     tts_speed: normalizeTTSSpeed(data?.tts_speed),
     ui_theme: data?.ui_theme ?? 'forest',
+    ui_theme_updated_at: data?.ui_theme_updated_at ?? new Date(0).toISOString(),
   }
 }
 
@@ -181,6 +185,7 @@ export async function setPreferences(input: {
   const ttsSpeed = normalizeTTSSpeed(input.tts_speed ?? previous.tts_speed)
   const ttsVoiceId = normalizeTTSVoiceId(input.tts_voice_id ?? previous.tts_voice_id)
   const uiTheme = input.ui_theme ?? previous.ui_theme
+  const uiThemeUpdatedAt = input.ui_theme !== undefined ? new Date().toISOString() : previous.ui_theme_updated_at
   let { error } = await supabase
     .from('theme_preferences')
     .upsert({
@@ -192,6 +197,7 @@ export async function setPreferences(input: {
       tts_speed: ttsSpeed,
       tts_voice_id: ttsVoiceId,
       ui_theme: uiTheme,
+      ui_theme_updated_at: uiThemeUpdatedAt,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
@@ -224,6 +230,7 @@ export async function setPreferences(input: {
     default_accent_key: defaultAccentKey,
     tts_speed: ttsSpeed,
     ui_theme: uiTheme,
+    ui_theme_updated_at: uiThemeUpdatedAt,
   } satisfies ProductizedPreferences
 }
 
