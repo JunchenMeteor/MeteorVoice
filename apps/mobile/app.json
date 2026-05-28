@@ -10,7 +10,7 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.jcmeteor.meteorvoice",
+      "bundleIdentifier": "com.tzcpa.meteorvoice",
       "deploymentTarget": "18.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions.",
