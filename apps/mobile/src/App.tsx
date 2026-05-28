@@ -163,6 +163,7 @@ function AppInner() {
   const endpointRequestRef = useRef(0)
   const sessionActiveRef = useRef(false)
   const pendingNativeTranscriptRef = useRef('')
+  const isCorrectionPlayingRef = useRef(false)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -232,6 +233,10 @@ function AppInner() {
         return
       }
 
+      if (isCorrectionPlayingRef.current) {
+        isCorrectionPlayingRef.current = false
+        return
+      }
       setStatus('session.status.reply_played')
       if (sessionActiveRef.current) {
         setStatus('session.status.listening')
@@ -649,7 +654,10 @@ function AppInner() {
 
   function playCorrection(text: string) {
     void synthesizeCoachSpeech(text).then(voice => {
-      if (voice.audioUrl) setAudioUrl(voice.audioUrl)
+      if (voice.audioUrl) {
+        isCorrectionPlayingRef.current = true
+        setAudioUrl(voice.audioUrl)
+      }
     }).catch(() => {})
   }
 
