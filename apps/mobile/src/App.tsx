@@ -174,7 +174,10 @@ function AppInner() {
     setThemeLocal(k)
   }, [setThemeLocal])
   const setTheme = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
+    themeInitializedRef.current = true
     setThemeLocal(k)
+    const now = new Date().toISOString()
+    void SecureStore.setItemAsync('theme_set_at', now)
     void api.updatePreferences({ ui_theme: k }).catch(() => {})
   }, [setThemeLocal, api])
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
@@ -616,7 +619,13 @@ function AppInner() {
     if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
     if (prefs.uiTheme && !themeInitializedRef.current) {
       themeInitializedRef.current = true
-      applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+      void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
+        const serverTs = new Date(prefs.uiThemeUpdatedAt).getTime()
+        const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
+        if (serverTs >= localTs) {
+          applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
+        }
+      })
     }
   }, [applyThemeLocal])
 

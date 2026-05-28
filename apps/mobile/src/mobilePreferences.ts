@@ -72,6 +72,7 @@ export async function pullMobilePreferences(
   xunfeiVoices: XunfeiVoice[]
   xunfeiVoiceCatalog: XunfeiVoice[]
   uiTheme: string
+  uiThemeUpdatedAt: string
 } | null> {
   if (!apiBaseUrl) return null
 
@@ -93,6 +94,7 @@ export async function pullMobilePreferences(
       xunfeiVoices: raw.xunfei_voices?.configured ?? [],
       xunfeiVoiceCatalog: raw.xunfei_voices?.catalog ?? [],
       uiTheme: raw.ui_theme ?? 'forest',
+      uiThemeUpdatedAt: raw.ui_theme_updated_at ?? new Date(0).toISOString(),
     }
   } catch {
     return null
