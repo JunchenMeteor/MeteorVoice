@@ -246,8 +246,11 @@ function AppInner() {
           ? 'session.status.listening'
           : 'session.status.reply_played')
         if (sessionActiveRef.current && canListenOnRouteRef.current) {
-          listeningStartMsRef.current = Date.now()
-          void speechStartListeningRef.current('en-US')
+          setTimeout(() => {
+            if (cancelled || !sessionActiveRef.current || !canListenOnRouteRef.current) return
+            listeningStartMsRef.current = Date.now()
+            void speechStartListeningRef.current('en-US')
+          }, 900)
         }
         return
       }
@@ -274,9 +277,12 @@ function AppInner() {
       playbackActiveRef.current = false
       setStatus('session.status.reply_played')
       if (sessionActiveRef.current && canListenOnRouteRef.current) {
-        listeningStartMsRef.current = Date.now()
-        setStatus('session.status.listening')
-        void speechStartListeningRef.current('en-US')
+        setTimeout(() => {
+          if (cancelled || !sessionActiveRef.current || !canListenOnRouteRef.current) return
+          listeningStartMsRef.current = Date.now()
+          setStatus('session.status.listening')
+          void speechStartListeningRef.current('en-US')
+        }, 900)
       }
     }
 
@@ -567,6 +573,7 @@ function AppInner() {
 
   async function saveProvider(provider: string) {
     setTtsProvider(provider)
+    setAudioUrl(null)
     setSettingsLoading(true)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') {
@@ -647,6 +654,7 @@ function AppInner() {
 
   async function selectVoiceProfile(profile: VoiceProfile) {
     if (profile.status !== 'active') return
+    setAudioUrl(null)
     setSelectedVoiceProfileId(profile.id)
     setTtsProvider(profile.provider)
     setTtsVoiceId(profile.providerVoiceId)
