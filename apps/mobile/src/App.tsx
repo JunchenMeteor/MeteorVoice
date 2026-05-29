@@ -11,10 +11,8 @@ import {
 import {
   createMeteorVoiceApiClient,
   MeteorVoiceApiError,
-  type AccentDto,
   type HistorySession,
   type PreferencesResponse,
-  type ScenarioDto,
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
@@ -49,6 +47,7 @@ import {
   type ConversationMessage,
   type ConversationResponse,
   type Locale,
+  type VoiceProfile,
 } from '@meteorvoice/shared'
 
 import * as SecureStore from 'expo-secure-store'
@@ -147,10 +146,9 @@ function AppInner() {
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
+  const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
   const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiVoice[]>([])
-  const [xunfeiVoiceCatalog, setXunfeiVoiceCatalog] = useState<XunfeiVoice[]>([])
-  const [remoteScenarios, setRemoteScenarios] = useState<ScenarioDto[]>([])
-  const [remoteAccents, setRemoteAccents] = useState<AccentDto[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-session'))
@@ -494,13 +492,6 @@ function AppInner() {
     setStatus('session.status.scenario_selected')
   }
 
-  function selectAccent(key: string) {
-    setSelectedAccentKey(key)
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    setStatus('session.status.accent_selected')
-  }
-
   async function loadHistory() {
     if (historyLoading) return
     setHistoryLoading(true)
@@ -557,16 +548,12 @@ function AppInner() {
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
       setTtsSpeed(preferences.tts_speed ?? 1)
       if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+      if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
+      if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
       if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
-      if (preferences.xunfei_voices?.catalog) setXunfeiVoiceCatalog(preferences.xunfei_voices.catalog)
       if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-      if (preferences.default_accent_key) setSelectedAccentKey(preferences.default_accent_key)
-      const [scenarioResult, accentResult] = await Promise.all([
-        api.listScenarios(preferences.locale ?? 'en'),
-        api.listAccents({ locale: preferences.locale ?? 'en', provider: preferences.tts_provider ?? 'mock' }),
-      ])
-      setRemoteScenarios(scenarioResult.scenarios)
-      setRemoteAccents(accentResult.accents)
+      const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
+      if (profile) setSelectedAccentKey(profile.accentKey)
       setSettingsMessage(tr('session.status.preferences_loaded'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
@@ -592,11 +579,14 @@ function AppInner() {
       const result = await api.updatePreferences({
         tts_provider: provider,
         default_scenario_key: selectedScenarioKey,
-        default_accent_key: selectedAccentKey,
         tts_speed: ttsSpeed,
       })
       setTtsProvider(result.tts_provider)
       setTtsSpeed(result.tts_speed)
+      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
+      if (result.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(result.selected_voice_profile_id)
+      const profile = result.voice_profiles?.find(item => item.id === result.selected_voice_profile_id)
+      if (profile) setSelectedAccentKey(profile.accentKey)
       setSettingsMessage(tr('session.status.preferences_saved'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
@@ -621,11 +611,12 @@ function AppInner() {
       const result = await api.updatePreferences({
         tts_provider: ttsProvider,
         default_scenario_key: selectedScenarioKey,
-        default_accent_key: selectedAccentKey,
         tts_speed: ttsSpeed,
       })
       setTtsProvider(result.tts_provider)
       setTtsSpeed(result.tts_speed)
+      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
+      if (result.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(result.selected_voice_profile_id)
       setSettingsMessage(tr('session.status.practice_defaults_saved'))
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
@@ -648,20 +639,27 @@ function AppInner() {
           ttsSpeed: next,
           ttsProvider,
           defaultScenarioKey: selectedScenarioKey,
-          defaultAccentKey: selectedAccentKey,
         })
       }, 600)
       return next
     })
   }
 
-  async function selectVoice(voiceId: string) {
-    setTtsVoiceId(voiceId)
+  async function selectVoiceProfile(profile: VoiceProfile) {
+    if (profile.status !== 'active') return
+    setSelectedVoiceProfileId(profile.id)
+    setTtsProvider(profile.provider)
+    setTtsVoiceId(profile.providerVoiceId)
+    setSelectedAccentKey(profile.accentKey)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') return
 
     try {
-      await api.updatePreferences({ tts_voice_id: voiceId })
+      const result = await api.updatePreferences({ selected_voice_profile_id: profile.id })
+      setTtsProvider(result.tts_provider)
+      setTtsVoiceId(result.tts_voice_id)
+      setSelectedVoiceProfileId(result.selected_voice_profile_id)
+      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
     } catch {
       // 静默失败
     }
@@ -680,10 +678,12 @@ function AppInner() {
     setTtsSpeed(prefs.ttsSpeed)
     setAvailableProviders(prefs.availableProviders)
     setTtsVoiceId(prefs.ttsVoiceId)
+    setVoiceProfiles(prefs.voiceProfiles)
+    setSelectedVoiceProfileId(prefs.selectedVoiceProfileId)
     if (prefs.xunfeiVoices.length > 0) setXunfeiVoices(prefs.xunfeiVoices)
-    if (prefs.xunfeiVoiceCatalog.length > 0) setXunfeiVoiceCatalog(prefs.xunfeiVoiceCatalog)
     if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
-    if (prefs.defaultAccentKey) setSelectedAccentKey(prefs.defaultAccentKey)
+    const profile = prefs.voiceProfiles.find(item => item.id === prefs.selectedVoiceProfileId)
+    if (profile) setSelectedAccentKey(profile.accentKey)
     if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
     if (prefs.uiTheme && !themeInitializedRef.current) {
       themeInitializedRef.current = true
@@ -702,10 +702,12 @@ function AppInner() {
     setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
     setTtsSpeed(preferences.tts_speed ?? 1)
     if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+    if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
+    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
     if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
-    if (preferences.xunfei_voices?.catalog) setXunfeiVoiceCatalog(preferences.xunfei_voices.catalog)
     if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-    if (preferences.default_accent_key) setSelectedAccentKey(preferences.default_accent_key)
+    const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
+    if (profile) setSelectedAccentKey(profile.accentKey)
     if (preferences.locale === 'zh' || preferences.locale === 'en') setLocale(preferences.locale)
   }, [setLocale])
 
@@ -821,12 +823,9 @@ function AppInner() {
             availableProviders={availableProviders}
             ttsSpeed={ttsSpeed}
             ttsVoiceId={ttsVoiceId}
+            voiceProfiles={voiceProfiles}
+            selectedVoiceProfileId={selectedVoiceProfileId}
             xunfeiVoices={xunfeiVoices}
-            xunfeiVoiceCatalog={xunfeiVoiceCatalog}
-            remoteAccents={remoteAccents}
-            remoteScenarios={remoteScenarios}
-            accentProfiles={accentProfiles}
-            selectedAccentKey={selectedAccentKey}
             settingsLoading={settingsLoading}
             settingsMessage={settingsMessage}
             auth={auth}
@@ -840,8 +839,7 @@ function AppInner() {
             onAdjustSpeed={adjustSpeed}
             onSavePracticePreferences={() => void savePracticePreferences()}
             onLoadPreferences={() => void loadPreferences()}
-            onSelectAccent={selectAccent}
-            onSelectVoice={id => void selectVoice(id)}
+            onSelectVoiceProfile={profile => void selectVoiceProfile(profile)}
             onSetEmail={setEmail}
             onSetPassword={setPassword}
             onSetAuthMode={setAuthMode}

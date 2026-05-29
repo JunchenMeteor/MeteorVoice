@@ -7,6 +7,7 @@
 - `supabase/migrations/003_tts_preferences.sql` adds the per-user TTS provider preference.
 - `supabase/migrations/004_productized_preferences.sql` adds locale, default scenario/accent, and TTS speed preferences for Web/Mobile sync.
 - `supabase/migrations/005_tts_voice_preferences.sql` adds the selected TTS coach voice id.
+- `supabase/migrations/008_voice_profile_preferences.sql` adds the provider-neutral coach voice profile catalog, stores `selected_voice_profile_id`, and removes `default_accent_key`.
 - The app uses Supabase Auth with a MeteorTest-style username/phone account input.
 
 ## Username + Phone Login Mode
@@ -42,8 +43,9 @@ This gives you a single login surface with two formal account types:
 3. Run `002_rls.sql`.
 4. Run `003_tts_preferences.sql`.
 5. Run `004_productized_preferences.sql`.
-6. Copy the project URL and anon key into `.env.local`.
-7. Set Authentication redirect URLs for local development.
+6. Run `005_tts_voice_preferences.sql` through `008_voice_profile_preferences.sql`.
+7. Copy the project URL and anon key into `.env.local`.
+8. Set Authentication redirect URLs for local development.
 
 ## What the RLS Policies Do
 
@@ -51,9 +53,15 @@ This gives you a single login surface with two formal account types:
 - Turns and correction items are only accessible through the owner session.
 - Learning history and theme preferences are user-scoped.
 - The selected TTS provider is stored on `theme_preferences.tts_provider` and protected by the same user-owned policy.
-- Locale, default scenario/accent, and TTS speed are stored on `theme_preferences` and protected by the same user-owned policy.
-- The selected TTS coach voice id is stored on `theme_preferences.tts_voice_id` and protected by the same user-owned policy.
+- Locale, default scenario, TTS speed, TTS provider, selected voice profile id, and provider voice id are stored on `theme_preferences` and protected by the same user-owned policy.
+- Coach voice catalog rows are stored on `tts_voice_profiles` and readable by anon/authenticated clients through the server API.
 - Accent profiles and scenarios are readable by authenticated users.
+
+## Coach Voice Profiles
+
+`tts_voice_profiles` is the editable catalog for all provider voices. Insert one row per voice. Use `provider_voice_id` for the value required by the provider API, and use `display_name`, `display_name_zh`, `gender`, `style`, `quality_tier`, `status`, and `expires_at` for UI and availability.
+
+`accent_key`, `accent_label`, and `accent_region` are metadata on the voice profile. They are not a separate user preference.
 
 ## Notes on Admin Accounts
 

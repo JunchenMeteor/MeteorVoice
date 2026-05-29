@@ -1,4 +1,5 @@
 import type { TTSProvider, TTSResult } from './types'
+import { getAzureVoiceIdForAccent, isAzureVoiceId } from './azure-voices'
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim()
@@ -6,15 +7,15 @@ function requireEnv(name: string) {
   return value
 }
 
-// Maps MeteorVoice accent keys to Azure Neural voice names
-function voiceForAccent(accent?: string): string {
-  const normalized = accent?.toLowerCase() ?? ''
-  if (normalized.includes('british')) return process.env.AZURE_TTS_VOICE_BRITISH || 'en-GB-SoniaNeural'
-  if (normalized.includes('australian')) return process.env.AZURE_TTS_VOICE_AUSTRALIAN || 'en-AU-NatashaNeural'
-  if (normalized.includes('indian')) return process.env.AZURE_TTS_VOICE_INDIAN || 'en-IN-NeerjaNeural'
-  if (normalized.includes('singapore')) return process.env.AZURE_TTS_VOICE_SINGAPORE || 'en-SG-LunaNeural'
-  if (normalized.includes('african')) return process.env.AZURE_TTS_VOICE_AFRICAN || 'en-ZA-LeahNeural'
-  return process.env.AZURE_TTS_VOICE_AMERICAN || 'en-US-JennyNeural'
+function resolveAzureVoice(accent?: string, voiceId?: string) {
+  if (voiceId?.trim()) {
+    const selected = voiceId.trim()
+    if (!isAzureVoiceId(selected)) {
+      throw new Error(`Unknown Azure voice "${selected}". Choose a configured Azure voice profile.`)
+    }
+    return selected
+  }
+  return getAzureVoiceIdForAccent(accent)
 }
 
 function speedToRate(speed?: number): string {
@@ -29,8 +30,8 @@ export function createAzureTTS(): TTSProvider {
   const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`
 
   return {
-    async synthesize(text: string, options?: { accent?: string; speed?: number }): Promise<TTSResult> {
-      const voice = voiceForAccent(options?.accent)
+    async synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult> {
+      const voice = resolveAzureVoice(options?.accent, options?.voiceId)
       const rate = speedToRate(options?.speed)
       const ssml = `<speak version="1.0" xml:lang="en-US"><voice name="${voice}"><prosody rate="${rate}">${text}</prosody></voice></speak>`
 

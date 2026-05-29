@@ -2,35 +2,11 @@
 
 import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
-import { accentProfiles, getAccentLabel } from '@/lib/scenarios'
-import { supportsAccent } from '@/lib/providers/tts-capabilities'
 import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import type { Locale } from '@meteorvoice/shared'
+import type { Locale, VoiceProfile } from '@meteorvoice/shared'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
-
-type XunfeiConfiguredVoice = {
-  id: string
-  name: string
-  language: 'en' | 'zh'
-  gender: 'male' | 'female'
-  tier: 'featured' | 'base'
-  expiresAt?: string
-  envKey: string
-  usage: string
-  status: 'active' | 'expired'
-}
-
-type XunfeiVoiceOption = {
-  id: string
-  name: string
-  language: 'en' | 'zh'
-  gender: 'male' | 'female'
-  tier: 'featured' | 'base'
-  expiresAt?: string
-  status: 'active' | 'expired'
-}
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
@@ -44,31 +20,35 @@ function formatTtsSpeed(speed: number) {
   return `${speed.toFixed(2).replace(/0$/, '')}x`
 }
 
-function formatDateTime(value?: string) {
-  if (!value) return ''
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Shanghai',
-  }).format(new Date(value))
+function formatVoiceProfileMeta(profile: VoiceProfile, t: (key: string) => string) {
+  const parts = [
+    t(`settings.tts_provider_${profile.provider}`) !== `settings.tts_provider_${profile.provider}`
+      ? t(`settings.tts_provider_${profile.provider}`)
+      : profile.provider,
+    profile.locale === 'zh' ? t('settings.xunfei_voice_language_zh') : t('settings.xunfei_voice_language_en'),
+    profile.gender ? t(`settings.xunfei_voice_gender_${profile.gender}`) : null,
+    profile.qualityTier ? t(`settings.xunfei_voice_tier_${profile.qualityTier}`) : null,
+    profile.accentLabel ?? null,
+    profile.accentRegion ?? null,
+    profile.style ?? null,
+  ].filter(Boolean)
+  return parts.join(' · ')
 }
 
-function initialDefaultAccent() {
-  if (typeof window === 'undefined') return 'american'
-  return localStorage.getItem('coach-default-accent') ?? 'american'
+function getVoiceProfileName(profile: VoiceProfile, locale: Locale) {
+  return locale === 'zh' ? profile.displayNameZh ?? profile.displayName : profile.displayName
 }
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const { locale, setLocale } = useLocale()
   const t = useT()
-  const [defaultAccent, setDefaultAccent] = useState(initialDefaultAccent)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
+  const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
-  const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiConfiguredVoice[]>([])
-  const [xunfeiVoiceCatalog, setXunfeiVoiceCatalog] = useState<XunfeiVoiceOption[]>([])
 
   useEffect(() => {
     async function loadTtsProvider() {
@@ -79,16 +59,17 @@ export default function SettingsPage() {
           available_providers?: string[]
           tts_speed?: number
           tts_voice_id?: string | null
-          xunfei_voices?: { configured?: XunfeiConfiguredVoice[]; catalog?: XunfeiVoiceOption[] }
+          voice_profiles?: VoiceProfile[]
+          selected_voice_profile_id?: string | null
         }
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
+        if (data.voice_profiles) setVoiceProfiles(data.voice_profiles)
+        if ('selected_voice_profile_id' in data) setSelectedVoiceProfileId(data.selected_voice_profile_id ?? null)
         if ('tts_voice_id' in data) {
           setTtsVoiceId(data.tts_voice_id ?? null)
           writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
         }
-        if (data.xunfei_voices?.configured) setXunfeiVoices(data.xunfei_voices.configured)
-        if (data.xunfei_voices?.catalog) setXunfeiVoiceCatalog(data.xunfei_voices.catalog)
         if (typeof data.tts_speed === 'number') {
           const serverSpeed = data.tts_speed
           const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
@@ -103,21 +84,16 @@ export default function SettingsPage() {
     void loadTtsProvider()
   }, [])
 
-  function handleAccentChange(key: string) {
-    if (!supportsAccent(ttsProvider, key)) return
-    setDefaultAccent(key)
-    localStorage.setItem('coach-default-accent', key)
-    void persistPreference('default_accent_key', key)
-  }
-
   function handleTtsProviderChange(key: string) {
     setTtsProvider(key)
-    if (!supportsAccent(key, defaultAccent)) {
-      setDefaultAccent('american')
-      localStorage.setItem('coach-default-accent', 'american')
-      void persistPreference('default_accent_key', 'american')
+    const nextProfile = voiceProfiles.find(profile => profile.provider === key && profile.status === 'active')
+    if (nextProfile) {
+      setSelectedVoiceProfileId(nextProfile.id)
+      setTtsVoiceId(nextProfile.providerVoiceId)
+      writeTTSVoiceIdPreference(nextProfile.providerVoiceId)
     }
     void persistPreference('tts_provider', key)
+    if (nextProfile) void persistPreference('selected_voice_profile_id', nextProfile.id)
   }
 
   function handleTtsSpeedChange(index: number) {
@@ -126,11 +102,19 @@ export default function SettingsPage() {
     void persistTTSSpeedPreference(next)
   }
 
-  function handleTtsVoiceChange(voiceId: string) {
-    setTtsVoiceId(voiceId)
-    writeTTSVoiceIdPreference(voiceId)
-    void persistPreference('tts_voice_id', voiceId)
+  function handleVoiceProfileChange(profile: VoiceProfile) {
+    if (profile.status !== 'active') return
+    setSelectedVoiceProfileId(profile.id)
+    setTtsProvider(profile.provider)
+    setTtsVoiceId(profile.providerVoiceId)
+    writeTTSVoiceIdPreference(profile.providerVoiceId)
+    void persistPreference('selected_voice_profile_id', profile.id)
   }
+
+  const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
+  const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
+    ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
+    ?? providerVoiceProfiles.find(profile => profile.status === 'active')
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -188,35 +172,6 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('settings.default_accent')}</CardTitle>
-          <CardDescription>{t('settings.default_accent_desc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {accentProfiles.map(a => {
-              const enabled = supportsAccent(ttsProvider, a.key)
-              return (
-              <button
-                key={a.key}
-                type="button"
-                onClick={() => handleAccentChange(a.key)}
-                disabled={!enabled}
-                title={enabled ? getAccentLabel(a, locale) : t('settings.accent_not_supported')}
-                className={`chip-action ${a.key === defaultAccent ? 'is-active' : ''} ${enabled ? '' : 'opacity-40 cursor-not-allowed'}`}
-              >
-                {getAccentLabel(a, locale)}
-              </button>
-              )
-            })}
-          </div>
-          <p className="text-xs text-[var(--theme-text-muted)] mt-3">
-            {t('settings.accent_provider_hint')}
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>{t('settings.ai_provider')}</CardTitle>
           <CardDescription>{t('settings.ai_mode')}</CardDescription>
         </CardHeader>
@@ -259,79 +214,56 @@ export default function SettingsPage() {
           <p className="text-xs text-[var(--theme-text-muted)] mt-3">
             {t('settings.tts_provider_hint')}
           </p>
-          {ttsProvider === 'xunfei' && (
-            <div className="mt-4 rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-[var(--theme-text-primary)]">
-                  {t('settings.xunfei_voice_config')}
-                </p>
-                <span className={`status-badge ${availableProviders.includes('xunfei') ? 'success' : 'warning'}`}>
-                  {availableProviders.includes('xunfei') ? t('settings.xunfei_voice_available') : t('settings.xunfei_voice_unavailable')}
-                </span>
-              </div>
-              {xunfeiVoices.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  {xunfeiVoices.map(voice => (
-                    <div
-                      key={`${voice.envKey}-${voice.id}`}
-                      className="rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-[var(--theme-text-primary)]">{voice.name}</span>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="status-badge">{t('settings.xunfei_voice_default')}</span>
-                          <span className={`status-badge ${voice.status === 'active' ? 'success' : 'warning'}`}>
-                            {voice.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.xunfei_voice_expired')}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
-                        {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
-                      </p>
-                      {voice.expiresAt && (
-                        <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
-                          {t('settings.xunfei_voice_expires').replace('{date}', formatDateTime(voice.expiresAt))}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-[var(--theme-text-muted)]">
-                  {t('settings.xunfei_voice_empty')}
-                </p>
-              )}
-              <p className="mt-3 text-xs text-[var(--theme-text-muted)]">
-                {t('settings.xunfei_voice_billing_hint')}
+          <div className="mt-4 rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                {t('settings.voice_profile_current')}
               </p>
-              {xunfeiVoiceCatalog.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm font-medium text-[var(--theme-text-primary)]">
-                    {t('settings.xunfei_voice_select')}
-                  </p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {xunfeiVoiceCatalog.map(voice => {
-                      const isExpired = voice.status === 'expired'
-                      return (
-                        <button
-                          key={voice.id}
-                          type="button"
-                          disabled={isExpired}
-                          onClick={() => handleTtsVoiceChange(voice.id)}
-                          className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${ttsVoiceId === voice.id ? 'is-active' : ''} ${isExpired ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        >
-                          <span className="text-sm font-medium">{voice.name}</span>
-                          <span className="text-xs text-[var(--theme-text-muted)]">
-                            {t(`settings.xunfei_voice_gender_${voice.gender}`)} · {t(`settings.xunfei_voice_language_${voice.language}`)} · {t(`settings.xunfei_voice_tier_${voice.tier}`)}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+              {selectedVoiceProfile && (
+                <span className={`status-badge ${selectedVoiceProfile.status === 'active' ? 'success' : 'warning'}`}>
+                  {selectedVoiceProfile.status === 'active' ? t('settings.xunfei_voice_active') : t('settings.voice_profile_unavailable')}
+                </span>
               )}
             </div>
-          )}
+            {selectedVoiceProfile ? (
+              <div className="mt-3 rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)] px-3 py-2">
+                <p className="text-sm font-medium text-[var(--theme-text-primary)]">{getVoiceProfileName(selectedVoiceProfile, locale)}</p>
+                <p className="mt-1 text-xs text-[var(--theme-text-muted)]">
+                  {formatVoiceProfileMeta(selectedVoiceProfile, t)}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--theme-text-muted)]">
+                {t('settings.voice_profile_empty')}
+              </p>
+            )}
+            {providerVoiceProfiles.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-[var(--theme-text-primary)]">
+                  {t('settings.voice_profile_select')}
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {providerVoiceProfiles.map(profile => {
+                    const unavailable = profile.status !== 'active'
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        disabled={unavailable}
+                        onClick={() => handleVoiceProfileChange(profile)}
+                        className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${selectedVoiceProfile?.id === profile.id ? 'is-active' : ''} ${unavailable ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        <span className="text-sm font-medium">{getVoiceProfileName(profile, locale)}</span>
+                        <span className="text-xs text-[var(--theme-text-muted)]">
+                          {formatVoiceProfileMeta(profile, t)}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
