@@ -23,6 +23,7 @@
     "@supabase/supabase-js": "^2.106.1",
     "expo": "~55.0.0",
     "expo-audio": "~55.0.14",
+    "expo-constants": "~55.0.16",
     "expo-secure-store": "~55.0.14",
     "expo-speech-recognition": "^56.0.0",
     "react": "19.2.0",

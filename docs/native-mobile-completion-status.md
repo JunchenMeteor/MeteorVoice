@@ -21,7 +21,7 @@
   - Scenario/accent selection from `packages/shared`。
   - Text/native speech turn -> `/api/chat` -> `/api/tts` -> native playback。
   - Native speech recognition adapter 已接入 `expo-speech-recognition`，业务 UI 通过 `apps/mobile/src/nativeSpeech.ts` 调用。
-  - TTS sentence pipeline 已接入，首句先播放，后续音频按队列顺序播放。
+  - TTS 当前保持整段 coach reply 合成和播放；Web/Mobile 均不采用 sentence/chunk playback。
   - Native recording/playback adapter，包含权限、前后台、并发操作保护。
   - Mobile session UX：start/continue/end、current subtitles、Corrections/Transcript tabs、summary、history/review、settings/preferences。
   - Mobile 会话页已从 architecture probe 调整为正式 Voice Practice 布局，核心说话舞台前置。
@@ -42,6 +42,21 @@ npm run mobile:config
 npm run mobile:typecheck
 ```
 
+## 2026-05-29 Mobile Bug Review
+
+详见 `docs/mobile-bug-review-2026-05-29.md`。
+
+本轮已修复：
+
+- Coach TTS 播放期间 native speech 仍在监听，导致 AI 把自己播放内容当作用户输入并循环回复。
+- 前后台切换后 stale speech/endpointing 继续提交，导致返回前台后出现网络请求失败。
+- 前台恢复时使用权限检查替代权限请求，避免无操作触发麦克风弹窗。
+- Mobile 会话页补齐 text input fallback。
+- Mobile TTS 请求补齐 `voiceId`，让已保存的 Xunfei 发音人选择真正生效。
+- Mobile 明确不启用分句合成，保持与 Web 当前产品方向一致。
+- Correction replay 不再污染下一轮正常 playback completion。
+- Mobile 启动/API URL 变化时主动拉取 server provider capability，避免 Azure/Xunfei 在 Web 可见但 Mobile 仍只显示 mock。
+
 Mobile 本地运行：
 
 ```bash
@@ -57,6 +72,7 @@ npm run mobile:android
 - Mobile settings、default scenario/accent、TTS provider 和 speed 已走 preferences API；仍需要跨设备实际账号回归。
 - History/review 已有 session turn detail API；audio replay metadata 仍可后续扩展。
 - 未提交 generated native `ios/`、`android/` 工程目录；当前仍以 Expo managed + local development build 为主。
+- Bluetooth/headphone route、iOS/Android 真机前后台恢复和 audio interruption 仍需要按 `docs/mobile-audio-qa-checklist.md` 做真实设备记录。
 
 ## 后续产品化入口
 
@@ -73,6 +89,6 @@ npm run mobile:android
 - Preferences API 已扩展 locale、默认 scenario/accent 和 TTS speed，并配套 Supabase migration。
 - Mobile 已接入新增 API，用于远端场景/口音能力、默认练习设置保存和历史 turn detail 查看。
 - session-core 已新增平台无关 next action、no-speech、playback restore、end-session、coach reply orchestration、route pause、error recovery 和 playback queue 判断。
-- Mobile 已接入 native speech adapter、TTS sentence playback queue 和正式练习页布局。
+- Mobile 已接入 native speech adapter 和正式练习页布局；TTS sentence playback queue 已明确不作为当前方案。
 - CI 已补齐 GitHub Actions 基础流程：lint、mobile typecheck/config、test 和 web build。
 - 口音与语音能力专项仍未开始。

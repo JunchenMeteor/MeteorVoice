@@ -13,6 +13,7 @@ import {
   MeteorVoiceApiError,
   type AccentDto,
   type HistorySession,
+  type PreferencesResponse,
   type ScenarioDto,
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
@@ -21,7 +22,6 @@ import {
   advancePlaybackQueue,
   canAcceptUserTranscript,
   canEndSession,
-  continueListening as continueListeningSnapshot,
   createPlaybackQueueSnapshot,
   createInitialSnapshot,
   endActiveSession,
@@ -56,13 +56,15 @@ import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
 import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
+import { getDefaultApiBaseUrl } from './mobileConfig'
 import { ThemeProvider, useTheme } from './ThemeProvider'
 import { SessionScreen } from './screens/SessionScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 
-const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000'
+const defaultApiBaseUrl = getDefaultApiBaseUrl()
+const apiBaseUrlStorageKey = 'api_base_url'
 type Tab = 'session' | 'home' | 'history' | 'settings'
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -123,6 +125,12 @@ function AppInner() {
   useEffect(() => {
     SecureStore.getItemAsync('app_locale').then(v => { if (v === 'zh' || v === 'en') setLocaleState(v) })
   }, [])
+  useEffect(() => {
+    SecureStore.getItemAsync(apiBaseUrlStorageKey).then(value => {
+      const stored = value?.trim()
+      if (stored) setApiBaseUrl(stored)
+    })
+  }, [])
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l)
     void SecureStore.setItemAsync('app_locale', l)
@@ -160,8 +168,11 @@ function AppInner() {
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
+  const speechCancelListeningRef = useRef<() => void>(() => undefined)
   const endpointRequestRef = useRef(0)
   const sessionActiveRef = useRef(false)
+  const canListenOnRouteRef = useRef(true)
+  const playbackActiveRef = useRef(false)
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
 
@@ -183,10 +194,23 @@ function AppInner() {
   }, [setThemeLocal, api])
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
+  const updateApiBaseUrl = useCallback((value: string) => {
+    setApiBaseUrl(value)
+    const normalized = value.trim()
+    if (!normalized || normalized === defaultApiBaseUrl) {
+      void SecureStore.deleteItemAsync(apiBaseUrlStorageKey)
+      return
+    }
+    void SecureStore.setItemAsync(apiBaseUrlStorageKey, normalized)
+  }, [])
+
   function startSession() {
+    endpointRequestRef.current += 1
+    playbackActiveRef.current = false
     listeningStartMsRef.current = Date.now()
     pendingNativeTranscriptRef.current = ''
     sessionActiveRef.current = true
+    canListenOnRouteRef.current = true
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
     const nextSnapshot = startListeningSession(nextSessionId)
     setSnapshot(nextSnapshot)
@@ -206,8 +230,9 @@ function AppInner() {
       accent: accent.name,
       provider: ttsProvider,
       speed: ttsSpeedRouting.serverSpeed,
+      voiceId: ttsVoiceId ?? undefined,
     })
-  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed])
+  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
@@ -215,6 +240,19 @@ function AppInner() {
     let cancelled = false
     const advanceQueue = () => {
       if (cancelled) return
+
+      if (isCorrectionPlayingRef.current) {
+        isCorrectionPlayingRef.current = false
+        playbackActiveRef.current = false
+        setStatus(sessionActiveRef.current && canListenOnRouteRef.current
+          ? 'session.status.listening'
+          : 'session.status.reply_played')
+        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+          listeningStartMsRef.current = Date.now()
+          void speechStartListeningRef.current('en-US')
+        }
+        return
+      }
 
       const nextQueue = advancePlaybackQueue({
         queue: playbackQueue,
@@ -228,17 +266,17 @@ function AppInner() {
       setPlaybackQueue(nextQueue)
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
+        playbackActiveRef.current = true
+        speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setAudioUrl(nextQueue.currentAudioUrl)
         return
       }
 
-      if (isCorrectionPlayingRef.current) {
-        isCorrectionPlayingRef.current = false
-        return
-      }
+      playbackActiveRef.current = false
       setStatus('session.status.reply_played')
-      if (sessionActiveRef.current) {
+      if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        listeningStartMsRef.current = Date.now()
         setStatus('session.status.listening')
         void speechStartListeningRef.current('en-US')
       }
@@ -256,9 +294,10 @@ function AppInner() {
     if (
       busy ||
       audio.isRecording ||
+      playbackActiveRef.current ||
       !canAcceptUserTranscript({
         activeSession: isSessionActive,
-        canListenOnRoute: true,
+        canListenOnRoute: canListenOnRouteRef.current,
         workflowState: snapshot.state,
         transcript,
       })
@@ -273,6 +312,7 @@ function AppInner() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     listeningStartMsRef.current = 0
     pendingNativeTranscriptRef.current = ''
+    speechCancelListeningRef.current()
     setBusy(true)
 
     try {
@@ -307,10 +347,13 @@ function AppInner() {
       const voice = await synthesizeCoachSpeech(coachReply.text)
 
       if (voice.audioUrl) {
+        playbackActiveRef.current = true
+        speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
       } else {
+        playbackActiveRef.current = false
         setStatus('session.status.reply_without_audio')
       }
       const completedTurn = completeCoachPlayback({
@@ -323,7 +366,7 @@ function AppInner() {
         snapshot: nextSnapshot,
         reason: 'coach_reply_failed',
         activeSession: isSessionActive,
-        canListenOnRoute: true,
+        canListenOnRoute: canListenOnRouteRef.current,
       })
       setSnapshot(recovery.snapshot)
       const message = error instanceof MeteorVoiceApiError
@@ -343,6 +386,10 @@ function AppInner() {
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
     const transcript = finalTranscript.trim()
     if (!transcript) return
+    if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current || audio.isPlaying) {
+      pendingNativeTranscriptRef.current = ''
+      return
+    }
     const endpointTranscript = [pendingNativeTranscriptRef.current, transcript]
       .map(part => part.trim())
       .filter(Boolean)
@@ -371,7 +418,7 @@ function AppInner() {
         return data.judgment
       } : undefined,
     })
-    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current) return
+    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
 
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
@@ -382,32 +429,29 @@ function AppInner() {
 
     pendingNativeTranscriptRef.current = ''
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn])
 
   const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
 
   useEffect(() => {
     speechStartListeningRef.current = speech.startListening
-  }, [speech.startListening])
+    speechCancelListeningRef.current = speech.cancelListening
+  }, [speech.cancelListening, speech.startListening])
 
   useEffect(() => {
     sessionActiveRef.current = isSessionActive
   }, [isSessionActive])
-
-  async function continueSession() {
-    if (!isSessionActive || snapshot.state === 'session_ended') return
-    const nextSnapshot = continueListeningSnapshot(snapshot)
-    setSnapshot(nextSnapshot)
-    setStatus('session.status.listening')
-  }
 
   async function endSession() {
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
 
     // 立即结束 session，不等 API
     sessionActiveRef.current = false
+    canListenOnRouteRef.current = false
+    playbackActiveRef.current = false
     endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
+    speechCancelListeningRef.current()
     const endedSnapshot = endActiveSession(snapshot).snapshot
     setSnapshot(endedSnapshot)
     setIsSessionActive(false)
@@ -538,6 +582,12 @@ function AppInner() {
     setTtsProvider(provider)
     setSettingsLoading(true)
     setSettingsMessage(null)
+    if (auth.state !== 'signed-in') {
+      setSettingsMessage(tr('session.status.preferences_saved'))
+      setSettingsLoading(false)
+      return
+    }
+
     try {
       const result = await api.updatePreferences({
         tts_provider: provider,
@@ -561,6 +611,12 @@ function AppInner() {
   async function savePracticePreferences() {
     setSettingsLoading(true)
     setSettingsMessage(null)
+    if (auth.state !== 'signed-in') {
+      setSettingsMessage(tr('session.status.practice_defaults_saved'))
+      setSettingsLoading(false)
+      return
+    }
+
     try {
       const result = await api.updatePreferences({
         tts_provider: ttsProvider,
@@ -601,6 +657,9 @@ function AppInner() {
 
   async function selectVoice(voiceId: string) {
     setTtsVoiceId(voiceId)
+    setSettingsMessage(null)
+    if (auth.state !== 'signed-in') return
+
     try {
       await api.updatePreferences({ tts_voice_id: voiceId })
     } catch {
@@ -636,7 +695,25 @@ function AppInner() {
         }
       })
     }
-  }, [applyThemeLocal])
+  }, [applyThemeLocal, setLocale])
+
+  const applyServerPreferences = useCallback((preferences: PreferencesResponse) => {
+    setTtsProvider(preferences.tts_provider ?? 'mock')
+    setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
+    setTtsSpeed(preferences.tts_speed ?? 1)
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+    if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
+    if (preferences.xunfei_voices?.catalog) setXunfeiVoiceCatalog(preferences.xunfei_voices.catalog)
+    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
+    if (preferences.default_accent_key) setSelectedAccentKey(preferences.default_accent_key)
+    if (preferences.locale === 'zh' || preferences.locale === 'en') setLocale(preferences.locale)
+  }, [setLocale])
+
+  useEffect(() => {
+    void api.getPreferences()
+      .then(applyServerPreferences)
+      .catch(() => undefined)
+  }, [api, applyServerPreferences])
 
   // 登录后自动拉取偏好
   useEffect(() => {
@@ -646,16 +723,38 @@ function AppInner() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState !== 'active') return
-      void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
+      if (nextState !== 'active') {
+        canListenOnRouteRef.current = false
+        endpointRequestRef.current += 1
+        pendingNativeTranscriptRef.current = ''
+        speechCancelListeningRef.current()
+        if (sessionActiveRef.current) setStatus('session.paused')
+        return
+      }
+
+      canListenOnRouteRef.current = true
+      if (auth.state === 'signed-in') {
+        void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
+      } else {
+        void api.getPreferences().then(applyServerPreferences).catch(() => undefined)
+      }
+
+      if (sessionActiveRef.current && !busy && !playbackActiveRef.current) {
+        listeningStartMsRef.current = Date.now()
+        setStatus('session.status.listening')
+        void speechStartListeningRef.current('en-US')
+      }
     })
     return () => subscription.remove()
-  }, [apiBaseUrl, auth.getAuthHeaders, applyPrefs])
+  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy])
 
   function playCorrection(text: string) {
+    speechCancelListeningRef.current()
     void synthesizeCoachSpeech(text).then(voice => {
       if (voice.audioUrl) {
         isCorrectionPlayingRef.current = true
+        playbackActiveRef.current = true
+        setStatus('session.status.playing_reply')
         setAudioUrl(voice.audioUrl)
       }
     }).catch(() => {})
@@ -683,6 +782,7 @@ function AppInner() {
             onStart={startSession}
             onEnd={() => void endSession()}
             onPlayCorrection={playCorrection}
+            onSubmitText={text => void submitTurn(text)}
           />
         )
       case 'home':
@@ -691,7 +791,6 @@ function AppInner() {
             tr={tr}
             locale={locale}
             scenarios={scenarios}
-            remoteScenarios={remoteScenarios}
             selectedScenarioKey={selectedScenarioKey}
             isSessionActive={isSessionActive}
             onSelectScenario={selectScenario}
@@ -748,7 +847,7 @@ function AppInner() {
             onSetAuthMode={setAuthMode}
             onSubmitAuth={() => void submitAuth()}
             onSignOut={() => void auth.signOut()}
-            onSetApiBaseUrl={setApiBaseUrl}
+            onSetApiBaseUrl={updateApiBaseUrl}
           />
         )
     }

@@ -20,7 +20,7 @@
 - Phase B workspace 工程化已完成第一轮：根目录提供 `web:lint`、`web:build`、`mobile:config`、`mobile:typecheck`、`packages:test`，Mobile 有独立 `tsconfig.json`；CI workflow 已补齐基础 lint/typecheck/config/test/build。
 - Phase C API 契约已完成第一轮：新增 scenarios、accents、session turn detail API；preferences API 扩展 locale、默认 scenario/accent、TTS speed；`packages/api-client` 提供 typed methods。
 - Phase D session-core 已完成第三轮：新增 next action、transcript acceptance、no-speech、playback restore、end-session、playback block、turn lifecycle、coach reply receive/playback completion、route pause、error recovery effect mapping 和 playback queue 规则。
-- Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter、PR 3 TTS sentence pipeline 已按计划推进；Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。语音 endpointing 已改为文本规则 + activity/VAD 信号组合，详见 `docs/session-endpointing-vad.md`。
+- Phase E mobile 产品化已完成第二轮：Mobile app 消费新增 API 契约，加载远端 scenario/accent capability，保存练习默认偏好，查看 session turn detail，并继续使用 native audio adapter 做录音/播放硬化。PR 1 low-latency turn rules、PR 2 mobile native speech adapter 已按计划推进；TTS sentence/chunk playback 已在 Web/Mobile 两端明确暂不采用。Mobile 会话页已从 probe 调整为正式 Voice Practice 布局。语音 endpointing 已改为文本规则 + activity/VAD 信号组合，详见 `docs/session-endpointing-vad.md`。
 - Phase F 尚未开始，按用户要求暂不做。
 
 ## 优先级顺序
@@ -209,24 +209,22 @@ PR 2: Mobile native speech adapter.
   - Mobile typecheck passes.
   - iOS development build can complete one spoken turn on a real device or simulator where native speech is available.
 
-PR 3: TTS sentence pipeline.
+Deferred: TTS sentence/chunk playback.
 
-- Scope:
-  - Keep AI spoken replies short.
-  - Split assistant reply into playable sentence segments through `packages/shared/src/speech.ts`.
-  - Web SHOULD synthesize/play the first segment before requesting later segments as one long audio file, so audible feedback starts earlier for multi-sentence replies.
-  - Mobile SHOULD synthesize the first segment first, enqueue later segment audio URLs, and advance the queue only after native playback reports completion.
-  - Preserve one-speaker-at-a-time playback; no overlapping TTS.
-  - Keep existing full-response TTS as fallback when segmentation fails.
-  - CI SHOULD run on pull requests and pushes to `main` with lint, mobile typecheck/config, test, and web build.
+- Current decision:
+  - Web and Mobile MUST keep full-reply TTS playback for the current product path.
+  - Do not add sentence/chunk playback as a quick latency optimization.
+  - Keep AI spoken replies short instead of splitting playback.
+- If this is revisited later:
+  - It MUST be a separate product/QA task, not part of routine bug fixing.
+  - It MUST cover cancellation, route pause/resume, stale queued audio, user interruption, naturalness across segments, and device-specific behavior.
+  - Mobile MAY be evaluated separately from Web because native audio queues are more controllable, but it still needs real-device QA before adoption.
 - Out of scope:
-  - True streaming TTS over server audio chunks.
   - New paid provider infrastructure.
   - Phase F voice profiles.
 - Validation:
-  - `splitSpokenText` tests cover English and Chinese punctuation plus max segment merging.
-  - Playback starts earlier for multi-sentence replies in local/manual testing.
-  - Existing Web and Mobile session behavior remains compatible.
+  - Web and Mobile play one complete coach reply without overlapping voices.
+  - Background/foreground and replay do not submit stale user turns.
   - GitHub Actions checks pass before merge.
 
 优先补齐：
@@ -253,12 +251,14 @@ PR 3: TTS sentence pipeline.
 
 当前状态：
 
-- Native speech adapter、native audio playback、TTS sentence playback queue 和正式练习页布局已合入。
+- Native speech adapter、native audio playback 和正式练习页布局已合入；TTS sentence playback queue 已明确不作为当前方案。
 - 尚缺至少一次 iOS 真机 development build 和一次 Android emulator/device 的人工 QA 记录。
 
 ## Phase F: 口音与语音能力专项
 
 目标：把“支持不同英语口音”从 provider mapping 升级为可产品化能力。
+
+统一教练声音选择的详细计划见 `docs/voice-profile-unification-plan.md`。后续实现 SHOULD 以 provider-neutral `VoiceProfile` 为核心，不要为 Azure 或 Xunfei 单独堆一套互不兼容的 UI。
 
 短期策略：
 

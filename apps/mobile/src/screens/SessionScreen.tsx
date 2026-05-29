@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
 import { VoiceWaveform, type WaveformMode } from '../components/VoiceWaveform'
 import { BottomSheet } from '../components/BottomSheet'
@@ -38,17 +38,19 @@ interface Props {
   onStart: () => void
   onEnd: () => void
   onPlayCorrection: (text: string) => void
+  onSubmitText: (text: string) => void
 }
 
 export function SessionScreen({
   tr, snapshot, messages, corrections, isSessionActive, status, summary, busy,
   scenarioName, scenarioIcon, scenarioDifficulty, scenarioDescription,
   accentName, accentRegion,
-  onStart, onEnd, onPlayCorrection,
+  onStart, onEnd, onPlayCorrection, onSubmitText,
 }: Props) {
   const { C } = useTheme()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'corrections' | 'transcript'>('corrections')
+  const [textDraft, setTextDraft] = useState('')
 
   const waveformMode = toWaveformMode(snapshot.state, isSessionActive)
   const latestCoach = [...messages].reverse().find(m => m.role === 'assistant')
@@ -60,6 +62,13 @@ export function SessionScreen({
   function openSheet(tab: 'corrections' | 'transcript') {
     setActiveTab(tab)
     setSheetOpen(true)
+  }
+
+  function submitTextFallback() {
+    const text = textDraft.trim()
+    if (!text || busy || !isSessionActive) return
+    setTextDraft('')
+    onSubmitText(text)
   }
 
 
@@ -122,6 +131,27 @@ export function SessionScreen({
     },
     stopIcon: { width: 16, height: 16, borderRadius: 3, backgroundColor: '#fff' },
     disabled: { opacity: 0.4 },
+    textFallbackRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    textFallbackInput: {
+      flex: 1,
+      minHeight: 42,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: C.border,
+      backgroundColor: C.surface,
+      color: C.textPrimary,
+      paddingHorizontal: 12,
+      fontSize: 14,
+    },
+    textFallbackButton: {
+      minHeight: 42,
+      borderRadius: 10,
+      backgroundColor: C.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 14,
+    },
+    textFallbackButtonText: { color: C.cream, fontSize: 13, fontWeight: '700' },
     panelRow: { flexDirection: 'row', gap: 8 },
     panelCard: {
       flex: 1, borderRadius: 10, borderWidth: 1, borderColor: C.border,
@@ -204,10 +234,33 @@ export function SessionScreen({
             <Text style={styles.startLabel}>{tr('session.start')}</Text>
           </View>
         ) : (
-          <View style={styles.endRow}>
-            <Pressable onPress={onEnd} style={styles.endBtn}>
-              <View style={styles.stopIcon} />
-            </Pressable>
+          <View style={{ gap: 10 }}>
+            <View style={styles.textFallbackRow}>
+              <TextInput
+                value={textDraft}
+                onChangeText={setTextDraft}
+                editable={!busy}
+                autoCapitalize="sentences"
+                autoCorrect
+                placeholder={tr('session.text_fallback_placeholder')}
+                placeholderTextColor={C.textMuted}
+                returnKeyType="send"
+                onSubmitEditing={submitTextFallback}
+                style={styles.textFallbackInput}
+              />
+              <Pressable
+                onPress={submitTextFallback}
+                disabled={busy || !textDraft.trim()}
+                style={[styles.textFallbackButton, (busy || !textDraft.trim()) && styles.disabled]}
+              >
+                <Text style={styles.textFallbackButtonText}>{tr('session.submit_text')}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.endRow}>
+              <Pressable onPress={onEnd} style={styles.endBtn}>
+                <View style={styles.stopIcon} />
+              </Pressable>
+            </View>
           </View>
         )}
 

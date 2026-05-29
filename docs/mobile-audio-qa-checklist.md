@@ -7,6 +7,7 @@ Use this checklist for native mobile development builds. Expo config validation 
 - Automated checks cover TypeScript, Expo public config, lint, tests, and Web build.
 - Manual native-device QA is still required before treating Mobile audio as production-ready.
 - iOS Safari/Chrome Web playback limitations are not the primary Mobile path anymore; the native app must be validated through a development build that includes `expo-audio` and `expo-speech-recognition`.
+- 2026-05-29 mobile bug review fixes are documented in `docs/mobile-bug-review-2026-05-29.md`; Bluetooth/headphone route QA remains pending.
 
 ## Setup
 
@@ -18,6 +19,8 @@ Use this checklist for native mobile development builds. Expo config validation 
 ## Playback
 
 - Start a mobile session, send a text turn, and confirm the coach TTS plays through the speaker.
+- Start a mobile session with native speech, wait for coach TTS, and confirm the app does not capture the coach reply as a new user turn.
+- While coach TTS is playing, confirm the speech recognizer is not listening and no transcript is submitted.
 - Tap replay repeatedly; only one replay should run at a time.
 - Background the app during playback; playback should pause and the audio state should show a paused/recoverable status.
 - Return foreground and replay; playback should recover without restarting the app.
@@ -36,17 +39,25 @@ Use this checklist for native mobile development builds. Expo config validation 
 
 - Tap `Speak instead`, grant speech recognition and microphone permissions, and confirm the speech state enters listening.
 - Speak one short English sentence and stop; the final transcript should populate the input and submit through the existing chat/TTS flow.
+- During coach playback, speak out loud or let the speaker play audibly; no native speech final transcript should be accepted until playback finishes.
 - Speak an English sentence with a Chinese word; if the native recognizer returns the Chinese text, the AI should briefly explain the Chinese word aloud and add a vocabulary correction.
 - Deny speech recognition permission; the app should show a visible unavailable/error state while text input remains usable.
 - Start native speech while coach TTS is playing; speech should be blocked until playback finishes.
 - Use text input fallback after a native speech error; the session should continue without restarting.
 
-## TTS Sentence Playback
+## Background / Foreground
 
-- Send a multi-sentence coach reply and confirm the first sentence starts playback before the full reply would normally finish synthesizing.
-- Confirm later sentence audio plays in order without overlapping the first sentence.
-- Interrupt by backgrounding the app during queued playback; playback should pause/recover without starting two voices.
-- Tap replay after queued playback finishes; only the current reply should replay.
+- Background the app while listening; the session should show paused and must not submit a network request from stale speech results.
+- Return foreground while the session is active; listening should resume without showing a generic request failure.
+- Background the app while coach TTS is playing; stale playback or speech events must not submit a new user turn after foregrounding.
+- Switch background/foreground three times in a row during one session; the session should remain recoverable without restarting the app.
+
+## TTS Playback
+
+- Send a multi-sentence coach reply and confirm the app plays one complete coach reply without overlapping voices.
+- Confirm the app does not attempt sentence/chunk playback; Web and Mobile currently keep full-reply TTS for stability.
+- Interrupt by backgrounding the app during playback; playback should pause/recover without submitting a new user turn.
+- Tap replay after playback finishes; only the current reply should replay.
 
 ## Session Flow
 
@@ -75,7 +86,7 @@ Copy this block into PR notes after a real-device run:
 - Auth tested: yes/no
 - Native speech short sentence: pass/fail, notes
 - Native speech mixed English-Chinese: pass/fail, notes
-- TTS sentence queue: pass/fail, notes
+- TTS full-reply playback: pass/fail, notes
 - Playback during silent switch / background / Bluetooth: pass/fail, notes
 - Corrections + Transcript after 3 turns: pass/fail, notes
 - Known device-specific issues:

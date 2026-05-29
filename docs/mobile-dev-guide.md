@@ -48,13 +48,26 @@ Set the API base URL in `apps/mobile/app.json`:
 }
 ```
 
-For local development, the app defaults to `http://localhost:3000`. Override via `EXPO_PUBLIC_API_BASE_URL`.
+API base URL resolution:
+
+1. EAS build profiles set `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/eas.json`.
+   - `development` and `preview` use `https://meteorvoice-pre.jcmeteor.com`.
+   - `production` uses `https://meteorvoice.jcmeteor.com`.
+2. `EXPO_PUBLIC_API_BASE_URL` wins when set manually.
+3. If no env is set, development builds default to `apiBaseUrlPreview`, and release builds default to `apiBaseUrl`.
+
+Use an explicit `EXPO_PUBLIC_API_BASE_URL` when testing against a local Web/API server.
+
+For local device testing, the Settings screen API URL field is persisted in SecureStore. Enter the LAN URL once, for example `http://192.168.1.20:3000`, and the app will reuse it on restart until it is cleared or reset to the profile default.
+
+If the preview domain has Vercel Deployment Protection enabled, mobile requests to preview APIs will receive the Vercel authentication page instead of JSON. Disable protection for the API preview domain or configure a trusted/bypass path before using preview as the mobile default.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Root component, session state, preference sync |
+| `src/mobileConfig.ts` | API base URL resolution for local, preview, and production |
 | `src/nativeAudio.ts` | Audio playback via `expo-audio` |
 | `src/nativeSpeech.ts` | Speech recognition via `expo-speech-recognition` |
 | `src/mobileAuth.ts` | Supabase auth for mobile |

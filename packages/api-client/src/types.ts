@@ -76,6 +76,7 @@ export type SynthesizeSpeechRequest = {
   accent?: string
   speed?: number
   provider?: string
+  voiceId?: string
 }
 
 export type SynthesizeSpeechResponse = TTSResult
