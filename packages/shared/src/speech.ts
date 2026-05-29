@@ -31,6 +31,27 @@ export interface TTSProvider {
   synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult>
 }
 
+export type VoiceProfileStatus = 'active' | 'expired' | 'unavailable'
+
+export type VoiceProfile = {
+  id: string
+  provider: TTSProviderKey
+  providerVoiceId: string | null
+  displayName: string
+  displayNameZh?: string
+  description?: string
+  descriptionZh?: string
+  locale: 'en' | 'zh'
+  accentKey: string
+  accentLabel?: string
+  accentRegion?: string
+  gender?: 'male' | 'female'
+  style?: string
+  qualityTier?: 'base' | 'featured'
+  expiresAt?: string
+  status: VoiceProfileStatus
+}
+
 const sentenceBoundaryPattern = /[^.!?。！？]+[.!?。！？]+(?:["'”’)]*)?|[^.!?。！？]+$/g
 const whitespacePattern = /\s+/g
 

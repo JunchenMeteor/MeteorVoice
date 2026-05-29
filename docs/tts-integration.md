@@ -65,7 +65,7 @@ XUNFEI_API_SECRET=your_api_secret
 XUNFEI_TTS_VOICE=your_default_fallback_v3_voice_vcn
 ```
 
-6. In the app Settings page, select `Xunfei`, then select the coach voice from the Xunfei voice catalog.
+6. In the app Settings page, select `Xunfei`, then select the coach voice from the unified coach voice list.
 
 Xunfei V3 voice IDs are not compatible with older 1.0/2.0 voice IDs. MeteorVoice keeps `XUNFEI_TTS_VOICE` only as the default fallback `vcn`; the primary coach voice is selected from the app voice catalog and stored as a user preference. The current online TTS WebSocket API uses the `business.vcn` field. Some Xunfei product pages call the same concept `voice_name` for other API versions; use the value currently authorized in the console for the same product/API version, not an unlicensed or legacy voice ID copied from older docs.
 
@@ -84,7 +84,7 @@ The English voices and `x4_lingxiaolu_en` expire at `2026-06-09 00:00 Asia/Shang
 
 The base voices currently visible in the console may be Mandarin-only, for example `x4_xiaoyan`, `aisjiuxu`, `aisjinger`, and `aisbabyxu`. `x4_lingxiaolu_en` and `x4_yezi` are also Mandarin female voices but are treated as featured voices in MeteorVoice. Do not use Mandarin-only voices as the English coaching default unless you intentionally want Chinese speech output; after the English featured voices expire, configure a purchased English V3 voice or use another TTS provider for English practice.
 
-Settings shows the server-side Xunfei voice configuration when Xunfei is selected: configured env key, voice ID, language, gender, base/featured tier, active/expired status, and expiry when known. The selected coach voice is stored as `theme_preferences.tts_voice_id`.
+Xunfei voice profiles are seeded into `tts_voice_profiles` because the current console data has been confirmed. Settings filters the unified coach voice list by the selected provider, so selecting `Xunfei` shows only Xunfei voices. The selected coach voice is stored as `theme_preferences.selected_voice_profile_id`; the provider-specific voice id is stored as `theme_preferences.tts_voice_id`.
 
 ## Volcengine Setup
 
@@ -160,20 +160,10 @@ AZURE_SPEECH_KEY=your_key_1
 AZURE_SPEECH_REGION=eastasia
 ```
 
-5. In the app Settings page, select `Azure Neural TTS`.
+5. Add Azure voices to `tts_voice_profiles`, one row per voice.
+6. In the app Settings page, select `Azure Neural TTS`; the coach voice list will show only Azure rows from `tts_voice_profiles`.
 
-Default voices per accent:
-
-| Accent | Voice |
-|---|---|
-| American | en-US-JennyNeural |
-| British | en-GB-SoniaNeural |
-| Australian | en-AU-NatashaNeural |
-| Indian | en-IN-NeerjaNeural |
-| Singapore | en-SG-LunaNeural |
-| African | en-ZA-LeahNeural |
-
-Override any voice with environment variables, e.g. `AZURE_TTS_VOICE_BRITISH=en-GB-RyanNeural`.
+Do not hard-code Azure voice choices in Mobile. Azure voice IDs should be maintained in `tts_voice_profiles` after they are confirmed for the target Azure Speech resource.
 
 ## Provider Behavior
 
@@ -211,31 +201,17 @@ Deferred upgrade options:
 
 Decision: keep Web and Mobile on complete-reply playback for now. Record streaming/chunk/sentence playback as a future audio architecture task, not as a small Web or Mobile patch.
 
-## Accent Capability Status
+## Coach Voice Catalog
 
-The Settings page disables accent options that are not supported by the selected TTS provider.
+`tts_voice_profiles` is the source of truth for selectable coach voices. A provider can have many voice rows. Web and Mobile receive the full list from `/api/preferences` and filter it by the selected provider.
 
-Current conservative mapping:
+`accent_key`, `accent_label`, and `accent_region` remain metadata on each voice profile for AI context and fallback behavior. They are not a standalone user preference.
 
-| Provider | Enabled accents |
-|---|---|
-| Mock / Browser | British, American, Indian, Australian, Singapore, African |
-| Xunfei | American only |
-| Volcengine | American only |
-| Tencent Cloud | American only |
-| Azure Neural TTS | British, American, Indian, Australian, Singapore, African |
-
-## Future Accent Direction
-
-Provider voice IDs SHOULD be hidden behind product-level voice profiles. The long-term voice profile model is tracked in `docs/architecture-productization-roadmap.md`.
-
-Do not expose provider voice IDs directly in UI. A user should choose a meaningful profile such as American coach, British interview, or Australian casual, while the app maps that choice to provider-specific capabilities.
-
-Open additional accents only after the exact provider voice IDs are confirmed and tested.
+Do not expose provider voice IDs as the primary UI. The user chooses a coach voice profile, and the app maps it to the provider-specific `provider_voice_id`.
 
 ## Completion Status
 
-- Implemented: provider switching UI, server-side `/api/tts`, Xunfei/Volcengine/Tencent/Azure provider adapters, Supabase-backed user preference, accent capability gating.
+- Implemented: provider switching UI, server-side `/api/tts`, Xunfei/Volcengine/Tencent/Azure provider adapters, Supabase-backed user preference, unified coach voice profiles.
 - Requires user configuration: provider account creation, server environment variables, `003_tts_preferences.sql`.
 - Not fully verified without credentials: real provider audio output and exact provider-specific voice IDs.
 

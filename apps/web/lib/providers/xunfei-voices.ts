@@ -135,9 +135,6 @@ export function resolveXunfeiVoiceForAccent(
 ) {
   if (voiceId?.trim()) {
     const voice = voiceId.trim()
-    if (!xunfeiVoiceById.has(voice)) {
-      throw new Error(`Unknown Xunfei voice "${voice}". Choose a configured voice from the Xunfei voice catalog.`)
-    }
     if (isExpiredTrialVoice(voice, nowMs)) {
       throw new Error(`Xunfei trial voice "${voice}" expired at 2026-06-09 00:00 Asia/Shanghai. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
     }

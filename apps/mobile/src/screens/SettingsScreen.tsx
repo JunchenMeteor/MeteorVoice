@@ -1,13 +1,10 @@
 import { useMemo } from 'react'
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
-import type { ScenarioDto, AccentDto } from '@meteorvoice/api-client'
-import { getAccentLabel, type accentProfiles as AccentsType, type Locale } from '@meteorvoice/shared'
+import type { Locale, VoiceProfile } from '@meteorvoice/shared'
 import type { MobileAuthState } from '../mobileAuth'
 import type { XunfeiVoice } from '../mobilePreferences'
 import { themeLabels, type ThemeKey } from '../theme'
-
-type Accent = (typeof AccentsType)[number]
 
 interface Props {
   tr: (key: string) => string
@@ -16,12 +13,9 @@ interface Props {
   availableProviders: string[]
   ttsSpeed: number
   ttsVoiceId: string | null
+  voiceProfiles: VoiceProfile[]
+  selectedVoiceProfileId: string | null
   xunfeiVoices: XunfeiVoice[]
-  xunfeiVoiceCatalog: XunfeiVoice[]
-  remoteAccents: AccentDto[]
-  remoteScenarios: ScenarioDto[]
-  accentProfiles: Accent[]
-  selectedAccentKey: string
   settingsLoading: boolean
   settingsMessage: string | null
   auth: MobileAuthState
@@ -35,8 +29,7 @@ interface Props {
   onAdjustSpeed: (delta: number) => void
   onSavePracticePreferences: () => void
   onLoadPreferences: () => void
-  onSelectAccent: (key: string) => void
-  onSelectVoice: (id: string) => void
+  onSelectVoiceProfile: (profile: VoiceProfile) => void
   onSetEmail: (v: string) => void
   onSetPassword: (v: string) => void
   onSetAuthMode: (m: 'sign-in' | 'sign-up') => void
@@ -47,20 +40,33 @@ interface Props {
 
 export function SettingsScreen({
   tr, locale, ttsProvider, availableProviders, ttsSpeed,
-  ttsVoiceId, xunfeiVoices, xunfeiVoiceCatalog,
-  remoteAccents, accentProfiles, selectedAccentKey,
+  ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
   settingsLoading, settingsMessage,
   auth, email, password, authMode, apiBaseUrl,
   onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
-  onLoadPreferences, onSelectAccent, onSelectVoice,
+  onLoadPreferences, onSelectVoiceProfile,
   onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
-  const selectedXunfeiVoice = xunfeiVoiceCatalog.find(v => v.id === ttsVoiceId)
-    ?? xunfeiVoices.find(v => v.id === ttsVoiceId)
-    ?? xunfeiVoices[0]
+  const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
+  const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
+    ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
+    ?? providerVoiceProfiles.find(profile => profile.status === 'active')
 
+  function voiceProfileMeta(profile: VoiceProfile) {
+    const providerLabel = tr(`settings.tts_provider_${profile.provider}`) !== `settings.tts_provider_${profile.provider}`
+      ? tr(`settings.tts_provider_${profile.provider}`)
+      : profile.provider
+    const gender = profile.gender ? tr(`settings.xunfei_voice_gender_${profile.gender}`) : null
+    const language = profile.locale === 'zh' ? tr('settings.xunfei_voice_language_zh') : tr('settings.xunfei_voice_language_en')
+    const tier = profile.qualityTier ? tr(`settings.xunfei_voice_tier_${profile.qualityTier}`) : null
+    return [providerLabel, language, gender, tier, profile.accentLabel, profile.accentRegion, profile.style].filter(Boolean).join(' · ')
+  }
+
+  function voiceProfileName(profile: VoiceProfile) {
+    return locale === 'zh' ? profile.displayNameZh ?? profile.displayName : profile.displayName
+  }
 
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
@@ -167,27 +173,6 @@ export function SettingsScreen({
         </View>
       </View>
 
-      {/* Default Accent */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{tr('settings.default_accent')}</Text>
-        <View style={styles.chipGrid}>
-          {accentProfiles.map(item => {
-            const remote = remoteAccents.find(r => r.key === item.key)
-            const active = item.key === selectedAccentKey
-            const unavailable = remote?.supported === false
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => !unavailable && onSelectAccent(item.key)}
-                style={[styles.chip, active && styles.chipActive, unavailable && styles.chipDisabled]}
-              >
-                <Text style={[styles.chipTxt, active && styles.chipTxtActive]}>{getAccentLabel(item, locale)}</Text>
-              </Pressable>
-            )
-          })}
-        </View>
-      </View>
-
       {/* TTS Provider */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -208,53 +193,51 @@ export function SettingsScreen({
         {settingsMessage && <Text style={styles.hint}>{settingsMessage}</Text>}
       </View>
 
-      {/* 讯飞发音人 */}
-      {ttsProvider === 'xunfei' && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{tr('settings.xunfei_voice_config')}</Text>
-          {selectedXunfeiVoice && (
-            <View style={styles.voiceList}>
-              <View key={`${selectedXunfeiVoice.id}-selected`} style={styles.voiceItem}>
-                <View style={styles.voiceItemRow}>
-                  <Text style={styles.voiceName}>{selectedXunfeiVoice.name}</Text>
-                  <View style={[styles.voiceBadge, selectedXunfeiVoice.status === 'active' ? styles.voiceBadgeActive : styles.voiceBadgeExpired]}>
-                    <Text style={styles.voiceBadgeTxt}>
-                      {selectedXunfeiVoice.status === 'active' ? tr('settings.xunfei_voice_active') : tr('settings.xunfei_voice_expired')}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.voiceMeta}>
-                  {tr('settings.xunfei_voice_current')} · {tr(`settings.xunfei_voice_language_${selectedXunfeiVoice.language}`)} · {tr(`settings.xunfei_voice_gender_${selectedXunfeiVoice.gender}`)} · {tr(`settings.xunfei_voice_tier_${selectedXunfeiVoice.tier}`)}
+      {/* Coach Voice */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{tr('settings.voice_profile_current')}</Text>
+        {selectedVoiceProfile ? (
+          <View style={styles.voiceItem}>
+            <View style={styles.voiceItemRow}>
+              <Text style={styles.voiceName}>{voiceProfileName(selectedVoiceProfile)}</Text>
+              <View style={[styles.voiceBadge, selectedVoiceProfile.status === 'active' ? styles.voiceBadgeActive : styles.voiceBadgeExpired]}>
+                <Text style={styles.voiceBadgeTxt}>
+                  {selectedVoiceProfile.status === 'active' ? tr('settings.xunfei_voice_active') : tr('settings.voice_profile_unavailable')}
                 </Text>
               </View>
             </View>
-          )}
-          {xunfeiVoiceCatalog.length > 0 && (
-            <>
-              <Text style={styles.cardSubtitle}>{tr('settings.xunfei_voice_select')}</Text>
-              <View style={styles.chipGrid}>
-                {xunfeiVoiceCatalog.map(v => {
-                  const expired = v.status === 'expired'
-                  const active = ttsVoiceId === v.id
-                  return (
-                    <Pressable
-                      key={v.id}
-                      onPress={() => !expired && onSelectVoice(v.id)}
-                      style={[styles.voiceCatalogChip, active && styles.chipActive, expired && styles.chipDisabled]}
-                    >
-                      <Text style={[styles.voiceCatalogName, active && styles.chipTxtActive]}>{v.name}</Text>
-                      <Text style={styles.voiceCatalogMeta}>
-                        {tr(`settings.xunfei_voice_gender_${v.gender}`)} · {tr(`settings.xunfei_voice_language_${v.language}`)}
-                      </Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            </>
-          )}
-          {xunfeiVoices.length === 0 && xunfeiVoiceCatalog.length === 0 && (
-            <Text style={styles.hint}>{tr('settings.xunfei_voice_empty')}</Text>
-          )}
+            <Text style={styles.voiceMeta}>{voiceProfileMeta(selectedVoiceProfile)}</Text>
+          </View>
+        ) : (
+          <Text style={styles.hint}>{tr('settings.voice_profile_empty')}</Text>
+        )}
+        {providerVoiceProfiles.length > 0 && (
+          <>
+            <Text style={styles.cardSubtitle}>{tr('settings.voice_profile_select')}</Text>
+            <View style={styles.chipGrid}>
+              {providerVoiceProfiles.map(profile => {
+                const unavailable = profile.status !== 'active'
+                const active = selectedVoiceProfile?.id === profile.id
+                return (
+                  <Pressable
+                    key={profile.id}
+                    onPress={() => !unavailable && onSelectVoiceProfile(profile)}
+                    style={[styles.voiceCatalogChip, active && styles.chipActive, unavailable && styles.chipDisabled]}
+                  >
+                    <Text style={[styles.voiceCatalogName, active && styles.chipTxtActive]}>{voiceProfileName(profile)}</Text>
+                    <Text style={styles.voiceCatalogMeta}>{voiceProfileMeta(profile)}</Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </>
+        )}
+      </View>
+
+      {ttsProvider === 'xunfei' && xunfeiVoices.length === 0 && providerVoiceProfiles.length === 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{tr('settings.xunfei_voice_config')}</Text>
+          <Text style={styles.hint}>{tr('settings.xunfei_voice_empty')}</Text>
         </View>
       )}
 
