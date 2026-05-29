@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 import {
+  getRecordingPermissionsAsync,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
@@ -234,7 +235,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active') {
         // 前台：静默检查麦克风权限是否恢复
-        void requestRecordingPermissionsAsync().then(response => {
+        void getRecordingPermissionsAsync().then(response => {
           setPermission(response.granted ? 'granted' : 'denied')
           if (response.granted) setErrorMessage(null)
         })

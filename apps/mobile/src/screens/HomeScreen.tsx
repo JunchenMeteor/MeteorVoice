@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
-import type { ScenarioDto } from '@meteorvoice/api-client'
 import { getScenarioLabel, getScenarioDescription, getDifficultyLabel, type scenarios as ScenariosType } from '@meteorvoice/shared'
 import type { Locale } from '@meteorvoice/shared'
 
@@ -11,7 +10,6 @@ interface Props {
   tr: (key: string) => string
   locale: Locale
   scenarios: Scenario[]
-  remoteScenarios: ScenarioDto[]
   selectedScenarioKey: string
   isSessionActive: boolean
   onSelectScenario: (key: string) => void
@@ -19,7 +17,7 @@ interface Props {
 }
 
 export function HomeScreen({
-  tr, locale, scenarios, remoteScenarios,
+  tr, locale, scenarios,
   selectedScenarioKey, isSessionActive,
   onSelectScenario, onGoToSession,
 }: Props) {
@@ -74,7 +72,6 @@ export function HomeScreen({
         contentContainerStyle={styles.grid}
         scrollEnabled={false}
         renderItem={({ item }) => {
-          const remote = remoteScenarios.find(r => r.key === item.key)
           const active = item.key === selectedScenarioKey
           return (
             <Pressable

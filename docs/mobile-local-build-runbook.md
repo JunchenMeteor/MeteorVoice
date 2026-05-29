@@ -12,7 +12,15 @@
 
 ## 环境变量
 
-在启动 mobile 前设置：
+Mobile 默认 API URL 规则：
+
+- EAS `development` 和 `preview` profile 在 `apps/mobile/eas.json` 中设置 `EXPO_PUBLIC_API_BASE_URL=https://meteorvoice-pre.jcmeteor.com`。
+- EAS `production` profile 设置 `EXPO_PUBLIC_API_BASE_URL=https://meteorvoice.jcmeteor.com`。
+- 本地显式设置 `EXPO_PUBLIC_API_BASE_URL` 时，始终使用这个 URL。
+- 未设置时，development bundle 默认使用 `apps/mobile/app.json` 的 `extra.apiBaseUrlPreview`。
+- 未设置时，release bundle 默认使用 `apps/mobile/app.json` 的 `extra.apiBaseUrl`。
+
+本地调试 Web/API 时，在启动 mobile 前设置：
 
 ```bash
 export EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
@@ -27,6 +35,8 @@ export EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:3000
 ```
 
 不要把 Supabase service role key、TTS provider secret 或任何 server secret 放进 `EXPO_PUBLIC_*`。
+
+也可以不设置 shell env：进入 Mobile 设置页，在 API URL 输入框填入本机局域网 URL。该值会保存在 SecureStore，重启后继续使用，适合反复真机调试。
 
 ## Expo Go
 

@@ -21,6 +21,7 @@
 - 当前稳定发布/预发布分支：`release`。
 - 已完成并合入 `main`：沉浸式 UI、移动端 full-screen stage、waveform、AI 回复自然度优化、iOS Web audio unlock、CI 并行化、历史页详展/分页/软删除、Preferences 跨设备同步、Mobile 音频中断硬化。
 - 当前正在推进三合一层级判停（`docs/semantic-endpointing-plan.md`），将固定静默等待升级为 L1 本地判断 + L2 LLM 语义判停 + L3 安全网超时。
+- 2026-05-29 已完成一轮 Mobile bug review 和代码修复，记录见 `docs/mobile-bug-review-2026-05-29.md`；Bluetooth/headphone route 和真机前后台 QA 仍需执行。
 
 ## 活跃计划
 
@@ -30,6 +31,8 @@
   - 当前最高优先级路线图。定义架构骨架完成后的产品化阶段、AI 执行要求和验收标准。
 - `docs/mobile-audio-qa-checklist.md`
   - Native audio 真机/模拟器 QA checklist，覆盖播放、录音、权限、前后台和设备路由。
+- `docs/mobile-bug-review-2026-05-29.md`
+  - 2026-05-29 Mobile 语音循环、前后台、TTS provider/voice sync、text fallback 和 QA 缺口审查记录。
 - `docs/mobile-local-build-runbook.md`
   - Native mobile 本地运行和编译说明，覆盖 Expo Go、development build、真机调试和国内网络建议。
 - `docs/native-mobile-completion-status.md`
@@ -40,6 +43,8 @@
   - 四个并行方向的详细执行计划：CI/CD 增强、历史页完善、跨设备偏好同步、Mobile 音频硬化。每个方向独立可操作，含实施步骤和验收标准。
 - `docs/semantic-endpointing-plan.md`
   - 三合一层级判停方案：Layer 1 本地快速判断 + Layer 2 LLM 语义判停 + Layer 3 安全网超时。从固定静默时长升级为智能 end-of-turn 检测。
+- `docs/voice-profile-unification-plan.md`
+  - 后续统一教练声音选择计划，覆盖 Xunfei/Azure 等 provider 的 voice profile 模型和 UI 方向。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 

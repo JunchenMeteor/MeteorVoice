@@ -206,10 +206,10 @@ Near-term latency strategy:
 
 Deferred upgrade options:
 
-1. **Complete text + streamed audio playback**: send one complete coach reply to TTS, but start playback when the first audio chunks arrive. This may be worth exploring on native mobile first, where AVQueuePlayer/ExoPlayer-style queues are more reliable than Web audio chunk appending.
-2. **LLM streaming + TTS sentence queue**: stream the AI reply text, split into stable sentences, synthesize each segment, and play through an ordered queue. This is higher risk because sentence boundaries, cancellation, user interruption, and cross-segment naturalness must be handled carefully.
+1. **Complete text + streamed audio playback**: send one complete coach reply to TTS, but start playback when the first audio chunks arrive. This is not adopted today and needs a separate QA plan before any implementation.
+2. **LLM streaming + TTS sentence queue**: stream the AI reply text, split into stable sentences, synthesize each segment, and play through an ordered queue. This is explicitly deferred for both Web and Mobile because sentence boundaries, cancellation, user interruption, and cross-segment naturalness are high-risk.
 
-Decision: keep Web on complete-reply playback for now. Record streaming playback as a future native-first audio architecture task, not as a small Web patch.
+Decision: keep Web and Mobile on complete-reply playback for now. Record streaming/chunk/sentence playback as a future audio architecture task, not as a small Web or Mobile patch.
 
 ## Accent Capability Status
 

@@ -57,6 +57,9 @@ export function SettingsScreen({
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
+  const selectedXunfeiVoice = xunfeiVoiceCatalog.find(v => v.id === ttsVoiceId)
+    ?? xunfeiVoices.find(v => v.id === ttsVoiceId)
+    ?? xunfeiVoices[0]
 
 
   const styles = useMemo(() => StyleSheet.create({
@@ -209,23 +212,21 @@ export function SettingsScreen({
       {ttsProvider === 'xunfei' && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{tr('settings.xunfei_voice_config')}</Text>
-          {xunfeiVoices.length > 0 && (
+          {selectedXunfeiVoice && (
             <View style={styles.voiceList}>
-              {xunfeiVoices.map(v => (
-                <View key={`${v.id}-configured`} style={styles.voiceItem}>
-                  <View style={styles.voiceItemRow}>
-                    <Text style={styles.voiceName}>{v.name}</Text>
-                    <View style={[styles.voiceBadge, v.status === 'active' ? styles.voiceBadgeActive : styles.voiceBadgeExpired]}>
-                      <Text style={styles.voiceBadgeTxt}>
-                        {v.status === 'active' ? tr('settings.xunfei_voice_active') : tr('settings.xunfei_voice_expired')}
-                      </Text>
-                    </View>
+              <View key={`${selectedXunfeiVoice.id}-selected`} style={styles.voiceItem}>
+                <View style={styles.voiceItemRow}>
+                  <Text style={styles.voiceName}>{selectedXunfeiVoice.name}</Text>
+                  <View style={[styles.voiceBadge, selectedXunfeiVoice.status === 'active' ? styles.voiceBadgeActive : styles.voiceBadgeExpired]}>
+                    <Text style={styles.voiceBadgeTxt}>
+                      {selectedXunfeiVoice.status === 'active' ? tr('settings.xunfei_voice_active') : tr('settings.xunfei_voice_expired')}
+                    </Text>
                   </View>
-                  <Text style={styles.voiceMeta}>
-                    {tr(`settings.xunfei_voice_language_${v.language}`)} · {tr(`settings.xunfei_voice_gender_${v.gender}`)} · {tr(`settings.xunfei_voice_tier_${v.tier}`)}
-                  </Text>
                 </View>
-              ))}
+                <Text style={styles.voiceMeta}>
+                  {tr('settings.xunfei_voice_current')} · {tr(`settings.xunfei_voice_language_${selectedXunfeiVoice.language}`)} · {tr(`settings.xunfei_voice_gender_${selectedXunfeiVoice.gender}`)} · {tr(`settings.xunfei_voice_tier_${selectedXunfeiVoice.tier}`)}
+                </Text>
+              </View>
             </View>
           )}
           {xunfeiVoiceCatalog.length > 0 && (
