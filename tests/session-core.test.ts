@@ -25,14 +25,18 @@ import {
   MIXED_LANGUAGE_GRACE_FINALIZE_MS,
   canSampleListeningLevel,
   canSamplePlaybackLevel,
+  DEFAULT_PLAYBACK_COOLDOWN_MS,
+  gateUserTranscript,
   getNextSessionAction,
   getPlaybackCompletionEffects,
   pauseSessionForRoute,
   receiveCoachReply,
+  normalizeEchoText,
   recoverSessionError,
   requestCoachReply,
   shouldBlockUserInputDuringPlayback,
   shouldIgnoreNoSpeech,
+  shouldIgnoreLikelyPlaybackEcho,
   shouldPauseForRouteExit,
   shouldRestoreListeningAfterPlayback,
   shouldResumeListeningOnRoute,
@@ -158,6 +162,82 @@ describe('session-core turn guard helpers', () => {
     })).toBe(true)
     expect(canEndSession({ activeSession: true, workflowState: 'speaking' })).toBe(true)
     expect(canEndSession({ activeSession: true, workflowState: 'session_ended' })).toBe(false)
+  })
+
+  it('gates native transcripts by playback and cooldown state', () => {
+    expect(gateUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'listening',
+      transcript: 'hello',
+      playbackActive: true,
+      audioPlaying: false,
+    })).toEqual({ accepted: false, reason: 'playback_active' })
+
+    expect(gateUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'listening',
+      transcript: 'hello',
+      playbackActive: false,
+      audioPlaying: false,
+      playbackEndedAtMs: 1000,
+      nowMs: 1000 + DEFAULT_PLAYBACK_COOLDOWN_MS - 1,
+    })).toEqual({ accepted: false, reason: 'cooldown_active' })
+
+    expect(gateUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'thinking',
+      transcript: 'hello',
+      playbackActive: false,
+      audioPlaying: false,
+    })).toEqual({ accepted: false, reason: 'workflow_not_ready' })
+
+    expect(gateUserTranscript({
+      activeSession: true,
+      canListenOnRoute: true,
+      workflowState: 'correcting',
+      transcript: 'hello',
+      playbackActive: false,
+      audioPlaying: false,
+      playbackEndedAtMs: 1000,
+      nowMs: 1000 + DEFAULT_PLAYBACK_COOLDOWN_MS,
+    })).toEqual({ accepted: true, reason: 'accepted' })
+  })
+
+  it('ignores likely playback echo only inside the echo window', () => {
+    expect(shouldIgnoreLikelyPlaybackEcho({
+      transcript: 'I can help you practice ordering coffee',
+      lastAssistantResponse: 'Sure, I can help you practice ordering coffee. Let us begin.',
+      playbackEndedAtMs: 1000,
+      nowMs: 1500,
+    }).reason).toBe('contained_in_assistant_response')
+
+    expect(shouldIgnoreLikelyPlaybackEcho({
+      transcript: 'sure i can help you practise ordering coffee',
+      lastAssistantResponse: 'Sure, I can help you practice ordering coffee. Let us begin.',
+      playbackEndedAtMs: 1000,
+      nowMs: 1500,
+    }).reason).toBe('high_overlap_with_assistant_response')
+
+    expect(shouldIgnoreLikelyPlaybackEcho({
+      transcript: 'okay',
+      lastAssistantResponse: 'Okay, let us continue.',
+      playbackEndedAtMs: 1000,
+      nowMs: 1500,
+    })).toMatchObject({ shouldIgnore: false, reason: 'too_short' })
+
+    expect(shouldIgnoreLikelyPlaybackEcho({
+      transcript: 'I can help you practice ordering coffee',
+      lastAssistantResponse: 'Sure, I can help you practice ordering coffee. Let us begin.',
+      playbackEndedAtMs: 1000,
+      nowMs: 6000,
+    })).toMatchObject({ shouldIgnore: false, reason: 'outside_echo_window' })
+  })
+
+  it('normalizes echo text across punctuation, case, and Chinese text', () => {
+    expect(normalizeEchoText('  Hello, WORLD! 你好。')).toBe('helloworld你好')
   })
 
   it('uses short silence finalization with filler grace', () => {

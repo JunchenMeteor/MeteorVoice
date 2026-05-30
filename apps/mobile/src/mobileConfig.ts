@@ -1,8 +1,19 @@
 import Constants from 'expo-constants'
+import { Platform } from 'react-native'
 
 type ExpoExtra = {
   apiBaseUrl?: string
   apiBaseUrlPreview?: string
+}
+
+type ExpoConfigWithVersions = {
+  version?: string
+  ios?: {
+    buildNumber?: string
+  }
+  android?: {
+    versionCode?: number
+  }
 }
 
 const localApiBaseUrl = 'http://localhost:3000'
@@ -21,4 +32,18 @@ export function getDefaultApiBaseUrl() {
   }
 
   return extra.apiBaseUrl ?? extra.apiBaseUrlPreview ?? localApiBaseUrl
+}
+
+export function getDisplayAppVersion() {
+  const constants = Constants as typeof Constants & {
+    nativeAppVersion?: string | null
+    nativeBuildVersion?: string | null
+  }
+  const expoConfig = Constants.expoConfig as ExpoConfigWithVersions | null
+  const appVersion = constants.nativeAppVersion ?? expoConfig?.version
+  const buildVersion = constants.nativeBuildVersion
+    ?? (Platform.OS === 'android' ? expoConfig?.android?.versionCode?.toString() : expoConfig?.ios?.buildNumber)
+
+  if (appVersion && buildVersion) return `${appVersion} (${buildVersion})`
+  return appVersion ?? buildVersion ?? 'unknown'
 }

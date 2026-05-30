@@ -115,11 +115,63 @@ npx expo run:ios
 - 免费账号签名有效期和设备能力有限，不适合作为长期分发。
 - 真机需要和 Mac 在同一网络，API base URL 使用 Mac 局域网 IP。
 
+### Xcode Run: Debug 与 Release 的区别
+
+Xcode 直接点 Run 时要先确认 Scheme 的 Build Configuration：
+
+- `Debug`: React Native 不内置 JS bundle，App 启动后会连接 Mac 上的 Metro dev server。Metro 没启动、手机和 Mac 不在同一网络、或防火墙拦截 8081 端口时，App 会红屏并出现 `connect` 相关错误。这和 API 域名不是一回事。
+- `Release`: JS bundle 会打进 App，不需要连接 Metro。更适合真机验证音频、STT、TTS 和线上/预发 API。
+
+如果要用 Xcode Debug Run：
+
+```bash
+cd apps/mobile
+npx expo start --dev-client --host lan
+```
+
+然后再用 Xcode Run 到真机。手机必须能访问 Mac 的 LAN 地址和 Metro 端口。
+
+如果只是做语音稳定性真机验证，推荐直接在 Xcode Scheme 里把 Build Configuration 设为 `Release`，或使用 Archive/Release Run，避免 Metro 红屏干扰。
+
+API URL 和 Metro 是两条不同链路：
+
+- Metro: Debug JS bundle 加载，通常是 `:8081`。
+- API: MeteorVoice 后端，Debug 默认 `https://meteorvoice-pre.jcmeteor.com`，Release 默认 `https://meteorvoice.jcmeteor.com`，除非 Settings 页保存过自定义 URL。
+
+### 真机测试包版本规则
+
+每次给真机测试打包前，必须递增 `apps/mobile/app.json` 里的测试包号：
+
+- `expo.version`：产品版本，例如 `0.2.0`。普通 QA 包不一定每次改。
+- `expo.ios.buildNumber`：iOS build number，必须每次真机包递增。
+- `expo.android.versionCode`：Android version code，必须和本次测试包号同步递增。
+
+当前 iOS `Info.plist` 使用 Xcode build setting 变量：
+
+- `CFBundleShortVersionString = $(MARKETING_VERSION)`
+- `CFBundleVersion = $(CURRENT_PROJECT_VERSION)`
+
+如果使用已生成的 `apps/mobile/ios` 原生工程做本地包，必须确认 `apps/mobile/ios/MeteorVoice.xcodeproj/project.pbxproj` 中 Debug/Release 的 `CURRENT_PROJECT_VERSION` 已同步到同一个测试包号。可用下面命令验证：
+
+```bash
+cd apps/mobile/ios
+xcodebuild -workspace MeteorVoice.xcworkspace -scheme MeteorVoice -configuration Release -showBuildSettings | rg "MARKETING_VERSION|CURRENT_PROJECT_VERSION"
+```
+
+当前采用日期加序号格式：`YYYYMMDDNN`。例如 `2026053001` 表示 2026-05-30 的第 1 个真机测试包；同一天第二个包用 `2026053002`。测试反馈和 PR 备注里必须写清楚本次包号，例如 `0.2.0 (2026053001)`，避免旧包反馈污染验证结果。
+
 推荐流程：
 
 ```bash
 cd apps/mobile
-npx expo run:ios --device
+npx expo run:ios --device --configuration Release
+```
+
+如果命令行要求选择设备，先用 `xcrun xctrace list devices` 找到真机名称，再显式指定：
+
+```bash
+cd apps/mobile
+npx expo run:ios --device "Meteor's iPhone15Pro" --configuration Release
 ```
 
 如果命令行签名失败，用 Xcode 打开生成的 `apps/mobile/ios` 工程，选择 Team 后运行。

@@ -10,6 +10,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio'
+import { configureVoiceAudioSession } from './voiceAudioSession'
 
 type NativeAudioPermission = 'unknown' | 'granted' | 'denied'
 
@@ -32,9 +33,23 @@ const playbackAudioMode = {
   shouldRouteThroughEarpiece: false,
 }
 
+const audioExperimentFlags = {
+  routePlaybackThroughEarpieceWhenRecording: false,
+  useAndroidVoiceCommunicationRecorder: false,
+}
+
 const recordingAudioMode = {
   ...playbackAudioMode,
   allowsRecording: true,
+  shouldRouteThroughEarpiece: audioExperimentFlags.routePlaybackThroughEarpieceWhenRecording,
+}
+
+const voiceCommunicationRecordingPreset = {
+  ...RecordingPresets.HIGH_QUALITY,
+  android: {
+    ...RecordingPresets.HIGH_QUALITY.android,
+    audioSource: 'voice_communication' as const,
+  },
 }
 
 function normalizePlaybackRate(value: number) {
@@ -54,7 +69,11 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
 
   const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+  const recorder = useAudioRecorder(
+    audioExperimentFlags.useAndroidVoiceCommunicationRecorder
+      ? voiceCommunicationRecordingPreset
+      : RecordingPresets.HIGH_QUALITY,
+  )
   const recorderState = useAudioRecorderState(recorder, 250)
 
   const isRecording = recorderState.isRecording
@@ -67,6 +86,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
 
   const configurePlayback = useCallback(async () => {
     await setAudioModeAsync(playbackAudioMode)
+    await configureVoiceAudioSession({ mode: 'playback' }).catch(() => undefined)
   }, [])
 
   const applyPlaybackRate = useCallback(() => {
@@ -75,6 +95,11 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
 
   const configureRecording = useCallback(async () => {
     await setAudioModeAsync(recordingAudioMode)
+    await configureVoiceAudioSession({
+      mode: 'recording',
+      allowBluetooth: true,
+      defaultToSpeaker: true,
+    }).catch(() => undefined)
   }, [])
 
   const runExclusive = useCallback(async <T,>(operation: () => Promise<T>) => {
