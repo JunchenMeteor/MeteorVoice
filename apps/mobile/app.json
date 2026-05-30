@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tzcpa.meteorvoice",
+      "buildNumber": "2026053102",
       "deploymentTarget": "18.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions.",
@@ -22,6 +23,7 @@
     },
     "android": {
       "package": "com.jcmeteor.meteorvoice",
+      "versionCode": 2026053102,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",

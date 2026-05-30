@@ -1,0 +1,8 @@
+{
+  "name": "voice-audio-session",
+  "version": "0.1.0",
+  "description": "MeteorVoice iOS voice audio session module.",
+  "main": "src/index.ts",
+  "license": "UNLICENSED",
+  "private": true
+}

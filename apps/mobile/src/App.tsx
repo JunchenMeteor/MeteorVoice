@@ -22,13 +22,16 @@ import {
   canEndSession,
   createPlaybackQueueSnapshot,
   createInitialSnapshot,
+  DEFAULT_PLAYBACK_COOLDOWN_MS,
   endActiveSession,
+  gateUserTranscript,
   getPlaybackCompletionEffects,
   judgeEndpoint,
   receiveCoachReply,
   recoverSessionError,
   requestCoachReply,
   completeCoachPlayback,
+  shouldIgnoreLikelyPlaybackEcho,
   startListeningSession,
   startPlaybackQueue,
   type PlaybackQueueSnapshot,
@@ -55,7 +58,7 @@ import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
 import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
-import { getDefaultApiBaseUrl } from './mobileConfig'
+import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
 import { ThemeProvider, useTheme } from './ThemeProvider'
 import { SessionScreen } from './screens/SessionScreen'
 import { HomeScreen } from './screens/HomeScreen'
@@ -63,8 +66,14 @@ import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
+const appVersion = getDisplayAppVersion()
 const apiBaseUrlStorageKey = 'api_base_url'
 type Tab = 'session' | 'home' | 'history' | 'settings'
+type VoiceMetricEntry = {
+  ts: number
+  stage: string
+  data: Record<string, unknown>
+}
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'nav.home',
@@ -136,6 +145,7 @@ function AppInner() {
     void SecureStore.setItemAsync('app_locale', l)
   }, [])
   const [summary, setSummary] = useState<string | null>(null)
+  const [voiceMetrics, setVoiceMetrics] = useState<VoiceMetricEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -167,17 +177,24 @@ function AppInner() {
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
-  const speechCancelListeningRef = useRef<() => void>(() => undefined)
+  const speechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
   const endpointRequestRef = useRef(0)
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
   const playbackActiveRef = useRef(false)
+  const playbackEndedAtMsRef = useRef<number | null>(null)
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
+  const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
+  const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
+    ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
+    ?? providerVoiceProfiles.find(profile => profile.status === 'active')
+  const sessionAccentName = selectedVoiceProfile?.accentLabel ?? getAccentLabel(accent, locale)
+  const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
   const api = useMemo(() => createMeteorVoiceApiClient({
     baseUrl: apiBaseUrl.trim(),
     headers: getAuthHeaders,
@@ -200,7 +217,19 @@ function AppInner() {
     resumeListeningTimerRef.current = null
   }, [])
 
-  const scheduleResumeListening = useCallback((delayMs = 900, updateStatus = true) => {
+  const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
+    const entry = { ts: Date.now(), stage, data }
+    console.info('[voice-metrics]', JSON.stringify(entry))
+    setVoiceMetrics(previous => [...previous.slice(-79), entry])
+  }, [])
+
+  const voiceMetricsText = useMemo(() => {
+    return voiceMetrics
+      .map(entry => `${new Date(entry.ts).toLocaleTimeString()} ${entry.stage} ${JSON.stringify(entry.data)}`)
+      .join('\n')
+  }, [voiceMetrics])
+
+  const scheduleResumeListening = useCallback((delayMs = DEFAULT_PLAYBACK_COOLDOWN_MS, updateStatus = true) => {
     clearResumeListeningTimer()
     resumeListeningTimerRef.current = setTimeout(() => {
       resumeListeningTimerRef.current = null
@@ -224,9 +253,11 @@ function AppInner() {
   }, [])
 
   function startSession() {
+    logVoiceMetric('session_start', { scenario: scenario.key, accent: accent.key, provider: ttsProvider })
     endpointRequestRef.current += 1
     clearResumeListeningTimer()
     playbackActiveRef.current = false
+    playbackEndedAtMsRef.current = null
     listeningStartMsRef.current = Date.now()
     pendingNativeTranscriptRef.current = ''
     sessionActiveRef.current = true
@@ -237,6 +268,7 @@ function AppInner() {
     setMessages([])
     setCorrectionHistory([])
     setAudioUrl(null)
+    playbackEndedAtMsRef.current = null
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
@@ -264,6 +296,7 @@ function AppInner() {
       if (isCorrectionPlayingRef.current) {
         isCorrectionPlayingRef.current = false
         playbackActiveRef.current = false
+        playbackEndedAtMsRef.current = Date.now()
         setStatus(sessionActiveRef.current && canListenOnRouteRef.current
           ? 'session.status.listening'
           : 'session.status.reply_played')
@@ -286,14 +319,16 @@ function AppInner() {
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
         playbackActiveRef.current = true
+        playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
-        speechCancelListeningRef.current()
+        void speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setAudioUrl(nextQueue.currentAudioUrl)
         return
       }
 
       playbackActiveRef.current = false
+      playbackEndedAtMsRef.current = Date.now()
       setStatus('session.status.reply_played')
       if (sessionActiveRef.current && canListenOnRouteRef.current) {
         scheduleResumeListening()
@@ -308,6 +343,7 @@ function AppInner() {
   }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, clearResumeListeningTimer, scheduleResumeListening])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
+    const submitStartedAt = Date.now()
     const transcript = sourceTranscript.trim()
     if (
       busy ||
@@ -329,9 +365,10 @@ function AppInner() {
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
     listeningStartMsRef.current = 0
+    playbackEndedAtMsRef.current = null
     pendingNativeTranscriptRef.current = ''
     clearResumeListeningTimer()
-    speechCancelListeningRef.current()
+    await speechCancelListeningRef.current()
     setBusy(true)
 
     try {
@@ -346,6 +383,10 @@ function AppInner() {
           sessionId: nextSnapshot.sessionId,
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
         },
+      })
+      logVoiceMetric('coach_reply_ready', {
+        elapsedMs: Date.now() - submitStartedAt,
+        chars: coachReply.text.length,
       })
       setCorrectionHistory(previous => [...previous, ...coachReply.corrections])
       const coachTurn = receiveCoachReply({
@@ -364,14 +405,20 @@ function AppInner() {
         return
       }
       const voice = await synthesizeCoachSpeech(coachReply.text)
+      logVoiceMetric('tts_ready', {
+        elapsedMs: Date.now() - submitStartedAt,
+        hasAudio: Boolean(voice.audioUrl),
+      })
 
       if (voice.audioUrl) {
         playbackActiveRef.current = true
+        playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
-        speechCancelListeningRef.current()
+        await speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
+        logVoiceMetric('playback_enqueued', { elapsedMs: Date.now() - submitStartedAt })
       } else {
         playbackActiveRef.current = false
         setStatus('session.status.reply_without_audio')
@@ -400,28 +447,64 @@ function AppInner() {
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
-    messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech,
+    logVoiceMetric, messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
+    const finalReceivedAt = Date.now()
     const transcript = finalTranscript.trim()
     if (!transcript) return
-    if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current || audio.isPlaying) {
-      pendingNativeTranscriptRef.current = ''
-      return
-    }
     const endpointTranscript = [pendingNativeTranscriptRef.current, transcript]
       .map(part => part.trim())
       .filter(Boolean)
       .join(' ')
 
     if (!isSessionActive) {
+      logVoiceMetric('transcript_ignored_inactive', { chars: transcript.length })
       setStatus('session.status.speech_captured')
+      return
+    }
+
+    const transcriptGate = gateUserTranscript({
+      activeSession: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      workflowState: snapshot.state,
+      transcript: endpointTranscript,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audio.isPlaying,
+      playbackEndedAtMs: playbackEndedAtMsRef.current,
+      nowMs: Date.now(),
+      cooldownMs: DEFAULT_PLAYBACK_COOLDOWN_MS,
+    })
+    if (!transcriptGate.accepted) {
+      logVoiceMetric('transcript_gate_rejected', {
+        reason: transcriptGate.reason,
+        chars: endpointTranscript.length,
+      })
+      pendingNativeTranscriptRef.current = ''
+      return
+    }
+
+    const echoGuard = shouldIgnoreLikelyPlaybackEcho({
+      transcript: endpointTranscript,
+      lastAssistantResponse: snapshot.lastResponse,
+      playbackEndedAtMs: playbackEndedAtMsRef.current,
+      nowMs: Date.now(),
+    })
+    if (echoGuard.shouldIgnore) {
+      logVoiceMetric('transcript_echo_ignored', {
+        overlapRatio: echoGuard.overlapRatio,
+        chars: endpointTranscript.length,
+      })
+      pendingNativeTranscriptRef.current = ''
+      setStatus('session.status.listening')
+      void speechStartListeningRef.current('en-US')
       return
     }
 
     const baseUrl = apiBaseUrl.trim()
     const endpointRequestId = ++endpointRequestRef.current
+    logVoiceMetric('endpoint_start', { chars: endpointTranscript.length })
     const endpointResult = await judgeEndpoint({
       transcript: endpointTranscript,
       listeningDurationMs: Date.now() - listeningStartMsRef.current,
@@ -439,6 +522,11 @@ function AppInner() {
       } : undefined,
     })
     if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
+    logVoiceMetric('endpoint_done', {
+      judgment: endpointResult.judgment,
+      reason: endpointResult.reason,
+      elapsedMs: Date.now() - finalReceivedAt,
+    })
 
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
@@ -448,10 +536,11 @@ function AppInner() {
     }
 
     pendingNativeTranscriptRef.current = ''
+    logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, messages, scenario.key, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
 
-  const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript })
+  const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript, onMetric: logVoiceMetric })
 
   useEffect(() => {
     speechStartListeningRef.current = speech.startListening
@@ -469,10 +558,11 @@ function AppInner() {
     sessionActiveRef.current = false
     canListenOnRouteRef.current = false
     playbackActiveRef.current = false
+    playbackEndedAtMsRef.current = null
     clearResumeListeningTimer()
     endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
-    speechCancelListeningRef.current()
+    void speechCancelListeningRef.current()
     const endedSnapshot = endActiveSession(snapshot).snapshot
     setSnapshot(endedSnapshot)
     setIsSessionActive(false)
@@ -591,6 +681,7 @@ function AppInner() {
   async function saveProvider(provider: string) {
     setTtsProvider(provider)
     setAudioUrl(null)
+    playbackEndedAtMsRef.current = null
     setSettingsLoading(true)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') {
@@ -672,6 +763,7 @@ function AppInner() {
   async function selectVoiceProfile(profile: VoiceProfile) {
     if (profile.status !== 'active') return
     setAudioUrl(null)
+    playbackEndedAtMsRef.current = null
     setSelectedVoiceProfileId(profile.id)
     setTtsProvider(profile.provider)
     setTtsVoiceId(profile.providerVoiceId)
@@ -752,10 +844,11 @@ function AppInner() {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active') {
         canListenOnRouteRef.current = false
+        playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
         endpointRequestRef.current += 1
         pendingNativeTranscriptRef.current = ''
-        speechCancelListeningRef.current()
+        void speechCancelListeningRef.current()
         if (sessionActiveRef.current) setStatus('session.paused')
         return
       }
@@ -778,11 +871,12 @@ function AppInner() {
 
   function playCorrection(text: string) {
     clearResumeListeningTimer()
-    speechCancelListeningRef.current()
+    void speechCancelListeningRef.current()
     void synthesizeCoachSpeech(text).then(voice => {
       if (voice.audioUrl) {
         isCorrectionPlayingRef.current = true
         playbackActiveRef.current = true
+        playbackEndedAtMsRef.current = null
         setStatus('session.status.playing_reply')
         setAudioUrl(voice.audioUrl)
       }
@@ -806,8 +900,8 @@ function AppInner() {
             scenarioIcon={scenario.icon}
             scenarioDifficulty={getDifficultyLabel(scenario.difficulty, locale)}
             scenarioDescription={getScenarioDescription(scenario, locale)}
-            accentName={getAccentLabel(accent, locale)}
-            accentRegion={getAccentRegion(accent, locale)}
+            accentName={sessionAccentName}
+            accentRegion={sessionAccentRegion}
             onStart={startSession}
             onEnd={() => void endSession()}
             onPlayCorrection={playCorrection}
@@ -860,6 +954,8 @@ function AppInner() {
             password={password}
             authMode={authMode}
             apiBaseUrl={apiBaseUrl}
+            appVersion={appVersion}
+            voiceMetricsText={voiceMetricsText}
             onSetLocale={l => setLocale(l as Locale)}
             onSetTheme={setTheme}
             onSaveProvider={p => void saveProvider(p)}
@@ -873,6 +969,7 @@ function AppInner() {
             onSubmitAuth={() => void submitAuth()}
             onSignOut={() => void auth.signOut()}
             onSetApiBaseUrl={updateApiBaseUrl}
+            onClearVoiceMetrics={() => setVoiceMetrics([])}
           />
         )
     }

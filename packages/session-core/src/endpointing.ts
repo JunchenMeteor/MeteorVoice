@@ -94,6 +94,25 @@ const SHORT_COMPLETE_PHRASE_LIST = [
   'good night',
   'bye',
   'goodbye',
+  '断句',
+  '不会用',
+  '不会',
+  '怎么用',
+  '怎么说',
+  '什么意思',
+  '再说一遍',
+  '再来一次',
+  '重复一下',
+  '帮我改',
+  '我不知道',
+  '不知道',
+  '不懂',
+  '没听懂',
+  '可以',
+  '好的',
+  '谢谢',
+  '对',
+  '不对',
 ]
 
 const SHORT_COMPLETE_PHRASES = new RegExp(
@@ -104,7 +123,7 @@ const SHORT_COMPLETE_PHRASES = new RegExp(
 const SHORT_PHRASE_MAX_WORDS = 3
 
 export const DEFAULT_MAX_UTTERANCE_MS = 45000
-export const DEFAULT_SEMANTIC_ENDPOINT_TIMEOUT_MS = 1500
+export const DEFAULT_SEMANTIC_ENDPOINT_TIMEOUT_MS = 800
 export const DEFAULT_MAX_SILENCE_MS = 8000
 export const DEFAULT_MAX_LISTENING_MS = DEFAULT_MAX_UTTERANCE_MS
 const DEFAULT_PAUSE_DELAY_MS = 500

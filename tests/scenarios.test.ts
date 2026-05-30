@@ -36,8 +36,8 @@ describe('localized accent content', () => {
   it('returns localized accent labels and regions', () => {
     const accent = accentProfiles.find(a => a.key === 'american')
     expect(accent).toBeDefined()
-    expect(getAccentLabel(accent!, 'en')).toBe('General American')
-    expect(getAccentLabel(accent!, 'zh')).toBe('通用美式英语')
+    expect(getAccentLabel(accent!, 'en')).toBe('American English')
+    expect(getAccentLabel(accent!, 'zh')).toBe('美式英语')
     expect(getAccentRegion(accent!, 'zh')).toBe('美国')
   })
 

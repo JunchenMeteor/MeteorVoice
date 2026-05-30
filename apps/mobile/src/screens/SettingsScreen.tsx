@@ -23,6 +23,8 @@ interface Props {
   password: string
   authMode: 'sign-in' | 'sign-up'
   apiBaseUrl: string
+  appVersion: string
+  voiceMetricsText: string
   onSetLocale: (l: string) => void
   onSetTheme: (k: ThemeKey) => void
   onSaveProvider: (p: string) => void
@@ -36,16 +38,17 @@ interface Props {
   onSubmitAuth: () => void
   onSignOut: () => void
   onSetApiBaseUrl: (v: string) => void
+  onClearVoiceMetrics: () => void
 }
 
 export function SettingsScreen({
   tr, locale, ttsProvider, availableProviders, ttsSpeed,
   ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
   settingsLoading, settingsMessage,
-  auth, email, password, authMode, apiBaseUrl,
+  auth, email, password, authMode, apiBaseUrl, appVersion, voiceMetricsText,
   onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
-  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
+  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl, onClearVoiceMetrics,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
@@ -136,6 +139,17 @@ export function SettingsScreen({
     },
     voiceCatalogName: { color: C.textSecondary, fontSize: 13, fontWeight: '600' },
     voiceCatalogMeta: { color: C.textMuted, fontSize: 11 },
+    diagnosticsBox: {
+      minHeight: 120,
+      maxHeight: 220,
+      backgroundColor: C.bg,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: C.border,
+      padding: 10,
+    },
+    diagnosticsText: { color: C.textSecondary, fontSize: 11, lineHeight: 16 },
+    appVersion: { color: C.textMuted, fontSize: 11, textAlign: 'center', paddingBottom: 16 },
   }), [C])
   return (
     <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -276,6 +290,23 @@ export function SettingsScreen({
         />
       </View>
 
+      {/* Diagnostics */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Voice diagnostics</Text>
+          <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
+            <Text style={styles.smallBtnTxt}>Clear</Text>
+          </Pressable>
+        </View>
+        <View style={styles.diagnosticsBox}>
+          <ScrollView nestedScrollEnabled>
+            <Text selectable style={styles.diagnosticsText}>
+              {voiceMetricsText || 'No voice metrics yet.'}
+            </Text>
+          </ScrollView>
+        </View>
+      </View>
+
       {/* Auth */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -325,8 +356,8 @@ export function SettingsScreen({
           </View>
         )}
       </View>
+      <Text style={styles.appVersion}>MeteorVoice {appVersion}</Text>
     </ScrollView>
     </KeyboardAvoidingView>
   )
 }
-

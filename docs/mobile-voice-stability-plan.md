@@ -75,6 +75,195 @@ expo-speech-recognition final transcript
 
 ## 分阶段执行方案
 
+### Phase 4.5: 语音输入低延迟与可诊断化
+
+目标：解决“文字输入回复很快，但语音输入后 AI 半天没回应”的体感问题。该阶段不再新增原生音频能力，重点优化 STT final 等待、endpoint 判停和日志采集。
+
+#### 4.5.1 STT interim 稳定提交
+
+涉及文件：
+
+- `apps/mobile/src/nativeSpeech.ts`
+- `apps/mobile/src/App.tsx`
+
+实现要求：
+
+1. 在 `nativeSpeech.ts` 定义常量：
+
+```ts
+const INTERIM_STABLE_SUBMIT_MS = 850
+```
+
+2. 在 `useNativeSpeech()` 内新增 refs：
+
+```ts
+const interimTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+const submittedTranscriptRef = useRef('')
+const speechStartedAtRef = useRef(0)
+const firstPartialAtRef = useRef<number | null>(null)
+```
+
+3. 新增统一清理函数 `clearTranscriptTimers()`，必须同时清理 final timer 和 interim timer。
+4. 新增 `submitRecognizedTranscript(transcript, source)`：
+
+```ts
+type Source = 'final' | 'interim_stable'
+```
+
+参数规则：
+
+| 参数 | 类型 | 用途 |
+| --- | --- | --- |
+| `transcript` | `string` | STT 返回的文本，内部 trim。 |
+| `source` | `'final' | 'interim_stable'` | 标记来源，写入诊断日志。 |
+
+函数行为：
+
+- 空文本直接 return。
+- 如果和 `submittedTranscriptRef.current` 相同，直接 return，避免 final 和 interim 双提交。
+- 写入 `finalTranscript`，清空 `partialTranscript`，状态置为 `idle`。
+- `source === 'interim_stable'` 时调用 `ExpoSpeechRecognitionModule.abort()`，释放识别器。
+- 调用 `options.onFinalTranscript?.(normalized)` 进入 App endpoint 流程。
+
+5. 在 `result` event 中：
+
+- `event.isFinal === true`：沿用 `getSpeechEndpointDelay()`，到点后调用 `submitRecognizedTranscript(transcript, 'final')`。
+- `event.isFinal === false`：更新 partial，并启动 `INTERIM_STABLE_SUBMIT_MS` timer；timer 到点后调用 `submitRecognizedTranscript(transcript, 'interim_stable')`。
+
+验收标准：
+
+- 用户短句停顿后，不必等系统 final 很久，也能进入 endpoint 判停。
+- final 和 interim 稳定提交不会重复触发同一轮 `submitTurn()`。
+- 播放开始前 recognizer 已 abort，避免 STT 抢占播放路由。
+
+#### 4.5.2 Endpoint fast-path 和 timeout
+
+涉及文件：
+
+- `packages/session-core/src/endpointing.ts`
+- `tests/session-core.test.ts`
+
+实现要求：
+
+1. `DEFAULT_SEMANTIC_ENDPOINT_TIMEOUT_MS` 从 `1500` 降到 `800`。
+2. `SHORT_COMPLETE_PHRASE_LIST` 增加常见中文短句和命令，例如：
+
+```ts
+'断句',
+'不会用',
+'怎么用',
+'怎么说',
+'什么意思',
+'再说一遍',
+'再来一次',
+'帮我改',
+'我不知道',
+'没听懂',
+```
+
+3. `isTurnDefinitelyComplete()` 对上述短句必须直接返回 `true`，从而跳过 `/api/semantic-endpoint`。
+
+验收标准：
+
+- “断句”“不会用”“怎么说”“再说一遍”这类短句直接 submit。
+- 不明确的长句仍可走 semantic endpoint，但最多等待 800ms。
+- 相关单元测试覆盖英文短句、中文短句、timeout 默认值。
+
+#### 4.5.3 Voice metrics 诊断日志
+
+涉及文件：
+
+- `apps/mobile/src/App.tsx`
+- `apps/mobile/src/nativeSpeech.ts`
+- `apps/mobile/src/screens/SettingsScreen.tsx`
+
+实现要求：
+
+1. 在 `App.tsx` 定义：
+
+```ts
+type VoiceMetricEntry = {
+  ts: number
+  stage: string
+  data: Record<string, unknown>
+}
+```
+
+2. 在 `AppInner` 中新增 state 和 logger：
+
+```ts
+const [voiceMetrics, setVoiceMetrics] = useState<VoiceMetricEntry[]>([])
+
+const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
+  const entry = { ts: Date.now(), stage, data }
+  console.info('[voice-metrics]', JSON.stringify(entry))
+  setVoiceMetrics(previous => [...previous.slice(-79), entry])
+}, [])
+```
+
+3. `useNativeSpeech()` 增加 option：
+
+```ts
+onMetric?: (stage: string, data?: Record<string, unknown>) => void
+```
+
+4. 必须记录以下 stage：
+
+| stage | 位置 | 关键字段 |
+| --- | --- | --- |
+| `session_start` | `startSession()` | `scenario`, `accent`, `provider` |
+| `stt_start` | speech start event | 无 |
+| `stt_first_partial` | 第一次 partial | `elapsedMs`, `chars` |
+| `stt_submit` | final/interim 提交 | `source`, `elapsedMs`, `chars` |
+| `endpoint_start` | endpoint 判停前 | `chars` |
+| `endpoint_done` | endpoint 判停后 | `judgment`, `reason`, `elapsedMs` |
+| `submit_turn_start` | 进入 `submitTurn()` 前 | `chars` |
+| `coach_reply_ready` | `/api/chat` 返回后 | `elapsedMs`, `chars` |
+| `tts_ready` | `/api/tts` 返回后 | `elapsedMs`, `hasAudio` |
+| `playback_enqueued` | 设置 `audioUrl` 后 | `elapsedMs` |
+| `transcript_gate_rejected` | gate 拒绝 | `reason`, `chars` |
+| `transcript_echo_ignored` | echo guard 丢弃 | `similarity`, `chars` |
+
+5. `SettingsScreen` 增加 props：
+
+```ts
+voiceMetricsText: string
+onClearVoiceMetrics: () => void
+```
+
+6. 设置页增加 `Voice diagnostics` 区域：
+
+- 显示最近 80 条 `voiceMetrics`。
+- 文本 `selectable`，便于 Release 包真机测试时直接长按复制或截图。
+- 提供 `Clear` 按钮清空当前日志。
+
+真机日志导出方式：
+
+1. Xcode Run / Release 包均可使用 App 内导出：复现问题后进入 Settings -> Voice diagnostics。
+2. 长按选择日志文本，或直接截图。
+3. 反馈时至少提供从 `stt_start` 到 `playback_enqueued` 的连续日志。
+
+如果连接 Xcode，也可以在控制台筛选：
+
+```text
+voice-metrics
+```
+
+#### 4.5.4 Debug 真机 API URL 规则
+
+当前 `apps/mobile/src/mobileConfig.ts` 的默认规则：
+
+- 显式设置 `EXPO_PUBLIC_API_BASE_URL` 时，优先使用该值。
+- Debug/development bundle 默认使用 `extra.apiBaseUrlPreview`。
+- Release bundle 默认使用 `extra.apiBaseUrl`。
+- Settings 页保存过的 API URL 会覆盖默认值。
+
+执行要求：
+
+- Xcode Run 真机调试默认走预发域名 `https://meteorvoice-pre.jcmeteor.com`。
+- 只有明确调本地 Web/API 时，才在 Settings 页填 Mac 局域网 IP。
+- 如果真机仍访问本地 IP，先清空 Settings 页 API URL 并重启 App，或重新安装 App 清掉 SecureStore。
+
 ### Phase 0: 修复播放后不恢复监听
 
 目标：先解决 AI 回复播放完后状态卡住、不能继续监听的问题。

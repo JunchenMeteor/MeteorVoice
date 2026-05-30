@@ -362,6 +362,60 @@ export function canAcceptUserTranscript(input: {
   )
 }
 
+export const DEFAULT_PLAYBACK_COOLDOWN_MS = 900
+
+export interface UserTranscriptGateInput {
+  activeSession: boolean
+  canListenOnRoute: boolean
+  workflowState: WorkflowState
+  transcript?: string | null
+  playbackActive: boolean
+  audioPlaying: boolean
+  nowMs?: number
+  playbackEndedAtMs?: number | null
+  cooldownMs?: number
+}
+
+export type UserTranscriptGateReason =
+  | 'accepted'
+  | 'empty_transcript'
+  | 'inactive_session'
+  | 'route_blocked'
+  | 'playback_active'
+  | 'cooldown_active'
+  | 'workflow_not_ready'
+
+export interface UserTranscriptGateResult {
+  accepted: boolean
+  reason: UserTranscriptGateReason
+}
+
+export function gateUserTranscript(input: UserTranscriptGateInput): UserTranscriptGateResult {
+  if (!input.transcript?.trim()) return { accepted: false, reason: 'empty_transcript' }
+  if (!input.activeSession) return { accepted: false, reason: 'inactive_session' }
+  if (!input.canListenOnRoute) return { accepted: false, reason: 'route_blocked' }
+  if (input.playbackActive || input.audioPlaying) return { accepted: false, reason: 'playback_active' }
+
+  const cooldownMs = input.cooldownMs ?? DEFAULT_PLAYBACK_COOLDOWN_MS
+  const nowMs = input.nowMs ?? Date.now()
+  if (
+    input.playbackEndedAtMs != null &&
+    nowMs - input.playbackEndedAtMs < cooldownMs
+  ) {
+    return { accepted: false, reason: 'cooldown_active' }
+  }
+
+  if (
+    input.workflowState !== 'listening' &&
+    input.workflowState !== 'idle' &&
+    input.workflowState !== 'correcting'
+  ) {
+    return { accepted: false, reason: 'workflow_not_ready' }
+  }
+
+  return { accepted: true, reason: 'accepted' }
+}
+
 export function shouldIgnoreNoSpeech(input: {
   activeSession: boolean
   workflowState: WorkflowState
