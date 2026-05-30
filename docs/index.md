@@ -31,6 +31,8 @@
   - 当前最高优先级路线图。定义架构骨架完成后的产品化阶段、AI 执行要求和验收标准。
 - `docs/mobile-audio-qa-checklist.md`
   - Native audio 真机/模拟器 QA checklist，覆盖播放、录音、权限、前后台和设备路由。
+- `docs/mobile-voice-stability-plan.md`
+  - Mobile 语音稳定性执行规格，覆盖播放后恢复监听 bug、自回声门控、文本回声过滤、Expo AEC 边界和 native AEC 可行性。
 - `docs/mobile-bug-review-2026-05-29.md`
   - 2026-05-29 Mobile 语音循环、前后台、TTS provider/voice sync、text fallback 和 QA 缺口审查记录。
 - `docs/mobile-local-build-runbook.md`

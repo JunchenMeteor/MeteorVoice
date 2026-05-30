@@ -73,6 +73,7 @@ const TAB_LABELS: Record<Tab, string> = {
   settings: 'nav.settings',
 }
 
+
 function TabIcon({ tab, color }: { tab: Tab; color: string }) {
   if (tab === 'home') return (
     <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -173,6 +174,7 @@ function AppInner() {
   const playbackActiveRef = useRef(false)
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
+  const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -192,6 +194,25 @@ function AppInner() {
   }, [setThemeLocal, api])
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
+  const clearResumeListeningTimer = useCallback(() => {
+    if (!resumeListeningTimerRef.current) return
+    clearTimeout(resumeListeningTimerRef.current)
+    resumeListeningTimerRef.current = null
+  }, [])
+
+  const scheduleResumeListening = useCallback((delayMs = 900, updateStatus = true) => {
+    clearResumeListeningTimer()
+    resumeListeningTimerRef.current = setTimeout(() => {
+      resumeListeningTimerRef.current = null
+      if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
+      listeningStartMsRef.current = Date.now()
+      if (updateStatus) setStatus('session.status.listening')
+      void speechStartListeningRef.current('en-US')
+    }, delayMs)
+  }, [clearResumeListeningTimer])
+
+  useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
+
   const updateApiBaseUrl = useCallback((value: string) => {
     setApiBaseUrl(value)
     const normalized = value.trim()
@@ -204,6 +225,7 @@ function AppInner() {
 
   function startSession() {
     endpointRequestRef.current += 1
+    clearResumeListeningTimer()
     playbackActiveRef.current = false
     listeningStartMsRef.current = Date.now()
     pendingNativeTranscriptRef.current = ''
@@ -246,11 +268,7 @@ function AppInner() {
           ? 'session.status.listening'
           : 'session.status.reply_played')
         if (sessionActiveRef.current && canListenOnRouteRef.current) {
-          setTimeout(() => {
-            if (cancelled || !sessionActiveRef.current || !canListenOnRouteRef.current) return
-            listeningStartMsRef.current = Date.now()
-            void speechStartListeningRef.current('en-US')
-          }, 900)
+          scheduleResumeListening(900, false)
         }
         return
       }
@@ -268,6 +286,7 @@ function AppInner() {
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
         playbackActiveRef.current = true
+        clearResumeListeningTimer()
         speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setAudioUrl(nextQueue.currentAudioUrl)
@@ -277,12 +296,7 @@ function AppInner() {
       playbackActiveRef.current = false
       setStatus('session.status.reply_played')
       if (sessionActiveRef.current && canListenOnRouteRef.current) {
-        setTimeout(() => {
-          if (cancelled || !sessionActiveRef.current || !canListenOnRouteRef.current) return
-          listeningStartMsRef.current = Date.now()
-          setStatus('session.status.listening')
-          void speechStartListeningRef.current('en-US')
-        }, 900)
+        scheduleResumeListening()
       }
     }
 
@@ -291,7 +305,7 @@ function AppInner() {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, tr])
+  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, clearResumeListeningTimer, scheduleResumeListening])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const transcript = sourceTranscript.trim()
@@ -316,6 +330,7 @@ function AppInner() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     listeningStartMsRef.current = 0
     pendingNativeTranscriptRef.current = ''
+    clearResumeListeningTimer()
     speechCancelListeningRef.current()
     setBusy(true)
 
@@ -352,6 +367,7 @@ function AppInner() {
 
       if (voice.audioUrl) {
         playbackActiveRef.current = true
+        clearResumeListeningTimer()
         speechCancelListeningRef.current()
         setStatus('session.status.playing_reply')
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
@@ -383,7 +399,7 @@ function AppInner() {
       setBusy(false)
     }
   }, [
-    accent.name, accent.region, api, audio.isRecording, busy, isSessionActive,
+    accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
     messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech,
   ])
 
@@ -453,6 +469,7 @@ function AppInner() {
     sessionActiveRef.current = false
     canListenOnRouteRef.current = false
     playbackActiveRef.current = false
+    clearResumeListeningTimer()
     endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
     speechCancelListeningRef.current()
@@ -735,6 +752,7 @@ function AppInner() {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active') {
         canListenOnRouteRef.current = false
+        clearResumeListeningTimer()
         endpointRequestRef.current += 1
         pendingNativeTranscriptRef.current = ''
         speechCancelListeningRef.current()
@@ -756,9 +774,10 @@ function AppInner() {
       }
     })
     return () => subscription.remove()
-  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy])
+  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy, clearResumeListeningTimer])
 
   function playCorrection(text: string) {
+    clearResumeListeningTimer()
     speechCancelListeningRef.current()
     void synthesizeCoachSpeech(text).then(voice => {
       if (voice.audioUrl) {
@@ -897,4 +916,3 @@ function AppInner() {
     })
   }
 }
-
