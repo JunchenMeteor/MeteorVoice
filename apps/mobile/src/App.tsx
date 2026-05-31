@@ -3,6 +3,7 @@ import {
   AppState,
   Pressable,
   SafeAreaView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -970,6 +971,12 @@ function AppInner() {
             onSignOut={() => void auth.signOut()}
             onSetApiBaseUrl={updateApiBaseUrl}
             onClearVoiceMetrics={() => setVoiceMetrics([])}
+            onShareVoiceMetrics={() => {
+              void Share.share({
+                title: 'MeteorVoice voice diagnostics',
+                message: voiceMetricsText || 'No voice metrics yet.',
+              })
+            }}
           />
         )
     }

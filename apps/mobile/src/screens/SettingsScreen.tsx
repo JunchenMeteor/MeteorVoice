@@ -39,6 +39,7 @@ interface Props {
   onSignOut: () => void
   onSetApiBaseUrl: (v: string) => void
   onClearVoiceMetrics: () => void
+  onShareVoiceMetrics: () => void
 }
 
 export function SettingsScreen({
@@ -48,7 +49,7 @@ export function SettingsScreen({
   auth, email, password, authMode, apiBaseUrl, appVersion, voiceMetricsText,
   onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
-  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl, onClearVoiceMetrics,
+  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
@@ -294,9 +295,14 @@ export function SettingsScreen({
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Voice diagnostics</Text>
-          <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
-            <Text style={styles.smallBtnTxt}>Clear</Text>
-          </Pressable>
+          <View style={styles.chipRow}>
+            <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
+              <Text style={styles.smallBtnTxt}>Share</Text>
+            </Pressable>
+            <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
+              <Text style={styles.smallBtnTxt}>Clear</Text>
+            </Pressable>
+          </View>
         </View>
         <View style={styles.diagnosticsBox}>
           <ScrollView nestedScrollEnabled>

@@ -236,18 +236,27 @@ onClearVoiceMetrics: () => void
 - 显示最近 80 条 `voiceMetrics`。
 - 文本 `selectable`，便于 Release 包真机测试时直接长按复制或截图。
 - 提供 `Clear` 按钮清空当前日志。
+- 提供 `Share` 按钮调用系统分享面板，导出完整诊断文本。
 
 真机日志导出方式：
 
 1. Xcode Run / Release 包均可使用 App 内导出：复现问题后进入 Settings -> Voice diagnostics。
-2. 长按选择日志文本，或直接截图。
-3. 反馈时至少提供从 `stt_start` 到 `playback_enqueued` 的连续日志。
+2. 优先点击 `Share`，把完整日志分享到备忘录、微信、邮件或文件。
+3. 如果分享不可用，再长按选择日志文本，或直接截图。
+4. 反馈时至少提供从 `stt_start` 到 `playback_enqueued` 的连续日志。
 
-如果连接 Xcode，也可以在控制台筛选：
+连接 Mac 时，设备读取也必须可用：
+
+1. 打开 Xcode -> Window -> Devices and Simulators。
+2. 选择真机。
+3. 打开设备 Console。
+4. 搜索或过滤：
 
 ```text
 voice-metrics
 ```
+
+这种方式读取的是设备控制台日志，不依赖 App 内 Share；适合需要让开发者实时观察 STT/endpoint/TTS 各阶段耗时的场景。
 
 #### 4.5.4 Debug 真机 API URL 规则
 
