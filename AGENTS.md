@@ -39,6 +39,9 @@ All spec, plan, and implementation handoff files live in `docs/`:
 - Labels: `[Feature]` -> `enhancement`, `[Fix]` -> `bug`, `[Docs]` -> `documentation`, `[Refactor]` -> `refactor`, `[Chore]` -> `chore`, `[TTS]` -> `tts`, `[Mobile]` -> `mobile`, `Release ...` -> `release`. Add domain labels together when applicable, such as `bug` + `mobile` + `tts`.
 - Push via SSH: `git@github.com:JunchenMeteor/MeteorVoice.git`
 - Always work on a separate branch, create issue and PR for every change
+- Git commit messages must NOT include `Co-Authored-By` or any AI author attribution
+- Git commit messages must NOT use bracket prefixes like `[Fix]`, `[Feature]`, etc. — those are for Issue/PR titles only
+- Issue/PR titles and bodies must NOT mention Claude, AI tools, or any AI attribution
 - Release policy: `main` is the integration/preview branch; production releases come from `release`. When publishing, merge all changes from `main` since the last release into `release`; do not cherry-pick selectively unless the user explicitly requests an emergency hotfix, and sync any hotfix back to `main`.
 
 ## Environment

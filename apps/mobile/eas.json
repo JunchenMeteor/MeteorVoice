@@ -6,25 +6,26 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://meteorvoice-pre.jcmeteor.com"
+      },
       "ios": {
         "simulator": true
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://meteorvoice-pre.jcmeteor.com"
+      },
       "ios": {
         "simulator": false
       }
     },
     "production": {
-      "autoIncrement": true
-    }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "appleId": "",
-        "ascAppId": ""
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://meteorvoice.jcmeteor.com"
       }
     }
   }

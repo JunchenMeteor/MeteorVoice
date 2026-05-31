@@ -1,6 +1,6 @@
 {
   "name": "@meteorvoice/mobile",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -9,6 +9,14 @@
     "android": "expo run:android",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "expo": {
+    "autolinking": {
+      "nativeModulesDir": "./modules",
+      "searchPaths": [
+        "../../node_modules"
+      ]
+    }
+  },
   "dependencies": {
     "@meteorvoice/api-client": "file:../../packages/api-client",
     "@meteorvoice/session-core": "file:../../packages/session-core",
@@ -16,7 +24,9 @@
     "@supabase/supabase-js": "^2.106.1",
     "expo": "~55.0.0",
     "expo-audio": "~55.0.14",
-    "expo-secure-store": "^56.0.4",
+    "expo-constants": "~55.0.16",
+    "expo-modules-core": "~55.0.25",
+    "expo-secure-store": "~55.0.14",
     "expo-speech-recognition": "^56.0.0",
     "react": "19.2.0",
     "react-native": "0.83.0"

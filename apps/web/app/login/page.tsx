@@ -69,6 +69,11 @@ export default function LoginPage() {
 
   return (
     <div className="flex items-center justify-center min-h-full p-6" style={{ background: 'var(--theme-bg)' }}>
+      {loading && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium text-white shadow-lg" style={{ background: 'var(--theme-accent)' }}>
+          {t('login.loading')}
+        </div>
+      )}
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>{isSignUp ? t('login.signup') : t('login.welcome')}</CardTitle>

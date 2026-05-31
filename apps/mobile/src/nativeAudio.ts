@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 import {
+  getRecordingPermissionsAsync,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
@@ -9,6 +10,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio'
+import { configureVoiceAudioSession } from './voiceAudioSession'
 
 type NativeAudioPermission = 'unknown' | 'granted' | 'denied'
 
@@ -19,6 +21,7 @@ type NativeAudioPhase =
   | 'recorded'
   | 'playing'
   | 'paused'
+  | 'interrupted'
   | 'blocked'
   | 'error'
 
@@ -30,9 +33,23 @@ const playbackAudioMode = {
   shouldRouteThroughEarpiece: false,
 }
 
+const audioExperimentFlags = {
+  routePlaybackThroughEarpieceWhenRecording: false,
+  useAndroidVoiceCommunicationRecorder: false,
+}
+
 const recordingAudioMode = {
   ...playbackAudioMode,
   allowsRecording: true,
+  shouldRouteThroughEarpiece: audioExperimentFlags.routePlaybackThroughEarpieceWhenRecording,
+}
+
+const voiceCommunicationRecordingPreset = {
+  ...RecordingPresets.HIGH_QUALITY,
+  android: {
+    ...RecordingPresets.HIGH_QUALITY.android,
+    audioSource: 'voice_communication' as const,
+  },
 }
 
 function normalizePlaybackRate(value: number) {
@@ -45,12 +62,18 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   const [phase, setPhase] = useState<NativeAudioPhase>('idle')
   const [lastRecordingUri, setLastRecordingUri] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [interrupted, setInterrupted] = useState(false)
   const operationRef = useRef<Promise<unknown> | null>(null)
+  const interruptedPhaseRef = useRef<NativeAudioPhase | null>(null)
   const playbackRate = normalizePlaybackRate(playbackRateValue)
 
   const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+  const recorder = useAudioRecorder(
+    audioExperimentFlags.useAndroidVoiceCommunicationRecorder
+      ? voiceCommunicationRecordingPreset
+      : RecordingPresets.HIGH_QUALITY,
+  )
   const recorderState = useAudioRecorderState(recorder, 250)
 
   const isRecording = recorderState.isRecording
@@ -63,6 +86,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
 
   const configurePlayback = useCallback(async () => {
     await setAudioModeAsync(playbackAudioMode)
+    await configureVoiceAudioSession({ mode: 'playback' }).catch(() => undefined)
   }, [])
 
   const applyPlaybackRate = useCallback(() => {
@@ -71,6 +95,11 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
 
   const configureRecording = useCallback(async () => {
     await setAudioModeAsync(recordingAudioMode)
+    await configureVoiceAudioSession({
+      mode: 'recording',
+      allowBluetooth: true,
+      defaultToSpeaker: true,
+    }).catch(() => undefined)
   }, [])
 
   const runExclusive = useCallback(async <T,>(operation: () => Promise<T>) => {
@@ -122,6 +151,11 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
         setErrorMessage('Wait until coach voice finishes before recording.')
         return false
       }
+      if (interrupted) {
+        setPhase('blocked')
+        setErrorMessage('Audio was interrupted. Resume the session first.')
+        return false
+      }
 
       try {
         setErrorMessage(null)
@@ -141,6 +175,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
         await configureRecording()
         await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY)
         recorder.record()
+        setInterrupted(false)
         setPhase('recording')
         return true
       } catch (error) {
@@ -151,7 +186,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
         return false
       }
     })
-  }, [configurePlayback, configureRecording, playerStatus.playing, recorder, runExclusive])
+  }, [configurePlayback, configureRecording, interrupted, playerStatus.playing, recorder, runExclusive])
 
   const playReply = useCallback(async () => {
     return runExclusive(async () => {
@@ -171,6 +206,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
         applyPlaybackRate()
         player.seekTo(0)
         player.play()
+        setInterrupted(false)
         setPhase('playing')
         return true
       } catch (error) {
@@ -181,6 +217,20 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
       }
     })
   }, [applyPlaybackRate, audioUrl, configurePlayback, player, recorder, recorderState.isRecording, runExclusive])
+
+  // 中断后恢复：清除中断标记，允许继续操作
+  const resumeAfterInterruption = useCallback(async () => {
+    if (!interrupted) return false
+
+    setInterrupted(false)
+    interruptedPhaseRef.current = null
+    setErrorMessage(null)
+
+    // 如果中断前在播放，尝试配置播放模式
+    await configurePlayback().catch(() => {})
+    setPhase('idle')
+    return true
+  }, [configurePlayback, interrupted])
 
   useEffect(() => {
     void configurePlayback().catch(() => {})
@@ -205,19 +255,43 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
       })
   }, [applyPlaybackRate, audioUrl, configurePlayback, player])
 
+  // 前后台切换：后台时暂停音频，前台时检查权限恢复
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState === 'active') return
+      if (nextState === 'active') {
+        // 前台：静默检查麦克风权限是否恢复
+        void getRecordingPermissionsAsync().then(response => {
+          setPermission(response.granted ? 'granted' : 'denied')
+          if (response.granted) setErrorMessage(null)
+        })
+        return
+      }
 
-      if (playerStatus.playing) {
+      // 后台：暂停播放和录音，标记为中断
+      const wasPlaying = playerStatus.playing
+      const wasRecording = recorder.getStatus().isRecording
+
+      if (wasPlaying) {
         player.pause()
+        interruptedPhaseRef.current = 'playing'
       }
 
-      if (recorder.getStatus().isRecording) {
+      if (wasRecording) {
         void stopRecording()
+        if (!wasPlaying) interruptedPhaseRef.current = 'recording'
       }
 
-      setPhase('paused')
+      if (wasPlaying || wasRecording) {
+        setInterrupted(true)
+        setPhase('interrupted')
+        setErrorMessage(
+          wasPlaying
+            ? 'Playback interrupted. Tap to resume and continue.'
+            : 'Recording interrupted by system event.',
+        )
+      } else {
+        setPhase('paused')
+      }
     })
 
     return () => subscription.remove()
@@ -227,16 +301,19 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     didJustFinish: playerStatus.didJustFinish,
     durationMillis: recorderState.durationMillis,
     errorMessage,
+    interrupted,
     isPlaying,
     isRecording,
     lastRecordingUri,
     permission,
     phase: displayPhase,
     playReply,
+    resumeAfterInterruption,
     startRecording,
     stopRecording,
   }), [
     errorMessage,
+    interrupted,
     isPlaying,
     isRecording,
     lastRecordingUri,
@@ -244,6 +321,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     playerStatus.didJustFinish,
     displayPhase,
     playReply,
+    resumeAfterInterruption,
     recorderState.durationMillis,
     startRecording,
     stopRecording,

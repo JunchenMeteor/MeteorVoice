@@ -23,9 +23,30 @@ export type NativeSpeechPhase =
 
 export type NativeSpeechPermission = 'unknown' | 'granted' | 'denied'
 
+const INTERIM_STABLE_SUBMIT_MS = 850
+
+async function waitForRecognizerIdle(timeoutMs = 700) {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const state = await ExpoSpeechRecognitionModule.getStateAsync()
+      if (state === 'inactive') return true
+    } catch {
+      return false
+    }
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+
+  return false
+}
+
 export function useNativeSpeech(options: {
   onFinalTranscript?: (transcript: string) => void
+  onListeningEndedWithoutTranscript?: () => void
+  onMetric?: (stage: string, data?: Record<string, unknown>) => void
 } = {}) {
+  const { onFinalTranscript, onListeningEndedWithoutTranscript, onMetric } = options
   const [phase, setPhase] = useState<NativeSpeechPhase>('idle')
   const [permission, setPermission] = useState<NativeSpeechPermission>('unknown')
   const [partialTranscript, setPartialTranscript] = useState('')
@@ -33,36 +54,108 @@ export function useNativeSpeech(options: {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
   const finalTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const interimTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const submittedTranscriptRef = useRef('')
+  const latestTranscriptRef = useRef('')
+  const cancelRequestedRef = useRef(false)
+  const speechStartedAtRef = useRef(0)
+  const firstPartialAtRef = useRef<number | null>(null)
 
-  const clearFinalTranscriptTimer = useCallback(() => {
-    if (!finalTranscriptTimerRef.current) return
-    clearTimeout(finalTranscriptTimerRef.current)
-    finalTranscriptTimerRef.current = null
+  const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
+    if (onMetric) {
+      onMetric(stage, data)
+      return
+    }
+    console.info('[voice-metrics]', JSON.stringify({ stage, ts: Date.now(), data }))
+  }, [onMetric])
+
+  const clearTranscriptTimers = useCallback(() => {
+    if (finalTranscriptTimerRef.current) {
+      clearTimeout(finalTranscriptTimerRef.current)
+      finalTranscriptTimerRef.current = null
+    }
+    if (interimTranscriptTimerRef.current) {
+      clearTimeout(interimTranscriptTimerRef.current)
+      interimTranscriptTimerRef.current = null
+    }
   }, [])
 
-  useEffect(() => clearFinalTranscriptTimer, [clearFinalTranscriptTimer])
+  useEffect(() => clearTranscriptTimers, [clearTranscriptTimers])
+
+  const submitRecognizedTranscript = useCallback((transcript: string, source: 'final' | 'interim_stable') => {
+    const normalized = transcript.trim()
+    if (!normalized || submittedTranscriptRef.current === normalized) return
+
+    submittedTranscriptRef.current = normalized
+    latestTranscriptRef.current = normalized
+    clearTranscriptTimers()
+    setFinalTranscript(normalized)
+    setPartialTranscript('')
+    setPhase('idle')
+
+    if (source === 'interim_stable') {
+      try {
+        cancelRequestedRef.current = true
+        ExpoSpeechRecognitionModule.abort()
+      } catch {
+        // The recognizer may already have ended naturally.
+      }
+    }
+
+    logVoiceMetric('stt_submit', {
+      source,
+      chars: normalized.length,
+      elapsedMs: speechStartedAtRef.current ? Date.now() - speechStartedAtRef.current : null,
+    })
+    onFinalTranscript?.(normalized)
+  }, [clearTranscriptTimers, logVoiceMetric, onFinalTranscript])
 
   useSpeechRecognitionEvent('start', () => {
-    clearFinalTranscriptTimer()
+    clearTranscriptTimers()
+    submittedTranscriptRef.current = ''
+    latestTranscriptRef.current = ''
+    cancelRequestedRef.current = false
+    speechStartedAtRef.current = Date.now()
+    firstPartialAtRef.current = null
+    logVoiceMetric('stt_start')
     voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level: 1 })
     setPhase('listening')
     setErrorMessage(null)
   })
 
   useSpeechRecognitionEvent('end', () => {
+    const wasCancelled = cancelRequestedRef.current
+    const hasSubmittedTranscript = Boolean(submittedTranscriptRef.current.trim())
+    const hasPendingTranscript = Boolean(latestTranscriptRef.current.trim())
+    logVoiceMetric('stt_end', {
+      cancelled: wasCancelled,
+      hadTranscript: hasPendingTranscript,
+      submitted: hasSubmittedTranscript,
+      elapsedMs: speechStartedAtRef.current ? Date.now() - speechStartedAtRef.current : null,
+    })
+    cancelRequestedRef.current = false
     setPhase(current => current === 'stopping' || current === 'listening' ? 'idle' : current)
+    if (!wasCancelled && !hasSubmittedTranscript && !hasPendingTranscript) {
+      onListeningEndedWithoutTranscript?.()
+    }
   })
 
   useSpeechRecognitionEvent('result', event => {
     const transcript = event.results[0]?.transcript?.trim() ?? ''
     if (!transcript) return
-    clearFinalTranscriptTimer()
+    latestTranscriptRef.current = transcript
+    clearTranscriptTimers()
     voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level: 1 })
 
+    if (!firstPartialAtRef.current) {
+      firstPartialAtRef.current = Date.now()
+      logVoiceMetric('stt_first_partial', {
+        elapsedMs: speechStartedAtRef.current ? firstPartialAtRef.current - speechStartedAtRef.current : null,
+        chars: transcript.length,
+      })
+    }
+
     if (event.isFinal) {
-      setFinalTranscript(transcript)
-      setPartialTranscript('')
-      setPhase('idle')
       const endpointDelay = getSpeechEndpointDelay({
         transcript,
         hasFinalResult: true,
@@ -70,20 +163,29 @@ export function useNativeSpeech(options: {
       })
       const finalDelay = Math.max(0, endpointDelay - FINAL_RESULT_SILENCE_FINALIZE_MS)
       if (finalDelay === 0) {
-        options.onFinalTranscript?.(transcript)
+        submitRecognizedTranscript(transcript, 'final')
       } else {
         finalTranscriptTimerRef.current = setTimeout(() => {
           finalTranscriptTimerRef.current = null
-          options.onFinalTranscript?.(transcript)
+          submitRecognizedTranscript(transcript, 'final')
         }, finalDelay)
       }
     } else {
       setPartialTranscript(transcript)
+      interimTranscriptTimerRef.current = setTimeout(() => {
+        interimTranscriptTimerRef.current = null
+        submitRecognizedTranscript(transcript, 'interim_stable')
+      }, INTERIM_STABLE_SUBMIT_MS)
     }
   })
 
   useSpeechRecognitionEvent('error', (event: ExpoSpeechRecognitionErrorEvent) => {
-    clearFinalTranscriptTimer()
+    clearTranscriptTimers()
+    if (event.error === 'aborted') {
+      setPhase('idle')
+      setErrorMessage(null)
+      return
+    }
     setPhase(event.error === 'not-allowed' ? 'unavailable' : 'error')
     setErrorMessage(`${event.error}: ${event.message}`)
   })
@@ -121,7 +223,9 @@ export function useNativeSpeech(options: {
       setErrorMessage(null)
       setFinalTranscript('')
       setPartialTranscript('')
-      clearFinalTranscriptTimer()
+      submittedTranscriptRef.current = ''
+      latestTranscriptRef.current = ''
+      clearTranscriptTimers()
       voiceActivityRef.current = createVoiceActivitySnapshot()
 
       if (!isAvailable()) {
@@ -135,11 +239,18 @@ export function useNativeSpeech(options: {
       if (!granted) return false
 
       setPermission('granted')
+      await waitForRecognizerIdle(300)
+      cancelRequestedRef.current = false
       ExpoSpeechRecognitionModule.start({
         ...(language ? { lang: language } : {}),
         interimResults: true,
-        continuous: false,
+        continuous: true,
         addsPunctuation: true,
+        iosCategory: {
+          category: 'playAndRecord',
+          categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],
+          mode: 'default',
+        },
         contextualStrings: [
           'book a table',
           'reserve a table',
@@ -147,10 +258,6 @@ export function useNativeSpeech(options: {
           'job interview',
           'small talk',
         ],
-        androidIntentOptions: {
-          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 2600,
-          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 2200,
-        },
       })
       return true
     } catch (error) {
@@ -159,11 +266,12 @@ export function useNativeSpeech(options: {
       setErrorMessage(message)
       return false
     }
-  }, [clearFinalTranscriptTimer, isAvailable, requestPermissions])
+  }, [clearTranscriptTimers, isAvailable, requestPermissions])
 
   const stopListening = useCallback(() => {
     try {
       setPhase('stopping')
+      cancelRequestedRef.current = true
       ExpoSpeechRecognitionModule.stop()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Speech recognition failed to stop'
@@ -172,18 +280,20 @@ export function useNativeSpeech(options: {
     }
   }, [])
 
-  const cancelListening = useCallback(() => {
+  const cancelListening = useCallback(async () => {
     try {
+      cancelRequestedRef.current = true
       ExpoSpeechRecognitionModule.abort()
+      await waitForRecognizerIdle()
       setPhase('idle')
       setPartialTranscript('')
-      clearFinalTranscriptTimer()
+      clearTranscriptTimers()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Speech recognition failed to cancel'
       setPhase('error')
       setErrorMessage(message)
     }
-  }, [clearFinalTranscriptTimer])
+  }, [clearTranscriptTimers])
 
   const clearFinalTranscript = useCallback(() => {
     setFinalTranscript('')

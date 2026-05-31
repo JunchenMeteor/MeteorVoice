@@ -80,10 +80,10 @@ export const accentProfiles: AccentProfile[] = [
   },
   {
     key: 'american',
-    name: 'General American',
+    name: 'American English',
     region: 'US',
     description: 'Standard American accent',
-    labels: { en: 'General American', zh: '通用美式英语' },
+    labels: { en: 'American English', zh: '美式英语' },
     regions: { en: 'US', zh: '美国' },
     descriptions: { en: 'Standard American accent', zh: '标准美式口音' },
   },

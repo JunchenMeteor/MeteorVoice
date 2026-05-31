@@ -17,6 +17,7 @@ import {
   canSamplePlaybackLevel,
   completeCoachPlayback,
   createVoiceActivitySnapshot,
+  judgeEndpoint,
   pauseSessionForRoute,
   receiveCoachReply,
   recoverSessionError,
@@ -30,7 +31,8 @@ import { getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, type TTSSpeed } from '@/lib/tts-speed'
+import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
+import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import { useT } from '@/components/LanguageProvider'
 
 const mockTTS = createMockTTS()
@@ -527,6 +529,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [accentBanner, setAccentBanner] = useState<string | null>(null)
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
+  const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
   const [playbackBlocked, setPlaybackBlocked] = useState(false)
@@ -543,6 +546,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const accentRef = useRef(accent)
   const ttsProviderRef = useRef(ttsProvider)
   const ttsSpeedRef = useRef(ttsSpeed)
+  const ttsVoiceIdRef = useRef<string | null>(null)
   const activeSessionRef = useRef(initialState.isSessionActive)
   const activeTurnRef = useRef(0)
   const canListenOnRouteRef = useRef(isSessionRoute)
@@ -553,6 +557,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
   const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
   const voiceLevelRequestRef = useRef(0)
+  const listeningStartMsRef = useRef(0)
+  const pendingEndpointTranscriptRef = useRef('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
   const audioUnlockedRef = useRef(false)
@@ -579,6 +585,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [ttsSpeed])
 
   useEffect(() => {
+    ttsVoiceIdRef.current = ttsVoiceId
+  }, [ttsVoiceId])
+
+  useEffect(() => {
     const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
 
     function handleSpeedChange(event: Event) {
@@ -586,15 +596,22 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       setTtsSpeed(customEvent.detail?.speed ?? readTTSSpeedPreference())
     }
 
+    function handleVoiceIdChange(event: Event) {
+      const customEvent = event as CustomEvent<{ voiceId?: string | null }>
+      setTtsVoiceId(customEvent.detail?.voiceId ?? null)
+    }
+
     function handleVisibilityChange() {
       if (document.visibilityState === 'visible') syncSpeedPreference()
     }
 
     window.addEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+    window.addEventListener(ttsVoiceIdChangeEvent, handleVoiceIdChange)
     window.addEventListener('focus', syncSpeedPreference)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       window.removeEventListener(ttsSpeedChangeEvent, handleSpeedChange)
+      window.removeEventListener(ttsVoiceIdChangeEvent, handleVoiceIdChange)
       window.removeEventListener('focus', syncSpeedPreference)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
@@ -608,11 +625,24 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [accentBanner])
 
   useEffect(() => {
+    void flushPendingPreferences()
     fetch('/api/preferences')
       .then(res => res.json())
-      .then((data: { tts_provider?: string; tts_speed?: number }) => {
+      .then((data: { tts_provider?: string; tts_speed?: number; tts_voice_id?: string | null }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
-        if (typeof data.tts_speed === 'number') setTtsSpeed(normalizeTTSSpeed(data.tts_speed))
+        if ('tts_voice_id' in data) {
+          const serverVoiceId = data.tts_voice_id ?? readTTSVoiceIdPreference()
+          setTtsVoiceId(serverVoiceId)
+          writeTTSVoiceIdPreference(serverVoiceId)
+        }
+        if (typeof data.tts_speed === 'number') {
+          const serverSpeed = normalizeTTSSpeed(data.tts_speed)
+          setTtsSpeed(serverSpeed)
+          // 覆盖 localStorage 为 API 权威值
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('meteorvoice-tts-speed', String(serverSpeed))
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setTtsPreferenceLoaded(true))
@@ -834,9 +864,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     const next = pickRandomAccent()
     accentRef.current = next
     setAccent(next)
-    setAccentBanner(`${tr('session.accent_changed')} ${next.name}`)
     return next
-  }, [tr])
+  }, [])
 
   const speakText = useCallback(async (text: string, accentName: string) => {
     const updatePlaybackLevel = (level: number | null) => {
@@ -864,10 +893,11 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed }),
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
         })
-        const result = await res.json() as { audioUrl?: string }
-        if (!result.audioUrl) return
+        const result = await res.json() as { audioUrl?: string; error?: string }
+        if (!res.ok) throw new Error(result.error || `TTS request failed: ${res.status}`)
+        if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
 
         try {
           await playAudioToEnd(result.audioUrl, {
@@ -954,6 +984,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setCorrections([])
     setSummary(null)
     setInterrupted(false)
+    listeningStartMsRef.current = 0
+    pendingEndpointTranscriptRef.current = ''
     startNextTurn()
   }, [startNextTurn, tr, ttsPreferenceLoaded, unlockSessionAudio])
 
@@ -1031,6 +1063,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       setStatusText(tr('session.paused'))
       return
     }
+    listeningStartMsRef.current = 0
+    pendingEndpointTranscriptRef.current = ''
     startNextTurn()
   }, [startNextTurn, tr, unlockSessionAudio])
 
@@ -1050,7 +1084,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
     setInterrupted(false)
     setStatusText(tr('session.listening'))
-    applyTransition('listening')
+    if (snapshotRef.current.state !== 'listening') {
+      applyTransition('listening')
+    }
+    if (listeningStartMsRef.current === 0) {
+      listeningStartMsRef.current = Date.now()
+      pendingEndpointTranscriptRef.current = ''
+    }
 
     const abortController = new AbortController()
     abortListeningRef.current = abortController
@@ -1098,12 +1138,51 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       return
     }
     abortListeningRef.current = null
+    const endpointVoiceActivity = voiceActivityRef.current
     stopVoiceLevelSampling()
+    const endpointTranscript = [pendingEndpointTranscriptRef.current, transcript]
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join(' ')
 
+    // 三层判停：本地判断 + LLM 语义确认 + 安全网超时
+    const endpointResult = await judgeEndpoint({
+      transcript: endpointTranscript,
+      voiceActivity: endpointVoiceActivity,
+      listeningDurationMs: Date.now() - listeningStartMsRef.current,
+      lastVoiceAtMs: endpointVoiceActivity.lastVoiceAt ?? null,
+      messages: snapshotRef.current.messages,
+      scenario: scenarioRef.current.key,
+      semanticCheck: async (t, ctx) => {
+        const res = await fetch('/api/semantic-endpoint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
+        })
+        if (!res.ok) throw new Error('Semantic check failed')
+        const data = await res.json() as { judgment: 'done' | 'thinking' }
+        return data.judgment
+      },
+    })
+    if (!isCurrentTurn()) return
+
+    if (endpointResult.judgment === 'continue') {
+      pendingEndpointTranscriptRef.current = endpointTranscript
+      setStatusText(tr(endpointResult.reason === 'llm_thinking' ? 'session.waiting_for_speech' : 'session.listening'))
+      window.setTimeout(() => {
+        if (isCurrentTurn() && activeSessionRef.current && canListenOnRouteRef.current) {
+          simulateTurnRef.current(turnId)
+        }
+      }, 500)
+      return
+    }
+
+    listeningStartMsRef.current = 0 // turn 已提交，下一轮重新计时
+    pendingEndpointTranscriptRef.current = ''
     setStatusText(tr('session.transcribing'))
     const acceptedTurn = acceptTranscriptTurn({
       snapshot: snapshotRef.current,
-      transcript,
+      transcript: endpointTranscript,
       messages: snapshotRef.current.messages,
     })
     snapshotRef.current = acceptedTurn.snapshot
@@ -1111,7 +1190,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
     const currentSnapshot = snapshotRef.current
     const currentAccent = accentRef.current
-    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 3 === 0 ? rotateAccent() : currentAccent
+    const newAccent = currentSnapshot.turnNumber > 0 && currentSnapshot.turnNumber % 10 === 0 ? rotateAccent() : currentAccent
     const currentScenario = scenarioRef.current
 
     setStatusText(tr('session.preparing_reply'))

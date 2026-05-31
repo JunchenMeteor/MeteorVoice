@@ -15,8 +15,10 @@ export async function PATCH(request: Request) {
       tts_provider?: string
       locale?: string
       default_scenario_key?: string
-      default_accent_key?: string
       tts_speed?: number
+      tts_voice_id?: string | null
+      selected_voice_profile_id?: string | null
+      ui_theme?: string
     }
     return jsonApiResult(await setPreferences(body))
   } catch (error) {

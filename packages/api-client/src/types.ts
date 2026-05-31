@@ -6,6 +6,7 @@ import type {
   CorrectionItem,
   Scenario,
   TTSResult,
+  VoiceProfile,
 } from '@meteorvoice/shared'
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -21,29 +22,49 @@ export type ApiErrorBody = {
   error: string
 }
 
+export type XunfeiVoiceEntry = {
+  id: string
+  name: string
+  language: 'en' | 'zh'
+  gender: 'male' | 'female'
+  tier: 'featured' | 'base'
+  status: 'active' | 'expired'
+  expiresAt?: string
+}
+
 export type PreferencesResponse = {
   tts_provider?: string
   available_providers?: string[]
   locale?: 'en' | 'zh'
   default_scenario_key?: string
-  default_accent_key?: string
   tts_speed?: number
+  tts_voice_id?: string | null
+  voice_profiles?: VoiceProfile[]
+  selected_voice_profile_id?: string | null
+  ui_theme?: string
+  ui_theme_updated_at?: string
+  xunfei_voices?: { configured?: XunfeiVoiceEntry[]; catalog?: XunfeiVoiceEntry[] }
 }
 
 export type UpdatePreferencesRequest = {
   tts_provider?: string
   locale?: 'en' | 'zh'
   default_scenario_key?: string
-  default_accent_key?: string
   tts_speed?: number
+  tts_voice_id?: string | null
+  selected_voice_profile_id?: string | null
+  ui_theme?: string
 }
 
 export type UpdatePreferencesResponse = {
   tts_provider: string
   locale: 'en' | 'zh'
   default_scenario_key: string
-  default_accent_key: string
   tts_speed: number
+  tts_voice_id: string | null
+  voice_profiles: VoiceProfile[]
+  selected_voice_profile_id: string | null
+  ui_theme: string
 }
 
 export type GenerateCoachReplyRequest = {
@@ -58,6 +79,7 @@ export type SynthesizeSpeechRequest = {
   accent?: string
   speed?: number
   provider?: string
+  voiceId?: string
 }
 
 export type SynthesizeSpeechResponse = TTSResult
