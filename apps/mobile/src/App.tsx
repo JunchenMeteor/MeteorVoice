@@ -709,6 +709,62 @@ function AppInner() {
     }
   }
 
+  async function runASRDiagnostics() {
+    if (auth.state !== 'signed-in') {
+      setActiveTab('settings')
+      setSettingsMessage('Sign in before running ASR diagnostics.')
+      logVoiceMetric('asr_diagnostic_skipped', { reason: 'signed_out' })
+      return
+    }
+
+    const startedAt = Date.now()
+    logVoiceMetric('asr_diagnostic_start')
+    setSettingsMessage('Checking ASR providers...')
+
+    try {
+      const providers = await api.listASRProviders()
+      const selected = providers.providers.find(provider => provider.key === 'xunfei' && provider.enabled)
+        ?? providers.providers.find(provider => provider.key === providers.default_provider)
+      logVoiceMetric('asr_providers_loaded', {
+        defaultProvider: providers.default_provider,
+        enabled: providers.providers.filter(provider => provider.enabled).map(provider => provider.key).join(','),
+      })
+
+      if (!selected || selected.key === 'native') {
+        setSettingsMessage('ASR remote provider is not configured. Native STT remains active.')
+        logVoiceMetric('asr_diagnostic_done', {
+          provider: selected?.key ?? 'none',
+          remoteReady: false,
+          elapsedMs: Date.now() - startedAt,
+        })
+        return
+      }
+
+      const session = await api.createASRSession({
+        provider: selected.key,
+        mode: 'streaming',
+        languageMode: 'mixed_zh_en',
+        scenarioKey: scenario.key,
+        sessionId: snapshot.sessionId,
+        endpointSilenceMs: 900,
+        clientTraceId: `mobile-${Date.now()}`,
+      })
+      logVoiceMetric('asr_session_bootstrap_end', {
+        provider: session.provider,
+        status: session.status,
+        transport: session.transport,
+        elapsedMs: Date.now() - startedAt,
+      })
+      setSettingsMessage(`ASR ${session.provider} bootstrap ready (${session.transport}). Native STT still active.`)
+    } catch (error) {
+      const message = error instanceof MeteorVoiceApiError
+        ? `${error.message} (${error.status})`
+        : error instanceof Error ? error.message : 'ASR diagnostic failed'
+      logVoiceMetric('asr_diagnostic_error', { message, elapsedMs: Date.now() - startedAt })
+      setSettingsMessage(message)
+    }
+  }
+
   async function deleteSession(id: string) {
     setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
     try {
@@ -1062,6 +1118,7 @@ function AppInner() {
                 message: voiceMetricsText || 'No voice metrics yet.',
               })
             }}
+            onRunASRDiagnostics={() => void runASRDiagnostics()}
           />
         )
     }

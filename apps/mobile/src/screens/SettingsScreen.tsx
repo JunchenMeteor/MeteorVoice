@@ -40,6 +40,7 @@ interface Props {
   onSetApiBaseUrl: (v: string) => void
   onClearVoiceMetrics: () => void
   onShareVoiceMetrics: () => void
+  onRunASRDiagnostics: () => void
 }
 
 export function SettingsScreen({
@@ -49,7 +50,8 @@ export function SettingsScreen({
   auth, email, password, authMode, apiBaseUrl, appVersion, voiceMetricsText,
   onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
-  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics,
+  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
+  onClearVoiceMetrics, onShareVoiceMetrics, onRunASRDiagnostics,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
@@ -296,6 +298,9 @@ export function SettingsScreen({
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Voice diagnostics</Text>
           <View style={styles.chipRow}>
+            <Pressable onPress={onRunASRDiagnostics} style={styles.smallBtn}>
+              <Text style={styles.smallBtnTxt}>ASR</Text>
+            </Pressable>
             <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
               <Text style={styles.smallBtnTxt}>Share</Text>
             </Pressable>
