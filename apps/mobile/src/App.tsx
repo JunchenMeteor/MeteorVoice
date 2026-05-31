@@ -183,6 +183,8 @@ function AppInner() {
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
   const playbackActiveRef = useRef(false)
+  const audioPlayingRef = useRef(false)
+  const playbackStartedRef = useRef(false)
   const playbackEndedAtMsRef = useRef<number | null>(null)
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
@@ -219,7 +221,13 @@ function AppInner() {
   }, [])
 
   const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
-    const entry = { ts: Date.now(), stage, data }
+    const sanitizedData = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [
+        key,
+        key.toLowerCase().includes('audiourl') && typeof value === 'string' ? '<audioUrl>' : value,
+      ]),
+    )
+    const entry = { ts: Date.now(), stage, data: sanitizedData }
     console.info('[voice-metrics]', JSON.stringify(entry))
     setVoiceMetrics(previous => [...previous.slice(-79), entry])
   }, [])
@@ -234,12 +242,18 @@ function AppInner() {
     clearResumeListeningTimer()
     resumeListeningTimerRef.current = setTimeout(() => {
       resumeListeningTimerRef.current = null
-      if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
+      if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current || audioPlayingRef.current) {
+        logVoiceMetric('resume_listening_skipped', {
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+        })
+        return
+      }
       listeningStartMsRef.current = Date.now()
       if (updateStatus) setStatus('session.status.listening')
       void speechStartListeningRef.current('en-US')
     }, delayMs)
-  }, [clearResumeListeningTimer])
+  }, [clearResumeListeningTimer, logVoiceMetric])
 
   useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
 
@@ -258,6 +272,7 @@ function AppInner() {
     endpointRequestRef.current += 1
     clearResumeListeningTimer()
     playbackActiveRef.current = false
+    playbackStartedRef.current = false
     playbackEndedAtMsRef.current = null
     listeningStartMsRef.current = Date.now()
     pendingNativeTranscriptRef.current = ''
@@ -288,7 +303,20 @@ function AppInner() {
   }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
 
   useEffect(() => {
+    audioPlayingRef.current = audio.isPlaying
+    if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
+      playbackStartedRef.current = true
+      logVoiceMetric('playback_started', { audioUrl })
+      void speechCancelListeningRef.current()
+    }
+  }, [audio.isPlaying, audioUrl, logVoiceMetric])
+
+  useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
+    if (!playbackStartedRef.current) {
+      logVoiceMetric('playback_finish_ignored', { reason: 'not_started', audioUrl })
+      return
+    }
 
     let cancelled = false
     const advanceQueue = () => {
@@ -297,6 +325,7 @@ function AppInner() {
       if (isCorrectionPlayingRef.current) {
         isCorrectionPlayingRef.current = false
         playbackActiveRef.current = false
+        playbackStartedRef.current = false
         playbackEndedAtMsRef.current = Date.now()
         setStatus(sessionActiveRef.current && canListenOnRouteRef.current
           ? 'session.status.listening'
@@ -320,6 +349,7 @@ function AppInner() {
       const effects = getPlaybackCompletionEffects(nextQueue)
       if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
         playbackActiveRef.current = true
+        playbackStartedRef.current = false
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
         void speechCancelListeningRef.current()
@@ -329,7 +359,9 @@ function AppInner() {
       }
 
       playbackActiveRef.current = false
+      playbackStartedRef.current = false
       playbackEndedAtMsRef.current = Date.now()
+      logVoiceMetric('playback_finished', { audioUrl })
       setStatus('session.status.reply_played')
       if (sessionActiveRef.current && canListenOnRouteRef.current) {
         scheduleResumeListening()
@@ -341,7 +373,7 @@ function AppInner() {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, clearResumeListeningTimer, scheduleResumeListening])
+  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const submitStartedAt = Date.now()
@@ -413,6 +445,7 @@ function AppInner() {
 
       if (voice.audioUrl) {
         playbackActiveRef.current = true
+        playbackStartedRef.current = false
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
         await speechCancelListeningRef.current()
@@ -482,6 +515,9 @@ function AppInner() {
         reason: transcriptGate.reason,
         chars: endpointTranscript.length,
       })
+      if (transcriptGate.reason === 'playback_active') {
+        void speechCancelListeningRef.current()
+      }
       pendingNativeTranscriptRef.current = ''
       return
     }
@@ -499,7 +535,9 @@ function AppInner() {
       })
       pendingNativeTranscriptRef.current = ''
       setStatus('session.status.listening')
-      void speechStartListeningRef.current('en-US')
+      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+        void speechStartListeningRef.current('en-US')
+      }
       return
     }
 
@@ -532,7 +570,9 @@ function AppInner() {
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
       setStatus('session.status.listening')
-      void speechStartListeningRef.current('en-US')
+      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+        void speechStartListeningRef.current('en-US')
+      }
       return
     }
 
@@ -541,7 +581,24 @@ function AppInner() {
     void submitTurn(endpointTranscript)
   }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
 
-  const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript, onMetric: logVoiceMetric })
+  const handleListeningEndedWithoutTranscript = useCallback(() => {
+    if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
+      logVoiceMetric('stt_end_restart_skipped', {
+        busy,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })
+      return
+    }
+    logVoiceMetric('stt_end_restart_scheduled')
+    scheduleResumeListening(250, false)
+  }, [busy, logVoiceMetric, scheduleResumeListening])
+
+  const speech = useNativeSpeech({
+    onFinalTranscript: handleNativeFinalTranscript,
+    onListeningEndedWithoutTranscript: handleListeningEndedWithoutTranscript,
+    onMetric: logVoiceMetric,
+  })
 
   useEffect(() => {
     speechStartListeningRef.current = speech.startListening
@@ -551,6 +608,27 @@ function AppInner() {
   useEffect(() => {
     sessionActiveRef.current = isSessionActive
   }, [isSessionActive])
+
+  const selectTab = useCallback((tab: Tab) => {
+    setActiveTab(tab)
+    if (tab !== 'session') {
+      canListenOnRouteRef.current = false
+      playbackEndedAtMsRef.current = null
+      clearResumeListeningTimer()
+      endpointRequestRef.current += 1
+      pendingNativeTranscriptRef.current = ''
+      void speechCancelListeningRef.current()
+      if (sessionActiveRef.current) setStatus('session.paused')
+      return
+    }
+
+    canListenOnRouteRef.current = true
+    if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
+      listeningStartMsRef.current = Date.now()
+      setStatus('session.status.listening')
+      void speechStartListeningRef.current('en-US')
+    }
+  }, [busy, clearResumeListeningTimer])
 
   async function endSession() {
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
@@ -861,7 +939,7 @@ function AppInner() {
         void api.getPreferences().then(applyServerPreferences).catch(() => undefined)
       }
 
-      if (sessionActiveRef.current && !busy && !playbackActiveRef.current) {
+      if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
         listeningStartMsRef.current = Date.now()
         setStatus('session.status.listening')
         void speechStartListeningRef.current('en-US')
@@ -877,6 +955,7 @@ function AppInner() {
       if (voice.audioUrl) {
         isCorrectionPlayingRef.current = true
         playbackActiveRef.current = true
+        playbackStartedRef.current = false
         playbackEndedAtMsRef.current = null
         setStatus('session.status.playing_reply')
         setAudioUrl(voice.audioUrl)
@@ -918,7 +997,7 @@ function AppInner() {
             selectedScenarioKey={selectedScenarioKey}
             isSessionActive={isSessionActive}
             onSelectScenario={selectScenario}
-            onGoToSession={() => setActiveTab('session')}
+            onGoToSession={() => selectTab('session')}
           />
         )
       case 'history':
@@ -990,7 +1069,7 @@ function AppInner() {
       <View style={styles.tabBarWrapper}>
         <View style={styles.tabBar}>
           {(['home', 'session', 'history', 'settings'] as Tab[]).map(tab => (
-            <Pressable key={tab} onPress={() => setActiveTab(tab)} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}>
+            <Pressable key={tab} onPress={() => selectTab(tab)} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}>
               <TabIcon tab={tab} color={activeTab === tab ? C.cream : C.textMuted} />
               <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
                 {tr(TAB_LABELS[tab])}

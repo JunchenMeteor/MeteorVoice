@@ -258,6 +258,18 @@ voice-metrics
 
 这种方式读取的是设备控制台日志，不依赖 App 内 Share；适合需要让开发者实时观察 STT/endpoint/TTS 各阶段耗时的场景。
 
+也可以用命令行把真机日志写到 Mac 的“文稿 / Documents”目录。先在 Mac 终端启动：
+
+```bash
+idevicesyslog -u 00008130-001E50C80AC0001C --no-colors -m voice-metrics -o ~/Documents/meteorvoice-voice-metrics.log
+```
+
+然后去手机上复现问题；复现后回到终端按 `Ctrl + C` 停止监听，再打开文稿目录里的文件：
+
+```bash
+open ~/Documents/meteorvoice-voice-metrics.log
+```
+
 #### 4.5.4 Debug 真机 API URL 规则
 
 当前 `apps/mobile/src/mobileConfig.ts` 的默认规则：
