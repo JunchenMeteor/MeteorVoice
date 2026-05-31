@@ -1,0 +1,8 @@
+{
+  "name": "voice-pcm-capture",
+  "version": "0.1.0",
+  "description": "MeteorVoice iOS PCM microphone capture module.",
+  "main": "src/index.ts",
+  "license": "UNLICENSED",
+  "private": true
+}
