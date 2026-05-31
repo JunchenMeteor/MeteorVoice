@@ -1,10 +1,14 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { synthesizeSpeechFromRequest } from '@/lib/server/tts'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'tts', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as {
       text?: string
       accent?: string

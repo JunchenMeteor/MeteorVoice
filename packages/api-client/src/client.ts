@@ -2,6 +2,8 @@ import type {
   ApiClientOptions,
   ApiErrorBody,
   ApiHeadersProvider,
+  CreateASRSessionRequest,
+  CreateASRSessionResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   CreateTurnRequest,
@@ -11,6 +13,7 @@ import type {
   GenerateSummaryRequest,
   GenerateSummaryResponse,
   ListAccentsResponse,
+  ListASRProvidersResponse,
   ListHistoryResponse,
   ListScenariosResponse,
   ListSessionTurnsResponse,
@@ -85,6 +88,17 @@ export class MeteorVoiceApiClient {
     })
   }
 
+  listASRProviders() {
+    return this.request<ListASRProvidersResponse>('/api/asr/providers')
+  }
+
+  createASRSession(input: CreateASRSessionRequest) {
+    return this.request<CreateASRSessionResponse>('/api/asr/session', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
   syncSession(input: SyncSessionRequest) {
     return this.request<SyncSessionResponse>('/api/session/sync', {
       method: 'POST',
@@ -130,6 +144,9 @@ export class MeteorVoiceApiClient {
 
   private async request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
     const headers = new Headers(await this.resolveHeaders())
+    if (!headers.has('X-MeteorVoice-Client')) {
+      headers.set('X-MeteorVoice-Client', 'meteorvoice-api-client')
+    }
     if (init.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }

@@ -268,6 +268,12 @@ function AppInner() {
   }, [])
 
   function startSession() {
+    if (auth.state !== 'signed-in') {
+      setActiveTab('settings')
+      setStatus('login.signin')
+      return
+    }
+
     logVoiceMetric('session_start', { scenario: scenario.key, accent: accent.key, provider: ttsProvider })
     endpointRequestRef.current += 1
     clearResumeListeningTimer()
@@ -552,7 +558,7 @@ function AppInner() {
       semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
         const res = await fetch(`${baseUrl}/api/semantic-endpoint`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...getAuthHeaders() },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
         if (!res.ok) throw new Error('Semantic check failed')

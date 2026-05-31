@@ -17,6 +17,7 @@ export default defineConfig({
       '@meteorvoice/shared/locale': path.resolve(__dirname, 'packages/shared/src/locale.ts'),
       '@meteorvoice/shared/scenarios': path.resolve(__dirname, 'packages/shared/src/scenarios.ts'),
       '@meteorvoice/shared/speech': path.resolve(__dirname, 'packages/shared/src/speech.ts'),
+      '@meteorvoice/shared/asr': path.resolve(__dirname, 'packages/shared/src/asr.ts'),
       '@': path.resolve(__dirname, 'apps/web'),
     },
   },

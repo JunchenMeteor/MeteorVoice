@@ -53,7 +53,9 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadTtsProvider() {
       try {
-        const res = await fetch('/api/preferences')
+        const res = await fetch('/api/preferences', {
+          headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+        })
         const data = await res.json() as {
           tts_provider?: string
           available_providers?: string[]

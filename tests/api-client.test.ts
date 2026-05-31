@@ -21,6 +21,7 @@ describe('MeteorVoiceApiClient', () => {
     expect(calls[0].input).toBe('https://example.com/api/tts')
     expect(calls[0].init?.method).toBe('POST')
     expect(calls[0].init?.body).toBe(JSON.stringify({ text: 'Hello', accent: 'General American', speed: 1 }))
+    expect(new Headers(calls[0].init?.headers).get('X-MeteorVoice-Client')).toBe('meteorvoice-api-client')
   })
 
   it('throws a typed API error for non-2xx responses', async () => {
@@ -85,5 +86,32 @@ describe('MeteorVoiceApiClient', () => {
 
     expect(result.turns).toEqual([])
     expect(calls[0]).toBe('https://example.com/api/sessions/s%201/turns')
+  })
+
+  it('exposes ASR provider listing and session bootstrap routes', async () => {
+    const calls: { input: string; init?: RequestInit }[] = []
+    const client = createMeteorVoiceApiClient({
+      baseUrl: 'https://example.com',
+      fetch: async (input, init) => {
+        calls.push({ input: String(input), init })
+        return new Response(JSON.stringify({
+          providers: [],
+          default_provider: 'native',
+          provider: 'native',
+          status: 'unsupported',
+          sessionId: 'asr_native_1',
+          transport: 'native',
+          config: { provider: 'native', mode: 'single_utterance', languageMode: 'auto' },
+        }), { status: 200 })
+      },
+    })
+
+    await client.listASRProviders()
+    await client.createASRSession({ provider: 'native' })
+
+    expect(calls[0].input).toBe('https://example.com/api/asr/providers')
+    expect(calls[1].input).toBe('https://example.com/api/asr/session')
+    expect(calls[1].init?.method).toBe('POST')
+    expect(calls[1].init?.body).toBe(JSON.stringify({ provider: 'native' }))
   })
 })

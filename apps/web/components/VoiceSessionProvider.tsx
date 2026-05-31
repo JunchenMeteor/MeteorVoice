@@ -626,7 +626,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
   useEffect(() => {
     void flushPendingPreferences()
-    fetch('/api/preferences')
+    fetch('/api/preferences', {
+      headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+    })
       .then(res => res.json())
       .then((data: { tts_provider?: string; tts_speed?: number; tts_voice_id?: string | null }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
@@ -892,7 +894,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const speedRouting = getTTSSpeedRouting(provider, speed)
         const res = await fetch('/api/tts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
         })
         const result = await res.json() as { audioUrl?: string; error?: string }
@@ -1156,7 +1158,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       semanticCheck: async (t, ctx) => {
         const res = await fetch('/api/semantic-endpoint', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
         if (!res.ok) throw new Error('Semantic check failed')
@@ -1199,7 +1201,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
         body: JSON.stringify({
           messages: acceptedTurn.messages,
           context: {
