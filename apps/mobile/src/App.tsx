@@ -12,6 +12,7 @@ import {
 import {
   createMeteorVoiceApiClient,
   MeteorVoiceApiError,
+  type CreateASRSessionResponse,
   type HistorySession,
   type PreferencesResponse,
   type SessionTurnDto,
@@ -60,6 +61,14 @@ import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
 import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
 import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
+import {
+  addPcmFrameListener,
+  addPcmStateListener,
+  isPcmCaptureAvailable,
+  startPcmCapture,
+  stopPcmCapture,
+  type PcmCaptureFrameEvent,
+} from './voicePcmCapture'
 import { ThemeProvider, useTheme } from './ThemeProvider'
 import { SessionScreen } from './screens/SessionScreen'
 import { HomeScreen } from './screens/HomeScreen'
@@ -189,6 +198,7 @@ function AppInner() {
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const asrDiagnosticActiveRef = useRef(false)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -755,6 +765,10 @@ function AppInner() {
         transport: session.transport,
         elapsedMs: Date.now() - startedAt,
       })
+      if (session.provider === 'xunfei' && session.status === 'created' && session.transport === 'websocket') {
+        await runXunfeiASRStreamingDiagnostic(session, startedAt)
+        return
+      }
       setSettingsMessage(`ASR ${session.provider} bootstrap ready (${session.transport}). Native STT still active.`)
     } catch (error) {
       const message = error instanceof MeteorVoiceApiError
@@ -763,6 +777,216 @@ function AppInner() {
       logVoiceMetric('asr_diagnostic_error', { message, elapsedMs: Date.now() - startedAt })
       setSettingsMessage(message)
     }
+  }
+
+  async function runXunfeiASRStreamingDiagnostic(session: CreateASRSessionResponse, startedAt: number) {
+    if (asrDiagnosticActiveRef.current) {
+      setSettingsMessage('ASR diagnostic is already running.')
+      return
+    }
+    if (!session.endpointUrl) {
+      setSettingsMessage('ASR bootstrap returned no WebSocket URL.')
+      logVoiceMetric('asr_stream_skipped', { reason: 'missing_endpoint_url' })
+      return
+    }
+    if (!isPcmCaptureAvailable()) {
+      setSettingsMessage('ASR bootstrap ready, but native PCM capture is unavailable in this build.')
+      logVoiceMetric('asr_stream_skipped', { reason: 'pcm_module_unavailable' })
+      return
+    }
+
+    asrDiagnosticActiveRef.current = true
+    clearResumeListeningTimer()
+    await speechCancelListeningRef.current()
+    setSettingsMessage('ASR streaming diagnostic is listening for 8 seconds. Speak now.')
+    logVoiceMetric('asr_stream_start', {
+      provider: session.provider,
+      sampleRate: session.providerConfig?.sampleRate ?? 16000,
+      frameSizeBytes: session.providerConfig?.frameSizeBytes ?? 1280,
+    })
+
+    try {
+      const result = await runXunfeiDiagnosticWebSocket(session)
+      logVoiceMetric('asr_stream_done', {
+        elapsedMs: Date.now() - startedAt,
+        frameCount: result.frameCount,
+        totalBytes: result.totalBytes,
+        transcriptChars: result.transcript.length,
+      })
+      setSettingsMessage(result.transcript.trim()
+        ? `ASR diagnostic transcript: ${result.transcript.trim()}`
+        : `ASR diagnostic finished. Frames: ${result.frameCount}, bytes: ${result.totalBytes}.`)
+    } finally {
+      asrDiagnosticActiveRef.current = false
+    }
+  }
+
+  function runXunfeiDiagnosticWebSocket(session: CreateASRSessionResponse) {
+    return new Promise<{ frameCount: number; totalBytes: number; transcript: string }>((resolve, reject) => {
+      let socket: WebSocket | null = null
+      let frameSubscription: { remove: () => void } | null = null
+      let stateSubscription: { remove: () => void } | null = null
+      let stopTimer: ReturnType<typeof setTimeout> | null = null
+      let hardTimer: ReturnType<typeof setTimeout> | null = null
+      let settled = false
+      let firstFrame = true
+      let finalFrameSent = false
+      let frameCount = 0
+      let totalBytes = 0
+      let transcript = ''
+
+      const settle = (callback: () => void) => {
+        if (settled) return
+        settled = true
+        if (stopTimer) clearTimeout(stopTimer)
+        if (hardTimer) clearTimeout(hardTimer)
+        frameSubscription?.remove()
+        stateSubscription?.remove()
+        void stopPcmCapture('diagnostic_settled').catch(() => undefined)
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close()
+        }
+        callback()
+      }
+
+      const sendAudioFrame = (status: 0 | 1 | 2, audioBase64: string) => {
+        if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
+        if (status === 2) finalFrameSent = true
+        socket.send(JSON.stringify(createXunfeiASRFrame(session, status, audioBase64)))
+      }
+
+      const finishAudio = () => {
+        if (finalFrameSent) return
+        sendAudioFrame(2, '')
+        void stopPcmCapture('diagnostic_timeout').catch(() => undefined)
+      }
+
+      try {
+        socket = new WebSocket(session.endpointUrl ?? '')
+      } catch (error) {
+        settle(() => reject(error))
+        return
+      }
+
+      stateSubscription = addPcmStateListener(event => {
+        logVoiceMetric('asr_pcm_state', {
+          state: event.state,
+          frameCount: event.frameCount,
+          totalBytes: event.totalBytes,
+          message: event.message,
+        })
+      })
+
+      frameSubscription = addPcmFrameListener((event: PcmCaptureFrameEvent) => {
+        if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
+        frameCount += 1
+        totalBytes += event.byteCount
+        sendAudioFrame(firstFrame ? 0 : 1, event.audioBase64)
+        firstFrame = false
+        if (frameCount === 1 || frameCount % 25 === 0) {
+          logVoiceMetric('asr_pcm_frame', {
+            frameCount,
+            totalBytes,
+            elapsedMs: event.elapsedMs,
+          })
+        }
+      })
+
+      socket.onopen = () => {
+        void startPcmCapture({
+          sampleRate: session.providerConfig?.sampleRate ?? 16000,
+          frameDurationMs: session.providerConfig?.frameIntervalMs ?? 40,
+        }).catch(error => {
+          settle(() => reject(error))
+        })
+        stopTimer = setTimeout(finishAudio, 8000)
+        hardTimer = setTimeout(() => {
+          settle(() => resolve({ frameCount, totalBytes, transcript }))
+        }, 12000)
+      }
+
+      socket.onmessage = event => {
+        const payload = parseJsonObject(event.data)
+        const code = typeof payload?.code === 'number' ? payload.code : 0
+        if (code !== 0) {
+          const message = typeof payload?.message === 'string' ? payload.message : `Xunfei ASR error ${code}`
+          logVoiceMetric('asr_stream_provider_error', { code, message })
+          settle(() => reject(new Error(message)))
+          return
+        }
+        const segment = extractXunfeiTranscript(payload)
+        if (segment) {
+          transcript += segment
+          logVoiceMetric('asr_partial', { chars: transcript.length })
+        }
+        const data = getObject(payload?.data)
+        const status = typeof data?.status === 'number' ? data.status : undefined
+        if (status === 2) {
+          settle(() => resolve({ frameCount, totalBytes, transcript }))
+        }
+      }
+
+      socket.onerror = () => {
+        settle(() => reject(new Error('Xunfei ASR WebSocket error')))
+      }
+
+      socket.onclose = () => {
+        settle(() => resolve({ frameCount, totalBytes, transcript }))
+      }
+    })
+  }
+
+  function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string) {
+    const providerConfig = session.providerConfig
+    const data = {
+      status,
+      format: `audio/L16;rate=${providerConfig?.sampleRate ?? 16000}`,
+      encoding: providerConfig?.audioEncoding ?? 'raw',
+      audio: audioBase64,
+    }
+    if (status !== 0) return { data }
+
+    return {
+      common: { app_id: providerConfig?.appId },
+      business: {
+        domain: providerConfig?.domain ?? 'slm',
+        language: providerConfig?.language ?? 'zh_cn',
+        accent: providerConfig?.accent ?? 'mandarin',
+        vad_eos: providerConfig?.eosMs ?? 900,
+        dwa: 'wpgs',
+      },
+      data,
+    }
+  }
+
+  function parseJsonObject(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== 'string') return null
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  function getObject(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+  }
+
+  function extractXunfeiTranscript(payload: Record<string, unknown> | null) {
+    const data = getObject(payload?.data)
+    const result = getObject(data?.result)
+    const words = result?.ws
+    if (!Array.isArray(words)) return ''
+    return words.map(item => {
+      const word = getObject(item)
+      const candidates = word?.cw
+      if (!Array.isArray(candidates)) return ''
+      return candidates.map(candidate => {
+        const candidateObject = getObject(candidate)
+        return typeof candidateObject?.w === 'string' ? candidateObject.w : ''
+      }).join('')
+    }).join('')
   }
 
   async function deleteSession(id: string) {

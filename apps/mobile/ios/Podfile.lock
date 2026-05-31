@@ -1856,6 +1856,8 @@ PODS:
   - ReactNativeDependencies (0.83.0)
   - VoiceAudioSession (0.1.0):
     - ExpoModulesCore
+  - VoicePcmCapture (0.1.0):
+    - ExpoModulesCore
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -1946,6 +1948,7 @@ DEPENDENCIES:
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../../../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - VoiceAudioSession (from `../modules/voice-audio-session/ios`)
+  - VoicePcmCapture (from `../modules/voice-pcm-capture/ios`)
   - Yoga (from `../../../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
@@ -2122,6 +2125,8 @@ EXTERNAL SOURCES:
     :podspec: "../../../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
   VoiceAudioSession:
     :path: "../modules/voice-audio-session/ios"
+  VoicePcmCapture:
+    :path: "../modules/voice-pcm-capture/ios"
   Yoga:
     :path: "../../../node_modules/react-native/ReactCommon/yoga"
 
@@ -2212,6 +2217,7 @@ SPEC CHECKSUMS:
   ReactCommon: e22f6e537e566de4c61121da2139a1980caff948
   ReactNativeDependencies: d4bf16fb4f11558ffe141c42146791892f58666f
   VoiceAudioSession: 480d1183a4f27f9f0253116e067343f1a5067af0
+  VoicePcmCapture: 341b0ed696cea24b337066c8ce56738c9a89de61
   Yoga: 90687fcd1ebd927341caed917696d692813c0b24
 
 PODFILE CHECKSUM: 09905f1f2c1d6ab15e8eda814d07fdc5f2141069

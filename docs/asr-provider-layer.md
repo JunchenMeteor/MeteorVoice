@@ -5,7 +5,8 @@ This document is the executable implementation guide for the shared ASR provider
 ## Current Status
 
 - Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, mobile ASR bootstrap diagnostics, and contract tests.
-- Not implemented yet: mobile microphone PCM streaming to remote ASR, WebSocket relay, transcript event ingestion from remote ASR, and production mobile session switching.
+- Diagnostic-only: mobile can capture microphone PCM on iOS and stream it directly to Xunfei `zh_iat` from the Settings ASR diagnostic.
+- Not implemented yet: production mobile session switching, transcript event ingestion into the live turn state machine, WebSocket relay, and non-Xunfei remote adapters.
 - Production behavior remains unchanged: mobile live sessions still use `expo-speech-recognition` through `apps/mobile/src/nativeSpeech.ts`.
 
 ## Target Outcome
@@ -265,7 +266,7 @@ Current Xunfei implementation:
   - 1280 bytes per frame
   - max user utterance target: 60 seconds
 
-Mobile diagnostic implementation:
+Mobile bootstrap diagnostic implementation:
 
 - File: `apps/mobile/src/App.tsx`
 - Function: `runASRDiagnostics()`
@@ -276,9 +277,10 @@ Mobile diagnostic implementation:
   3. Selects enabled `xunfei` first, otherwise falls back to the configured default provider.
   4. Calls `api.createASRSession()` with `mode: "streaming"` and `languageMode: "mixed_zh_en"`.
   5. Records `asr_session_bootstrap_end` or `asr_diagnostic_error`.
-  6. Shows the result in Settings without changing production STT.
+  6. If Xunfei returns a WebSocket bootstrap, runs the P3 streaming diagnostic described below.
+  7. Shows the result in Settings without changing production STT.
 
-This diagnostic validates server credentials, API auth, provider selection, signed URL creation, and mobile API reachability. It does not send microphone audio to Xunfei yet.
+This diagnostic validates server credentials, API auth, provider selection, signed URL creation, mobile API reachability, direct provider WebSocket reachability, native PCM capture, and provider transcript parsing. It is intentionally not wired into live sessions yet.
 
 ### P3: Client Adapter Interface
 
@@ -304,6 +306,91 @@ Implementation options:
 3. Browser/Web adapter:
    - Use browser audio APIs only for web runtime.
    - Do not reuse it for iOS native unless the app runtime actually provides the same PCM access.
+
+Current P3 diagnostic implementation:
+
+1. A dedicated Expo Modules API module captures iOS microphone audio instead of extending `expo-speech-recognition`.
+2. Settings diagnostics call `/api/asr/session`, open the returned Xunfei signed WebSocket URL, and stream native PCM frames for an 8-second window.
+3. The diagnostic emits frame count, byte count, duration, sample rate, channels, provider partials, provider errors, and final transcript text into the existing Voice diagnostics log.
+4. `expo-speech-recognition` remains the production live-session STT path during this phase.
+5. `expo-audio` remains the TTS playback path; the PCM module does not replace playback.
+6. The remote transcript is displayed only in Settings. It is not fed into `acceptTranscriptTurn()` or the session state machine.
+
+Native PCM module:
+
+- Package: `apps/mobile/modules/voice-pcm-capture`
+- iOS module: `apps/mobile/modules/voice-pcm-capture/ios/VoicePcmCaptureModule.swift`
+- JS wrapper: `apps/mobile/src/voicePcmCapture.ts`
+- Module name: `VoicePcmCapture`
+- Events:
+  - `onPcmCaptureFrame`: emits `audioBase64`, `sequence`, `byteCount`, `sampleRate`, `channels`, `bitDepth`, `durationMs`, `elapsedMs`.
+  - `onPcmCaptureState`: emits `started`, `stopped`, or `error` plus capture status.
+- Functions:
+  - `start({ sampleRate?: number, frameDurationMs?: number }): Promise<PcmCaptureStatus>`
+  - `stop(reason?: string): Promise<PcmCaptureStatus>`
+  - `getStatus(): Promise<PcmCaptureStatus>`
+- Audio session:
+  - Category: `playAndRecord`
+  - Mode: `voiceChat`
+  - Options: `allowBluetoothHFP`, `defaultToSpeaker`
+  - Output override: speaker
+- Output format:
+  - 16 kHz
+  - 16-bit signed PCM
+  - mono
+  - 40 ms frame interval
+  - 1280 bytes per frame
+
+Direct Xunfei diagnostic:
+
+- File: `apps/mobile/src/App.tsx`
+- Functions:
+  - `runASRDiagnostics()`
+  - `runXunfeiASRStreamingDiagnostic(session, startedAt)`
+  - `runXunfeiDiagnosticWebSocket(session)`
+  - `createXunfeiASRFrame(session, status, audioBase64)`
+  - `extractXunfeiTranscript(payload)`
+- Runtime sequence:
+  1. User taps Settings -> Voice diagnostics -> `ASR`.
+  2. Mobile verifies the user is signed in.
+  3. Mobile calls provider discovery and creates an Xunfei ASR session.
+  4. Mobile cancels any current local STT listener before the diagnostic capture starts.
+  5. Mobile opens `session.endpointUrl` with `WebSocket`.
+  6. On socket open, mobile starts native PCM capture.
+  7. First audio frame sends Xunfei `status: 0` with `common`, `business`, and `data`.
+  8. Middle frames send Xunfei `status: 1` with `data`.
+  9. After 8 seconds, mobile stops native capture and sends Xunfei `status: 2` with empty audio.
+  10. Provider messages are parsed from `data.result.ws[].cw[].w`.
+  11. The diagnostic resolves when Xunfei sends `data.status === 2`, the socket closes, or the hard 12-second timeout fires.
+  12. Settings shows either `ASR diagnostic transcript: ...` or frame/byte counts when no transcript is returned.
+
+Diagnostics emitted:
+
+- `asr_diagnostic_start`
+- `asr_providers_loaded`
+- `asr_session_bootstrap_end`
+- `asr_stream_start`
+- `asr_pcm_state`
+- `asr_pcm_frame`
+- `asr_partial`
+- `asr_stream_provider_error`
+- `asr_stream_done`
+- `asr_diagnostic_error`
+
+Manual validation for this P3 PR:
+
+1. Install a fresh device build that includes the `VoicePcmCapture` native module.
+2. Sign in on mobile.
+3. Open Settings.
+4. Tap Voice diagnostics -> `ASR`.
+5. Speak one short mixed Chinese-English sentence during the 8-second listening window.
+6. Confirm Settings shows a transcript or meaningful frame/byte counts.
+7. Export/share Voice diagnostics logs.
+8. Confirm production `/session` still uses the old native STT path and does not consume the diagnostic transcript.
+
+Known limitation:
+
+- This direct-to-provider path exposes only a short-lived signed Xunfei WebSocket URL to the mobile client. It still does not expose API key or API secret, but all provider traffic goes from device to Xunfei. A future server relay can hide even the signed provider URL, centralize provider retries, and normalize transcript events before they reach the app.
 
 Implementation:
 
