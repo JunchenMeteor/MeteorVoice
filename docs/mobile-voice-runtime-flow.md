@@ -158,12 +158,46 @@ audioPlayingRef.current === false
 | --- | --- |
 | `startSession()` | 新 session 首次监听。 |
 | `scheduleResumeListening()` | 播放结束 cooldown 后恢复。 |
+| `onListeningEndedWithoutTranscript()` | iOS recognizer 无输入自然结束后恢复。 |
 | `handleNativeFinalTranscript()` echo ignored 分支 | 丢弃 AI echo 后尝试恢复。 |
 | `handleNativeFinalTranscript()` endpoint continue 分支 | 用户未说完时继续听。 |
 | `AppState` active 分支 | 从后台回前台时恢复。 |
 | `selectTab('session')` | 从其他 tab 回到会话页时恢复。 |
 
 如果播放中仍收到 transcript，`gateUserTranscript()` 会返回 `playback_active`，此时必须调用 `speechCancelListeningRef.current()` abort STT。
+
+## 无输入监听恢复
+
+iOS speech recognizer 在非连续识别下可能因为用户长时间不开口而自然结束。Mobile active session 使用 `continuous: true` 降低自然结束和重启空窗；`onListeningEndedWithoutTranscript()` 是兜底恢复路径。这个结束不代表 session 结束，也不代表用户离开会话页。
+
+`nativeSpeech.ts` 在 recognizer `end` 事件中记录：
+
+| 字段 | 含义 |
+| --- | --- |
+| `cancelled` | 是否由 App 主动 stop/abort。 |
+| `hadTranscript` | 本轮是否收到过 partial/final transcript。 |
+| `submitted` | 是否已经提交 transcript 给会话状态机。 |
+| `elapsedMs` | 本轮 recognizer 存活时间。 |
+
+当 `cancelled=false`、`hadTranscript=false`、`submitted=false` 时，触发 `onListeningEndedWithoutTranscript()`。
+
+App 只在以下条件都满足时重启监听：
+
+```text
+session active
+route ok
+not busy
+playbackActiveRef false
+audioPlayingRef false
+```
+
+日志判断：
+
+| stage | 解释 |
+| --- | --- |
+| `stt_end` | recognizer 结束，包含是否取消、是否有 transcript。 |
+| `stt_end_restart_scheduled` | 无输入自然结束后，App 安排短延迟恢复 STT。 |
+| `stt_end_restart_skipped` | 因 busy/playback/route/session 不允许恢复。 |
 
 ## Tab 和后台
 

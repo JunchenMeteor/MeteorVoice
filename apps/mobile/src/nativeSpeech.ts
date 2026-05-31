@@ -43,9 +43,10 @@ async function waitForRecognizerIdle(timeoutMs = 700) {
 
 export function useNativeSpeech(options: {
   onFinalTranscript?: (transcript: string) => void
+  onListeningEndedWithoutTranscript?: () => void
   onMetric?: (stage: string, data?: Record<string, unknown>) => void
 } = {}) {
-  const { onFinalTranscript, onMetric } = options
+  const { onFinalTranscript, onListeningEndedWithoutTranscript, onMetric } = options
   const [phase, setPhase] = useState<NativeSpeechPhase>('idle')
   const [permission, setPermission] = useState<NativeSpeechPermission>('unknown')
   const [partialTranscript, setPartialTranscript] = useState('')
@@ -55,6 +56,8 @@ export function useNativeSpeech(options: {
   const finalTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const submittedTranscriptRef = useRef('')
+  const latestTranscriptRef = useRef('')
+  const cancelRequestedRef = useRef(false)
   const speechStartedAtRef = useRef(0)
   const firstPartialAtRef = useRef<number | null>(null)
 
@@ -84,6 +87,7 @@ export function useNativeSpeech(options: {
     if (!normalized || submittedTranscriptRef.current === normalized) return
 
     submittedTranscriptRef.current = normalized
+    latestTranscriptRef.current = normalized
     clearTranscriptTimers()
     setFinalTranscript(normalized)
     setPartialTranscript('')
@@ -91,6 +95,7 @@ export function useNativeSpeech(options: {
 
     if (source === 'interim_stable') {
       try {
+        cancelRequestedRef.current = true
         ExpoSpeechRecognitionModule.abort()
       } catch {
         // The recognizer may already have ended naturally.
@@ -108,6 +113,8 @@ export function useNativeSpeech(options: {
   useSpeechRecognitionEvent('start', () => {
     clearTranscriptTimers()
     submittedTranscriptRef.current = ''
+    latestTranscriptRef.current = ''
+    cancelRequestedRef.current = false
     speechStartedAtRef.current = Date.now()
     firstPartialAtRef.current = null
     logVoiceMetric('stt_start')
@@ -117,12 +124,26 @@ export function useNativeSpeech(options: {
   })
 
   useSpeechRecognitionEvent('end', () => {
+    const wasCancelled = cancelRequestedRef.current
+    const hasSubmittedTranscript = Boolean(submittedTranscriptRef.current.trim())
+    const hasPendingTranscript = Boolean(latestTranscriptRef.current.trim())
+    logVoiceMetric('stt_end', {
+      cancelled: wasCancelled,
+      hadTranscript: hasPendingTranscript,
+      submitted: hasSubmittedTranscript,
+      elapsedMs: speechStartedAtRef.current ? Date.now() - speechStartedAtRef.current : null,
+    })
+    cancelRequestedRef.current = false
     setPhase(current => current === 'stopping' || current === 'listening' ? 'idle' : current)
+    if (!wasCancelled && !hasSubmittedTranscript && !hasPendingTranscript) {
+      onListeningEndedWithoutTranscript?.()
+    }
   })
 
   useSpeechRecognitionEvent('result', event => {
     const transcript = event.results[0]?.transcript?.trim() ?? ''
     if (!transcript) return
+    latestTranscriptRef.current = transcript
     clearTranscriptTimers()
     voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level: 1 })
 
@@ -203,6 +224,7 @@ export function useNativeSpeech(options: {
       setFinalTranscript('')
       setPartialTranscript('')
       submittedTranscriptRef.current = ''
+      latestTranscriptRef.current = ''
       clearTranscriptTimers()
       voiceActivityRef.current = createVoiceActivitySnapshot()
 
@@ -218,10 +240,11 @@ export function useNativeSpeech(options: {
 
       setPermission('granted')
       await waitForRecognizerIdle(300)
+      cancelRequestedRef.current = false
       ExpoSpeechRecognitionModule.start({
         ...(language ? { lang: language } : {}),
         interimResults: true,
-        continuous: false,
+        continuous: true,
         addsPunctuation: true,
         iosCategory: {
           category: 'playAndRecord',
@@ -248,6 +271,7 @@ export function useNativeSpeech(options: {
   const stopListening = useCallback(() => {
     try {
       setPhase('stopping')
+      cancelRequestedRef.current = true
       ExpoSpeechRecognitionModule.stop()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Speech recognition failed to stop'
@@ -258,6 +282,7 @@ export function useNativeSpeech(options: {
 
   const cancelListening = useCallback(async () => {
     try {
+      cancelRequestedRef.current = true
       ExpoSpeechRecognitionModule.abort()
       await waitForRecognizerIdle()
       setPhase('idle')
