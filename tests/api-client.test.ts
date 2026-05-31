@@ -21,6 +21,7 @@ describe('MeteorVoiceApiClient', () => {
     expect(calls[0].input).toBe('https://example.com/api/tts')
     expect(calls[0].init?.method).toBe('POST')
     expect(calls[0].init?.body).toBe(JSON.stringify({ text: 'Hello', accent: 'General American', speed: 1 }))
+    expect(new Headers(calls[0].init?.headers).get('X-MeteorVoice-Client')).toBe('meteorvoice-api-client')
   })
 
   it('throws a typed API error for non-2xx responses', async () => {

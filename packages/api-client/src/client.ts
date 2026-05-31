@@ -144,6 +144,9 @@ export class MeteorVoiceApiClient {
 
   private async request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
     const headers = new Headers(await this.resolveHeaders())
+    if (!headers.has('X-MeteorVoice-Client')) {
+      headers.set('X-MeteorVoice-Client', 'meteorvoice-api-client')
+    }
     if (init.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }

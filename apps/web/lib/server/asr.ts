@@ -8,6 +8,7 @@ import {
   type ASRSessionBootstrapRequest,
   type ASRSessionBootstrapResponse,
 } from '@meteorvoice/shared'
+import { createXunfeiASRSession } from '@/lib/providers/xunfei-asr'
 
 const serverBootstrapPendingMessage = 'ASR server bootstrap is not implemented for this provider yet'
 
@@ -29,7 +30,7 @@ export function getDefaultASRProvider(): ASRProviderKey {
   return provider?.enabled ? provider.key : 'native'
 }
 
-export function createASRSessionFromRequest(input: ASRSessionBootstrapRequest) {
+export async function createASRSessionFromRequest(input: ASRSessionBootstrapRequest) {
   const provider = normalizeASRProviderKey(input.provider, getDefaultASRProvider())
   const descriptor = getASRProviders().find(item => item.key === provider)
 
@@ -51,6 +52,10 @@ export function createASRSessionFromRequest(input: ASRSessionBootstrapRequest) {
       transport: 'native',
       config: { ...config, sessionId },
     } satisfies ASRSessionBootstrapResponse
+  }
+
+  if (provider === 'xunfei') {
+    return createXunfeiASRSession(config)
   }
 
   return {

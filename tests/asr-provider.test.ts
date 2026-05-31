@@ -67,23 +67,37 @@ describe('ASR server registry', () => {
     expect(getDefaultASRProvider()).toBe('native')
   })
 
-  it('accepts configured remote providers but keeps bootstrap explicit until signer exists', () => {
+  it('creates configured Xunfei bootstrap without returning raw API secrets', async () => {
     process.env.ASR_PROVIDER = 'xunfei'
     process.env.XUNFEI_ASR_APP_ID = 'app-id'
     process.env.XUNFEI_ASR_API_KEY = 'api-key'
     process.env.XUNFEI_ASR_API_SECRET = 'api-secret'
+    process.env.XUNFEI_ASR_PRODUCT = 'zh_iat'
 
     expect(getDefaultASRProvider()).toBe('xunfei')
-    expect(createASRSessionFromRequest({ provider: 'xunfei', mode: 'streaming' })).toMatchObject({
-      error: 'ASR server bootstrap is not implemented for this provider yet',
-      status: 501,
+    const result = await createASRSessionFromRequest({ provider: 'xunfei', mode: 'streaming', endpointSilenceMs: 1200 })
+
+    expect(result).toMatchObject({
+      provider: 'xunfei',
+      status: 'created',
+      transport: 'websocket',
+      providerConfig: {
+        appId: 'app-id',
+        domain: 'slm',
+        language: 'zh_cn',
+        accent: 'mandarin',
+        eosMs: 1200,
+        frameIntervalMs: 40,
+        frameSizeBytes: 1280,
+      },
     })
+    expect(JSON.stringify(result)).not.toContain('api-secret')
   })
 
-  it('returns native unsupported bootstrap so mobile keeps using local STT for now', () => {
+  it('returns native unsupported bootstrap so mobile keeps using local STT for now', async () => {
     vi.stubGlobal('crypto', { randomUUID: () => 'fixed-id' })
 
-    expect(createASRSessionFromRequest({ provider: 'native' })).toMatchObject({
+    await expect(createASRSessionFromRequest({ provider: 'native' })).resolves.toMatchObject({
       provider: 'native',
       status: 'unsupported',
       sessionId: 'asr_native_fixed-id',

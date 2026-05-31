@@ -552,7 +552,7 @@ function AppInner() {
       semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
         const res = await fetch(`${baseUrl}/api/semantic-endpoint`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...getAuthHeaders() },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
         if (!res.ok) throw new Error('Semantic check failed')

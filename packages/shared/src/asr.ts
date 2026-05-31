@@ -57,6 +57,19 @@ export type ASRSessionBootstrapResponse = {
   endpointUrl?: string
   headers?: Record<string, string>
   query?: Record<string, string>
+  providerConfig?: {
+    appId?: string
+    domain?: string
+    language?: string
+    accent?: string
+    eosMs?: number
+    audioEncoding?: 'raw' | 'lame'
+    sampleRate?: 8000 | 16000
+    channels?: 1
+    bitDepth?: 16
+    frameIntervalMs?: number
+    frameSizeBytes?: number
+  }
   config: ASRSessionConfig
 }
 
@@ -71,6 +84,24 @@ export type ASRTranscriptEvent = {
   confidence?: number
   elapsedMs?: number
   language?: string
+  error?: string
+}
+
+export type ASRRuntimeAdapter = {
+  readonly provider: ASRProviderKey
+  start(config: ASRSessionConfig): Promise<void>
+  stop(reason?: string): Promise<void>
+  onEvent(listener: (event: ASRTranscriptEvent) => void): () => void
+}
+
+export type ASRRuntimeMetrics = {
+  provider: ASRProviderKey
+  sessionId?: string
+  bootstrapStartedAt?: number
+  bootstrapEndedAt?: number
+  speechStartedAt?: number
+  finalTranscriptAt?: number
+  transcriptChars?: number
   error?: string
 }
 

@@ -4,8 +4,8 @@ This document is the executable implementation guide for the shared ASR provider
 
 ## Current Status
 
-- Implemented: shared ASR types, provider capability registry, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, and contract tests.
-- Not implemented yet: provider-specific remote ASR signing, WebSocket relay, audio upload, and production mobile session switching.
+- Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, and contract tests.
+- Not implemented yet: mobile microphone PCM streaming to remote ASR, WebSocket relay, transcript event ingestion from remote ASR, and production mobile session switching.
 - Production behavior remains unchanged: mobile live sessions still use `expo-speech-recognition` through `apps/mobile/src/nativeSpeech.ts`.
 
 ## Target Outcome
@@ -29,7 +29,7 @@ flowchart TD
   ProvidersRoute --> ServerRegistry[apps/web/lib/server/asr.ts]
   SessionRoute --> ServerRegistry
   ServerRegistry --> SharedContracts[packages/shared/src/asr.ts]
-  ServerRegistry --> XunfeiSigner[future xunfei signer]
+  ServerRegistry --> XunfeiSigner[xunfei zh_iat signer]
   ServerRegistry --> AzureSigner[future azure signer]
   ServerRegistry --> TencentSigner[future tencent signer]
   ServerRegistry --> VolcengineSigner[future volcengine signer]
@@ -150,7 +150,36 @@ Public bootstrap endpoint. Request shape:
 }
 ```
 
-Current remote provider response is intentionally `501` until a signer/relay exists.
+Xunfei `zh_iat` currently returns a short-lived signed WebSocket bootstrap response when `XUNFEI_ASR_*` credentials are configured. Other remote providers intentionally return `501` until a signer/relay exists.
+
+## Abuse Guard
+
+The ASR work also protects high-cost API routes because unauthenticated bot traffic can burn Vercel free resources and provider credits.
+
+Server helper:
+
+- File: `apps/web/lib/server/http.ts`
+- Function: `guardApiRequest(request, options)`
+- Checks:
+  - `x-vercel-ip-country` against `API_GUARD_BLOCKED_COUNTRIES`, defaulting to `JP`.
+  - Optional trusted client header: `X-MeteorVoice-Client`.
+  - In-memory per route/IP rate bucket.
+
+Trusted client header values:
+
+- `meteorvoice-api-client`
+- `meteorvoice-web`
+- `meteorvoice-mobile`
+
+Guarded routes:
+
+- `/api/chat`
+- `/api/tts`
+- `/api/semantic-endpoint`
+- `/api/preferences`
+- `/api/asr/session`
+
+This guard is a low-cost first line of defense. It is not a replacement for provider-side quotas, Vercel Firewall, or a durable distributed rate limiter. If abuse continues from many IPs, add a persistent limiter backed by Redis, Upstash, Supabase, or Vercel Firewall rules.
 
 ## Environment Variables
 
@@ -202,7 +231,7 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
 
 4. Validate required env vars in the provider file.
 5. Generate a short-lived signed WebSocket URL or token.
-6. Return only endpoint, safe headers, query params, expiration, and normalized config.
+6. Return only endpoint, safe headers, query params, expiration, normalized config, and non-secret provider runtime parameters.
 7. Route `createASRSessionFromRequest()` to the provider function.
 
 Done when:
@@ -211,16 +240,32 @@ Done when:
 - Missing credentials return 400 with a readable error.
 - No server secret appears in response JSON, logs, or client bundles.
 
+Current Xunfei implementation:
+
+- File: `apps/web/lib/providers/xunfei-asr.ts`
+- Function: `createXunfeiASRSession(config)`
+- Endpoint: `wss://iat.xf-yun.com/v1`
+- Product: `XUNFEI_ASR_PRODUCT=zh_iat`
+- Audio contract for the future client adapter:
+  - PCM/raw
+  - 16 kHz
+  - 16-bit
+  - mono
+  - 40 ms frame interval
+  - 1280 bytes per frame
+  - max user utterance target: 60 seconds
+
 ### P3: Client Adapter Interface
 
 Goal: mobile/web session code can consume native or remote ASR through one adapter boundary.
 
 Implementation:
 
-1. Add a session-side interface in the platform layer:
+1. Use the shared runtime interface:
 
 ```ts
 type ASRRuntimeAdapter = {
+  provider: ASRProviderKey
   start(config: ASRSessionConfig): Promise<void>
   stop(reason?: string): Promise<void>
   onEvent(listener: (event: ASRTranscriptEvent) => void): () => void

@@ -45,7 +45,7 @@ async function flushPendingPreferences() {
     }
     const res = await fetch('/api/preferences', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
       body: JSON.stringify(body),
     })
     if (res.ok) clearPendingSyncKeys()
@@ -66,7 +66,7 @@ export async function persistPreference(key: string, value: string | number) {
   try {
     const res = await fetch('/api/preferences', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
       body: JSON.stringify({ [key]: value }),
     })
     if (res.ok) {
@@ -94,7 +94,9 @@ export function readTTSSpeedPreference(): TTSSpeed {
   if (raw !== null) {
     const local = normalizeTTSSpeed(raw)
     // 异步从 API 拉取最新值覆盖本地（如果 API 值不同）
-    void fetch('/api/preferences')
+    void fetch('/api/preferences', {
+      headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+    })
       .then(res => res.json())
       .then((data: { tts_speed?: number }) => {
         if (typeof data.tts_speed === 'number') {
