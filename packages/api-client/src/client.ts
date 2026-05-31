@@ -2,6 +2,8 @@ import type {
   ApiClientOptions,
   ApiErrorBody,
   ApiHeadersProvider,
+  CreateASRSessionRequest,
+  CreateASRSessionResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   CreateTurnRequest,
@@ -11,6 +13,7 @@ import type {
   GenerateSummaryRequest,
   GenerateSummaryResponse,
   ListAccentsResponse,
+  ListASRProvidersResponse,
   ListHistoryResponse,
   ListScenariosResponse,
   ListSessionTurnsResponse,
@@ -80,6 +83,17 @@ export class MeteorVoiceApiClient {
 
   synthesizeSpeech(input: SynthesizeSpeechRequest) {
     return this.request<SynthesizeSpeechResponse>('/api/tts', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  listASRProviders() {
+    return this.request<ListASRProvidersResponse>('/api/asr/providers')
+  }
+
+  createASRSession(input: CreateASRSessionRequest) {
+    return this.request<CreateASRSessionResponse>('/api/asr/session', {
       method: 'POST',
       body: input,
     })

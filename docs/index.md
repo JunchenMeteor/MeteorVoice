@@ -14,6 +14,8 @@
    - Web + Native Mobile 双端架构升级历史路线、mobile 探针、共享包和 session core 落地计划。
 5. `docs/session-endpointing-vad.md`
    - 会话页“用户是否说完”的 endpointing + VAD 设计，修改 STT/VAD/静音等待/轮次触发前 MUST 阅读。
+6. `docs/asr-provider-layer.md`
+   - 共享 ASR provider 层执行规格，修改 ASR provider、远端识别、mobile/web ASR 接入前 MUST 阅读。
 
 ## 当前执行状态
 
@@ -47,6 +49,8 @@
   - 三合一层级判停方案：Layer 1 本地快速判断 + Layer 2 LLM 语义判停 + Layer 3 安全网超时。从固定静默时长升级为智能 end-of-turn 检测。
 - `docs/voice-profile-unification-plan.md`
   - 后续统一教练声音选择计划，覆盖 Xunfei/Azure 等 provider 的 voice profile 模型和 UI 方向。
+- `docs/asr-provider-layer.md`
+  - 共享 ASR provider 层落地文档，覆盖 provider 能力、API 契约、服务端 bootstrap、后续远端 ASR 接入和验收路径。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 

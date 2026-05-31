@@ -1,5 +1,9 @@
 import type {
   AccentProfile,
+  ASRProviderDescriptor,
+  ASRProviderKey,
+  ASRSessionBootstrapRequest,
+  ASRSessionBootstrapResponse,
   ConversationContext,
   ConversationMessage,
   ConversationResponse,
@@ -83,6 +87,15 @@ export type SynthesizeSpeechRequest = {
 }
 
 export type SynthesizeSpeechResponse = TTSResult
+
+export type ListASRProvidersResponse = {
+  providers: ASRProviderDescriptor[]
+  default_provider: ASRProviderKey
+}
+
+export type CreateASRSessionRequest = ASRSessionBootstrapRequest
+
+export type CreateASRSessionResponse = ASRSessionBootstrapResponse
 
 export type SyncSessionRequest = {
   session_id: string
