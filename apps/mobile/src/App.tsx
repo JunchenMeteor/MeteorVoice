@@ -221,7 +221,13 @@ function AppInner() {
   }, [])
 
   const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
-    const entry = { ts: Date.now(), stage, data }
+    const sanitizedData = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [
+        key,
+        key.toLowerCase().includes('audiourl') && typeof value === 'string' ? '<audioUrl>' : value,
+      ]),
+    )
+    const entry = { ts: Date.now(), stage, data: sanitizedData }
     console.info('[voice-metrics]', JSON.stringify(entry))
     setVoiceMetrics(previous => [...previous.slice(-79), entry])
   }, [])
@@ -575,7 +581,24 @@ function AppInner() {
     void submitTurn(endpointTranscript)
   }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
 
-  const speech = useNativeSpeech({ onFinalTranscript: handleNativeFinalTranscript, onMetric: logVoiceMetric })
+  const handleListeningEndedWithoutTranscript = useCallback(() => {
+    if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
+      logVoiceMetric('stt_end_restart_skipped', {
+        busy,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })
+      return
+    }
+    logVoiceMetric('stt_end_restart_scheduled')
+    scheduleResumeListening(250, false)
+  }, [busy, logVoiceMetric, scheduleResumeListening])
+
+  const speech = useNativeSpeech({
+    onFinalTranscript: handleNativeFinalTranscript,
+    onListeningEndedWithoutTranscript: handleListeningEndedWithoutTranscript,
+    onMetric: logVoiceMetric,
+  })
 
   useEffect(() => {
     speechStartListeningRef.current = speech.startListening
