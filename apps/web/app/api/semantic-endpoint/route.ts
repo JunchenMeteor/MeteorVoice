@@ -1,4 +1,4 @@
-import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { createSemanticEndpointCheck } from '@/lib/server/semantic-endpoint'
 
 const MAX_TRANSCRIPT_LENGTH = 2000
@@ -30,6 +30,8 @@ export async function POST(request: Request) {
   try {
     const guard = guardApiRequest(request, { name: 'semantic_endpoint', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as unknown
     if (!body || typeof body !== 'object') {
       return jsonApiResult({ error: 'Invalid request body', status: 400 })

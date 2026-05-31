@@ -268,6 +268,12 @@ function AppInner() {
   }, [])
 
   function startSession() {
+    if (auth.state !== 'signed-in') {
+      setActiveTab('settings')
+      setStatus('login.signin')
+      return
+    }
+
     logVoiceMetric('session_start', { scenario: scenario.key, accent: accent.key, provider: ttsProvider })
     endpointRequestRef.current += 1
     clearResumeListeningTimer()

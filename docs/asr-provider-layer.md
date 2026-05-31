@@ -164,6 +164,11 @@ Server helper:
   - `x-vercel-ip-country` against `API_GUARD_BLOCKED_COUNTRIES`, defaulting to `JP`.
   - Optional trusted client header: `X-MeteorVoice-Client`.
   - In-memory per route/IP rate bucket.
+- Authentication:
+  - High-cost routes call `requireApiUser()`.
+  - Web requests authenticate with Supabase cookies.
+  - Mobile requests authenticate with `Authorization: Bearer <supabase-access-token>`.
+  - Unauthenticated requests return `401` before invoking AI, TTS, or ASR providers.
 
 Trusted client header values:
 
@@ -180,6 +185,11 @@ Guarded routes:
 - `/api/asr/session`
 
 This guard is a low-cost first line of defense. It is not a replacement for provider-side quotas, Vercel Firewall, or a durable distributed rate limiter. If abuse continues from many IPs, add a persistent limiter backed by Redis, Upstash, Supabase, or Vercel Firewall rules.
+
+Mobile behavior:
+
+- Starting a voice session now requires `auth.state === "signed-in"`.
+- If the mobile user is not signed in, session start sends the user to Settings login instead of calling protected APIs.
 
 ## Environment Variables
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 export type ApiErrorResult = {
   error: string
@@ -67,6 +68,16 @@ export function guardApiRequest(request: Request, options: GuardOptions): ApiErr
   current.count += 1
   if (current.count > options.maxRequests) {
     return { error: 'Too many requests', status: 429 }
+  }
+
+  return null
+}
+
+export async function requireApiUser(): Promise<ApiErrorResult | null> {
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) {
+    return { error: 'Authentication required', status: 401 }
   }
 
   return null
