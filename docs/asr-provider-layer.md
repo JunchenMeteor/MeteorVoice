@@ -4,7 +4,7 @@ This document is the executable implementation guide for the shared ASR provider
 
 ## Current Status
 
-- Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, and contract tests.
+- Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, mobile ASR bootstrap diagnostics, and contract tests.
 - Not implemented yet: mobile microphone PCM streaming to remote ASR, WebSocket relay, transcript event ingestion from remote ASR, and production mobile session switching.
 - Production behavior remains unchanged: mobile live sessions still use `expo-speech-recognition` through `apps/mobile/src/nativeSpeech.ts`.
 
@@ -265,9 +265,45 @@ Current Xunfei implementation:
   - 1280 bytes per frame
   - max user utterance target: 60 seconds
 
+Mobile diagnostic implementation:
+
+- File: `apps/mobile/src/App.tsx`
+- Function: `runASRDiagnostics()`
+- UI entry: `apps/mobile/src/screens/SettingsScreen.tsx`, Voice diagnostics card, `ASR` button.
+- Behavior:
+  1. Requires a signed-in mobile user because `/api/asr/*` is a protected high-cost API surface.
+  2. Calls `api.listASRProviders()` and records `asr_diagnostic_start` plus `asr_providers_loaded`.
+  3. Selects enabled `xunfei` first, otherwise falls back to the configured default provider.
+  4. Calls `api.createASRSession()` with `mode: "streaming"` and `languageMode: "mixed_zh_en"`.
+  5. Records `asr_session_bootstrap_end` or `asr_diagnostic_error`.
+  6. Shows the result in Settings without changing production STT.
+
+This diagnostic validates server credentials, API auth, provider selection, signed URL creation, and mobile API reachability. It does not send microphone audio to Xunfei yet.
+
 ### P3: Client Adapter Interface
 
 Goal: mobile/web session code can consume native or remote ASR through one adapter boundary.
+
+Current blocker:
+
+- `expo-speech-recognition` returns transcripts, not microphone audio frames.
+- `expo-audio` recording presets produce files such as AAC/M4A, not real-time 16 kHz 16-bit mono PCM frames.
+- Xunfei `zh_iat` streaming expects raw PCM frames over WebSocket, so the mobile client cannot simply route the existing Expo transcript stream into remote ASR.
+
+Implementation options:
+
+1. Native PCM capture adapter:
+   - Add an Expo Modules API native module under `apps/mobile/modules/` that owns microphone capture.
+   - Emit 16 kHz, 16-bit, mono PCM frames to JavaScript or stream them natively to the provider relay.
+   - Keep `nativeSpeech.ts` as the existing fallback until the remote path is proven on device.
+2. Server relay with file upload:
+   - Use Expo recording to create a file after user speech ends.
+   - Upload the file to the API.
+   - Transcode server-side to provider-required PCM and send to ASR.
+   - This is easier to prototype but adds full-utterance upload latency and needs server ffmpeg/transcoding support.
+3. Browser/Web adapter:
+   - Use browser audio APIs only for web runtime.
+   - Do not reuse it for iOS native unless the app runtime actually provides the same PCM access.
 
 Implementation:
 
@@ -291,6 +327,7 @@ Done when:
 
 - Current native path behaves the same as before.
 - Remote provider can be enabled behind a config flag.
+- Remote path receives real user audio and returns `ASRTranscriptEvent` results.
 - TTS playback still blocks user transcript handling.
 - Each real utterance creates at most one AI turn.
 
