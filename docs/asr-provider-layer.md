@@ -305,6 +305,17 @@ Implementation options:
    - Use browser audio APIs only for web runtime.
    - Do not reuse it for iOS native unless the app runtime actually provides the same PCM access.
 
+Current P3 execution plan:
+
+1. Add a dedicated Expo Modules API module for iOS PCM capture instead of extending `expo-speech-recognition`.
+2. Keep the first PR path diagnostic-first:
+   - Start capture from Settings diagnostics.
+   - Emit frame count, byte count, duration, sample rate, channels, and errors.
+   - Do not switch production session STT until true-device PCM capture is proven.
+3. Keep `expo-speech-recognition` as the live-session fallback during this phase.
+4. Keep `expo-audio` for TTS playback; do not replace the playback path with the PCM module.
+5. After PCM capture is stable, connect the frame stream to the `/api/asr/session` bootstrap response and provider WebSocket.
+
 Implementation:
 
 1. Use the shared runtime interface:
