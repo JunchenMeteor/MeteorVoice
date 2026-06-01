@@ -32,12 +32,6 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
   const { C } = useTheme()
   const [expandedId, setExpandedId] = useState<string | number | null>(null)
   const [filterScenario, setFilterScenario] = useState<string | null>(null)
-  const [localSessions, setLocalSessions] = useState<HistorySession[]>(sessions)
-
-  // 同步外部 sessions 变化
-  if (sessions !== localSessions && sessions.length !== localSessions.length) {
-    setLocalSessions(sessions)
-  }
 
   function toggle(id: string | number) {
     if (expandedId === id) {
@@ -49,13 +43,12 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
   }
 
   function handleDelete(id: string) {
-    setLocalSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
     onDelete(id)
   }
 
   const filtered = filterScenario
-    ? localSessions.filter(s => s.scenario_key === filterScenario || s.scenario === filterScenario)
-    : localSessions
+    ? sessions.filter(s => s.scenario_key === filterScenario || s.scenario === filterScenario)
+    : sessions
 
 
   const styles = useMemo(() => StyleSheet.create({
@@ -227,4 +220,3 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
     </View>
   )
 }
-

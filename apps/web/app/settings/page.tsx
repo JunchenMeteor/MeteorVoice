@@ -5,6 +5,7 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import type { Locale, VoiceProfile } from '@meteorvoice/shared'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useEffect, useState } from 'react'
 
@@ -49,6 +50,7 @@ export default function SettingsPage() {
   const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
   const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [settingsError, setSettingsError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadTtsProvider() {
@@ -56,14 +58,15 @@ export default function SettingsPage() {
         const res = await fetch('/api/preferences', {
           headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
         })
-        const data = await res.json() as {
+        const data = await readApiJsonResponse<{
           tts_provider?: string
           available_providers?: string[]
           tts_speed?: number
           tts_voice_id?: string | null
           voice_profiles?: VoiceProfile[]
           selected_voice_profile_id?: string | null
-        }
+        }>(res, 'Preferences request failed')
+        setSettingsError(null)
         if (data.tts_provider) setTtsProvider(data.tts_provider)
         if (data.available_providers) setAvailableProviders(data.available_providers)
         if (data.voice_profiles) setVoiceProfiles(data.voice_profiles)
@@ -80,7 +83,12 @@ export default function SettingsPage() {
           setTtsSpeed(nextSpeed)
           writeTTSSpeedPreference(nextSpeed)
         }
-      } catch {}
+      } catch (error) {
+        setSettingsError(formatApiRequestError(error, {
+          context: 'web_settings_preferences_load',
+          presentation: 'inline',
+        }).displayMessage)
+      }
     }
 
     void loadTtsProvider()
@@ -126,6 +134,11 @@ export default function SettingsPage() {
           {t('settings.subtitle')}
         </p>
       </div>
+      {settingsError && (
+        <div className="rounded-md border border-[var(--theme-danger)] bg-[var(--theme-surface-muted)] px-3 py-2 text-sm text-[var(--theme-danger)]">
+          {settingsError}
+        </div>
+      )}
 
       <Card>
         <CardHeader>

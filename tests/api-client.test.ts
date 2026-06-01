@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMeteorVoiceApiClient, MeteorVoiceApiError } from '@meteorvoice/api-client'
+import { createMeteorVoiceApiClient, formatApiRequestError, MeteorVoiceApiError, readApiJsonResponse } from '@meteorvoice/api-client'
 
 describe('MeteorVoiceApiClient', () => {
   it('joins baseUrl and sends JSON requests', async () => {
@@ -33,6 +33,46 @@ describe('MeteorVoiceApiClient', () => {
       name: 'MeteorVoiceApiError',
       message: 'Unauthorized',
       status: 401,
+    } satisfies Partial<MeteorVoiceApiError>)
+  })
+
+  it('formats API errors for shared web and mobile presentation', () => {
+    const error = new MeteorVoiceApiError('Authentication required', 401, { error: 'Authentication required' })
+
+    const result = formatApiRequestError(error, {
+      context: 'asr_diagnostic',
+      presentation: 'toast',
+    })
+
+    expect(result).toMatchObject({
+      kind: 'unauthorized',
+      status: 401,
+      title: 'Sign in required',
+      displayMessage: 'Sign in again and try this request.',
+      presentation: 'toast',
+      severity: 'warning',
+      action: 'sign_in',
+      actionLabel: 'Sign in',
+      autoDismissMs: 4000,
+      blocksInteraction: false,
+      dismissible: true,
+      shouldDisplay: true,
+      logData: {
+        context: 'asr_diagnostic',
+        kind: 'unauthorized',
+        status: 401,
+        message: 'Authentication required',
+      },
+    })
+  })
+
+  it('converts fetch responses into typed API errors', async () => {
+    const response = new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 })
+
+    await expect(readApiJsonResponse(response, 'History request failed')).rejects.toMatchObject({
+      name: 'MeteorVoiceApiError',
+      message: 'Too many requests',
+      status: 429,
     } satisfies Partial<MeteorVoiceApiError>)
   })
 
