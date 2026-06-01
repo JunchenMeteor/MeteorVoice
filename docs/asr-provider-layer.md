@@ -424,31 +424,59 @@ Goal: compare native ASR and remote ASR before changing defaults.
 
 Required metrics:
 
-- `asr_provider_selected`
+- `stt_start`
+- `stt_first_partial`
+- `stt_submit`
+- `stt_end`
+- `asr_diagnostic_start`
+- `asr_auth_checked`
+- `asr_providers_loaded`
 - `asr_session_bootstrap_start`
 - `asr_session_bootstrap_end`
-- `asr_speech_start`
+- `asr_stream_start`
+- `asr_pcm_frame`
+- `asr_first_partial`
 - `asr_partial`
 - `asr_final`
-- `asr_no_speech_timeout`
-- `asr_error`
-- `turn_locked`
-- `ai_reply_start`
-- `tts_playback_start`
+- `asr_stream_done`
+- `asr_stream_provider_error`
+- `asr_diagnostic_error`
+- `coach_reply_ready`
+- `tts_ready`
+- `playback_started`
 
 Evaluation method:
 
-1. Test native ASR and one remote provider with the same scripted prompts.
-2. Include Chinese, English, and mixed Chinese-English utterances.
-3. Measure time from speech end to `asr_final`.
-4. Measure time from `asr_final` to `ai_reply_start`.
-5. Compare transcript quality manually for names, mixed language, and punctuation.
+1. Clear Settings -> Voice diagnostics logs.
+2. Start a normal mobile session and say the native test prompt.
+3. Wait for the AI reply to complete so native STT, AI, and TTS timing markers are captured.
+4. Open Settings -> Voice diagnostics and tap `ASR`.
+5. Say the same prompt during the 8-second Xunfei diagnostic window.
+6. Tap `P4` to export the compact ASR P4 evaluation report.
+7. Tap `Share` to export raw voice metrics when deeper debugging is needed.
+8. Repeat with Chinese, English, and mixed Chinese-English prompts.
+9. Compare:
+   - native `stt_first_partial.elapsedMs` vs remote `asr_first_partial.elapsedMs`
+   - native `stt_submit.elapsedMs` vs remote `asr_stream_done.streamElapsedMs`
+   - transcript text shown by the native session vs `ASR diagnostic transcript`
+   - provider errors, no-transcript runs, and frame/byte counts
+
+Current mobile P4 implementation:
+
+- File: `apps/mobile/src/App.tsx`
+- Report builder: `createASREvaluationReport(entries)`
+- Native timing source: `stt_start`, `stt_first_partial`, `stt_submit`, `stt_end`
+- Remote timing source: `asr_stream_start`, `asr_first_partial`, `asr_final`, `asr_stream_done`
+- UI entry: Settings -> Voice diagnostics -> `P4`
+- Export title: `MeteorVoice ASR P4 evaluation`
+- Production STT remains unchanged; this report does not switch live sessions to remote ASR.
 
 Done when:
 
 - Remote ASR improves transcript quality enough to justify network cost.
 - Speech-end to final latency is acceptable on a real device in China.
 - Session does not get stuck after silence, background/foreground, or page transitions.
+- P4 report includes at least one native run and one remote run for the same scripted prompt.
 
 ## Testing
 
