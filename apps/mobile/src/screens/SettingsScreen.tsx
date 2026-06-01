@@ -11,6 +11,8 @@ interface Props {
   locale: Locale
   ttsProvider: string
   availableProviders: string[]
+  sessionSttProvider: 'native' | 'xunfei'
+  availableSessionSttProviders: Array<'native' | 'xunfei'>
   ttsSpeed: number
   ttsVoiceId: string | null
   voiceProfiles: VoiceProfile[]
@@ -31,6 +33,7 @@ interface Props {
   onSetLocale: (l: string) => void
   onSetTheme: (k: ThemeKey) => void
   onSaveProvider: (p: string) => void
+  onSetSessionSttProvider: (p: 'native' | 'xunfei') => void
   onAdjustSpeed: (delta: number) => void
   onSavePracticePreferences: () => void
   onLoadPreferences: () => void
@@ -45,18 +48,17 @@ interface Props {
   onClearVoiceMetrics: () => void
   onShareVoiceMetrics: () => void
   onShareASREvaluation: () => void
-  onRunASRDiagnostics: () => void
 }
 
 export function SettingsScreen({
-  tr, locale, ttsProvider, availableProviders, ttsSpeed,
+  tr, locale, ttsProvider, availableProviders, sessionSttProvider, availableSessionSttProviders, ttsSpeed,
   ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
   settingsLoading, settingsMessage,
   auth, email, password, authMode, apiBaseUrl, apiBaseUrlSource, defaultApiBaseUrl, appVersion, voiceMetricsText, asrEvaluationText,
-  onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
+  onSetLocale, onSetTheme, onSaveProvider, onSetSessionSttProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
   onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
-  onResetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics, onShareASREvaluation, onRunASRDiagnostics,
+  onResetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics, onShareASREvaluation,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
@@ -215,6 +217,25 @@ export function SettingsScreen({
         {settingsMessage && <Text style={styles.hint}>{settingsMessage}</Text>}
       </View>
 
+      {/* Session STT Provider */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{tr('settings.session_stt_provider')}</Text>
+        <View style={styles.chipGrid}>
+          {availableSessionSttProviders.map(provider => (
+            <Pressable
+              key={provider}
+              onPress={() => onSetSessionSttProvider(provider)}
+              style={[styles.chip, sessionSttProvider === provider && styles.chipActive]}
+            >
+              <Text style={[styles.chipTxt, sessionSttProvider === provider && styles.chipTxtActive]}>
+                {tr(`settings.session_stt_provider_${provider}`)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Text style={styles.hint}>{tr('settings.session_stt_provider_hint')}</Text>
+      </View>
+
       {/* Coach Voice */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{tr('settings.voice_profile_current')}</Text>
@@ -315,9 +336,6 @@ export function SettingsScreen({
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Voice diagnostics</Text>
           <View style={styles.chipRow}>
-            <Pressable onPress={onRunASRDiagnostics} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>ASR</Text>
-            </Pressable>
             <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
               <Text style={styles.smallBtnTxt}>Share</Text>
             </Pressable>
