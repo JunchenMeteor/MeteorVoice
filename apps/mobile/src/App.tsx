@@ -79,10 +79,22 @@ const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
 const apiBaseUrlStorageKey = 'api_base_url'
 type Tab = 'session' | 'home' | 'history' | 'settings'
+type ApiBaseUrlSource = 'default' | 'user'
 type VoiceMetricEntry = {
   ts: number
   stage: string
   data: Record<string, unknown>
+}
+
+type ASREvaluationRun = {
+  startedAt?: number
+  firstPartialMs?: number | null
+  finalMs?: number | null
+  chars?: number
+  source?: string
+  frameCount?: number
+  totalBytes?: number
+  error?: string
 }
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -123,6 +135,88 @@ function TabIcon({ tab, color }: { tab: Tab; color: string }) {
   )
 }
 
+function createASREvaluationReport(entries: VoiceMetricEntry[]) {
+  const nativeRuns: ASREvaluationRun[] = []
+  const remoteRuns: ASREvaluationRun[] = []
+  let currentNative: ASREvaluationRun | null = null
+  let currentRemote: ASREvaluationRun | null = null
+
+  for (const entry of entries) {
+    if (entry.stage === 'stt_start') {
+      currentNative = { startedAt: entry.ts }
+      nativeRuns.push(currentNative)
+    } else if (entry.stage === 'stt_first_partial' && currentNative) {
+      currentNative.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
+      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
+    } else if (entry.stage === 'stt_submit' && currentNative) {
+      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
+      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
+      currentNative.source = typeof entry.data.source === 'string' ? entry.data.source : undefined
+    } else if (entry.stage === 'stt_end' && currentNative && currentNative.finalMs == null) {
+      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
+    }
+
+    if (entry.stage === 'asr_stream_start') {
+      currentRemote = { startedAt: entry.ts }
+      remoteRuns.push(currentRemote)
+    } else if (entry.stage === 'asr_first_partial' && currentRemote) {
+      currentRemote.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
+      currentRemote.chars = readMetricNumber(entry.data.chars) ?? currentRemote.chars
+    } else if (entry.stage === 'asr_stream_done' && currentRemote) {
+      currentRemote.finalMs = readMetricNumber(entry.data.streamElapsedMs) ?? readMetricNumber(entry.data.elapsedMs)
+      currentRemote.chars = readMetricNumber(entry.data.transcriptChars) ?? currentRemote.chars
+      currentRemote.frameCount = readMetricNumber(entry.data.frameCount) ?? undefined
+      currentRemote.totalBytes = readMetricNumber(entry.data.totalBytes) ?? undefined
+    } else if (entry.stage === 'asr_stream_provider_error' && currentRemote) {
+      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Provider error'
+    } else if (entry.stage === 'asr_diagnostic_error' && currentRemote) {
+      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Diagnostic error'
+    }
+  }
+
+  const latestNative = nativeRuns.at(-1)
+  const latestRemote = remoteRuns.at(-1)
+  return [
+    'ASR P4 evaluation report',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    `Native runs: ${nativeRuns.length}`,
+    formatASRRun('Latest native', latestNative),
+    '',
+    `Remote Xunfei runs: ${remoteRuns.length}`,
+    formatASRRun('Latest remote', latestRemote),
+    '',
+    'Acceptance checks:',
+    '- Compare first partial latency between native and remote.',
+    '- Compare final latency between native and remote.',
+    '- Compare transcript chars and exported raw metrics against the spoken script.',
+    '- Do not switch production STT until remote accuracy and latency are better on device.',
+  ].join('\n')
+}
+
+function formatASRRun(label: string, run: ASREvaluationRun | undefined) {
+  if (!run) return `${label}: no run captured`
+  return [
+    `${label}:`,
+    `  startedAt: ${run.startedAt ? new Date(run.startedAt).toLocaleString() : 'unknown'}`,
+    `  firstPartialMs: ${formatMetricValue(run.firstPartialMs)}`,
+    `  finalMs: ${formatMetricValue(run.finalMs)}`,
+    `  chars: ${formatMetricValue(run.chars)}`,
+    run.source ? `  source: ${run.source}` : null,
+    run.frameCount != null ? `  frameCount: ${run.frameCount}` : null,
+    run.totalBytes != null ? `  totalBytes: ${run.totalBytes}` : null,
+    run.error ? `  error: ${run.error}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+function readMetricNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function formatMetricValue(value: number | null | undefined) {
+  return value == null ? 'n/a' : String(value)
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -135,6 +229,7 @@ function AppInner() {
   const { C, setTheme: setThemeLocal } = useTheme()
   const [activeTab, setActiveTab] = useState<Tab>('session')
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl)
+  const [apiBaseUrlSource, setApiBaseUrlSource] = useState<ApiBaseUrlSource>('default')
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -147,7 +242,13 @@ function AppInner() {
   useEffect(() => {
     SecureStore.getItemAsync(apiBaseUrlStorageKey).then(value => {
       const stored = value?.trim()
-      if (stored) setApiBaseUrl(stored)
+      if (stored) {
+        setApiBaseUrl(stored)
+        setApiBaseUrlSource('user')
+      } else {
+        setApiBaseUrl(defaultApiBaseUrl)
+        setApiBaseUrlSource('default')
+      }
     })
   }, [])
   const setLocale = useCallback((l: Locale) => {
@@ -249,6 +350,7 @@ function AppInner() {
       .map(entry => `${new Date(entry.ts).toLocaleTimeString()} ${entry.stage} ${JSON.stringify(entry.data)}`)
       .join('\n')
   }, [voiceMetrics])
+  const asrEvaluationText = useMemo(() => createASREvaluationReport(voiceMetrics), [voiceMetrics])
 
   const scheduleResumeListening = useCallback((delayMs = DEFAULT_PLAYBACK_COOLDOWN_MS, updateStatus = true) => {
     clearResumeListeningTimer()
@@ -273,10 +375,18 @@ function AppInner() {
     setApiBaseUrl(value)
     const normalized = value.trim()
     if (!normalized || normalized === defaultApiBaseUrl) {
+      setApiBaseUrlSource('default')
       void SecureStore.deleteItemAsync(apiBaseUrlStorageKey)
       return
     }
+    setApiBaseUrlSource('user')
     void SecureStore.setItemAsync(apiBaseUrlStorageKey, normalized)
+  }, [])
+
+  const resetApiBaseUrl = useCallback(() => {
+    setApiBaseUrl(defaultApiBaseUrl)
+    setApiBaseUrlSource('default')
+    void SecureStore.deleteItemAsync(apiBaseUrlStorageKey)
   }, [])
 
   function startSession() {
@@ -772,6 +882,10 @@ function AppInner() {
         return
       }
 
+      logVoiceMetric('asr_session_bootstrap_start', {
+        provider: selected.key,
+        elapsedMs: Date.now() - startedAt,
+      })
       const session = await api.createASRSession({
         provider: selected.key,
         mode: 'streaming',
@@ -843,6 +957,8 @@ function AppInner() {
       const result = await runXunfeiDiagnosticWebSocket(session)
       logVoiceMetric('asr_stream_done', {
         elapsedMs: Date.now() - startedAt,
+        streamElapsedMs: result.streamElapsedMs,
+        firstPartialElapsedMs: result.firstPartialElapsedMs,
         frameCount: result.frameCount,
         totalBytes: result.totalBytes,
         transcriptChars: result.transcript.length,
@@ -856,7 +972,7 @@ function AppInner() {
   }
 
   function runXunfeiDiagnosticWebSocket(session: CreateASRSessionResponse) {
-    return new Promise<{ frameCount: number; totalBytes: number; transcript: string }>((resolve, reject) => {
+    return new Promise<{ frameCount: number; totalBytes: number; transcript: string; streamElapsedMs: number; firstPartialElapsedMs: number | null }>((resolve, reject) => {
       let socket: WebSocket | null = null
       let frameSubscription: { remove: () => void } | null = null
       let stateSubscription: { remove: () => void } | null = null
@@ -868,6 +984,8 @@ function AppInner() {
       let frameCount = 0
       let totalBytes = 0
       let transcript = ''
+      const streamStartedAt = Date.now()
+      let firstPartialElapsedMs: number | null = null
 
       const settle = (callback: () => void) => {
         if (settled) return
@@ -935,7 +1053,7 @@ function AppInner() {
         })
         stopTimer = setTimeout(finishAudio, 8000)
         hardTimer = setTimeout(() => {
-          settle(() => resolve({ frameCount, totalBytes, transcript }))
+          settle(() => resolve({ frameCount, totalBytes, transcript, streamElapsedMs: Date.now() - streamStartedAt, firstPartialElapsedMs }))
         }, 12000)
       }
 
@@ -951,12 +1069,23 @@ function AppInner() {
         const segment = extractXunfeiTranscript(payload)
         if (segment) {
           transcript += segment
+          if (firstPartialElapsedMs == null) {
+            firstPartialElapsedMs = Date.now() - streamStartedAt
+            logVoiceMetric('asr_first_partial', {
+              elapsedMs: firstPartialElapsedMs,
+              chars: transcript.length,
+            })
+          }
           logVoiceMetric('asr_partial', { chars: transcript.length })
         }
         const data = getObject(payload?.data)
         const status = typeof data?.status === 'number' ? data.status : undefined
         if (status === 2) {
-          settle(() => resolve({ frameCount, totalBytes, transcript }))
+          logVoiceMetric('asr_final', {
+            elapsedMs: Date.now() - streamStartedAt,
+            chars: transcript.length,
+          })
+          settle(() => resolve({ frameCount, totalBytes, transcript, streamElapsedMs: Date.now() - streamStartedAt, firstPartialElapsedMs }))
         }
       }
 
@@ -965,7 +1094,7 @@ function AppInner() {
       }
 
       socket.onclose = () => {
-        settle(() => resolve({ frameCount, totalBytes, transcript }))
+        settle(() => resolve({ frameCount, totalBytes, transcript, streamElapsedMs: Date.now() - streamStartedAt, firstPartialElapsedMs }))
       }
     })
   }
@@ -1368,8 +1497,11 @@ function AppInner() {
             password={password}
             authMode={authMode}
             apiBaseUrl={apiBaseUrl}
+            apiBaseUrlSource={apiBaseUrlSource}
+            defaultApiBaseUrl={defaultApiBaseUrl}
             appVersion={appVersion}
             voiceMetricsText={voiceMetricsText}
+            asrEvaluationText={asrEvaluationText}
             onSetLocale={l => setLocale(l as Locale)}
             onSetTheme={setTheme}
             onSaveProvider={p => void saveProvider(p)}
@@ -1383,11 +1515,18 @@ function AppInner() {
             onSubmitAuth={() => void submitAuth()}
             onSignOut={() => void auth.signOut()}
             onSetApiBaseUrl={updateApiBaseUrl}
+            onResetApiBaseUrl={resetApiBaseUrl}
             onClearVoiceMetrics={() => setVoiceMetrics([])}
             onShareVoiceMetrics={() => {
               void Share.share({
                 title: 'MeteorVoice voice diagnostics',
                 message: voiceMetricsText || 'No voice metrics yet.',
+              })
+            }}
+            onShareASREvaluation={() => {
+              void Share.share({
+                title: 'MeteorVoice ASR P4 evaluation',
+                message: asrEvaluationText,
               })
             }}
             onRunASRDiagnostics={() => void runASRDiagnostics()}

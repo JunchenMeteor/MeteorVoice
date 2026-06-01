@@ -23,8 +23,11 @@ interface Props {
   password: string
   authMode: 'sign-in' | 'sign-up'
   apiBaseUrl: string
+  apiBaseUrlSource: 'default' | 'user'
+  defaultApiBaseUrl: string
   appVersion: string
   voiceMetricsText: string
+  asrEvaluationText: string
   onSetLocale: (l: string) => void
   onSetTheme: (k: ThemeKey) => void
   onSaveProvider: (p: string) => void
@@ -38,8 +41,10 @@ interface Props {
   onSubmitAuth: () => void
   onSignOut: () => void
   onSetApiBaseUrl: (v: string) => void
+  onResetApiBaseUrl: () => void
   onClearVoiceMetrics: () => void
   onShareVoiceMetrics: () => void
+  onShareASREvaluation: () => void
   onRunASRDiagnostics: () => void
 }
 
@@ -47,11 +52,11 @@ export function SettingsScreen({
   tr, locale, ttsProvider, availableProviders, ttsSpeed,
   ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
   settingsLoading, settingsMessage,
-  auth, email, password, authMode, apiBaseUrl, appVersion, voiceMetricsText,
+  auth, email, password, authMode, apiBaseUrl, apiBaseUrlSource, defaultApiBaseUrl, appVersion, voiceMetricsText, asrEvaluationText,
   onSetLocale, onSetTheme, onSaveProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
   onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
-  onClearVoiceMetrics, onShareVoiceMetrics, onRunASRDiagnostics,
+  onResetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics, onShareASREvaluation, onRunASRDiagnostics,
 }: Props) {
   const { C, themeKey } = useTheme()
   const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
@@ -280,7 +285,14 @@ export function SettingsScreen({
 
       {/* API URL */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>{tr('settings.api_url')}</Text>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{tr('settings.api_url')}</Text>
+          {apiBaseUrlSource === 'user' && (
+            <Pressable onPress={onResetApiBaseUrl} style={styles.smallBtn}>
+              <Text style={styles.smallBtnTxt}>{tr('settings.api_url_reset')}</Text>
+            </Pressable>
+          )}
+        </View>
         <TextInput
           style={styles.input}
           value={apiBaseUrl}
@@ -291,6 +303,11 @@ export function SettingsScreen({
           placeholderTextColor={C.textMuted}
           placeholder="http://localhost:3000"
         />
+        <Text style={styles.hint}>
+          {apiBaseUrlSource === 'user'
+            ? tr('settings.api_url_source_user')
+            : `${tr('settings.api_url_source_default')}: ${defaultApiBaseUrl}`}
+        </Text>
       </View>
 
       {/* Diagnostics */}
@@ -304,6 +321,9 @@ export function SettingsScreen({
             <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
               <Text style={styles.smallBtnTxt}>Share</Text>
             </Pressable>
+            <Pressable onPress={onShareASREvaluation} style={styles.smallBtn}>
+              <Text style={styles.smallBtnTxt}>P4</Text>
+            </Pressable>
             <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
               <Text style={styles.smallBtnTxt}>Clear</Text>
             </Pressable>
@@ -312,7 +332,7 @@ export function SettingsScreen({
         <View style={styles.diagnosticsBox}>
           <ScrollView nestedScrollEnabled>
             <Text selectable style={styles.diagnosticsText}>
-              {voiceMetricsText || 'No voice metrics yet.'}
+              {voiceMetricsText || asrEvaluationText || 'No voice metrics yet.'}
             </Text>
           </ScrollView>
         </View>
