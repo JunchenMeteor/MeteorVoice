@@ -62,7 +62,7 @@ describe('Xunfei TTS voice config', () => {
         envKey: 'XUNFEI_TTS_VOICE',
         id: XUNFEI_TRIAL_VOICE_CATHERINE,
         language: 'en',
-        gender: 'male',
+        gender: 'female',
         tier: 'featured',
         status: 'active',
       },

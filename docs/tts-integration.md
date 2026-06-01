@@ -74,8 +74,8 @@ The adapter sends MP3 output with `aue=lame` and `sfl=1`, matching Xunfei's onli
 Current featured voice IDs in the app catalog:
 
 ```env
-x4_enus_catherine_profnews  # English male
-x4_enus_ryan_assist         # English female
+x4_enus_catherine_profnews  # English female
+x4_enus_ryan_assist         # English male
 x4_lingxiaolu_en            # Mandarin female
 x4_yezi                     # Mandarin female
 ```

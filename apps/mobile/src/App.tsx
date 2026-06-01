@@ -217,6 +217,15 @@ function formatMetricValue(value: number | null | undefined) {
   return value == null ? 'n/a' : String(value)
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+    promise
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer))
+  })
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -290,6 +299,7 @@ function AppInner() {
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
   const speechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
   const endpointRequestRef = useRef(0)
+  const turnRequestRef = useRef(0)
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
   const playbackActiveRef = useRef(false)
@@ -531,12 +541,13 @@ function AppInner() {
     clearResumeListeningTimer()
     await speechCancelListeningRef.current()
     setBusy(true)
+    const turnRequestId = ++turnRequestRef.current
 
     try {
       setStatus('session.status.requesting_reply')
       nextSnapshot = requestCoachReply(nextSnapshot)
       setSnapshot(nextSnapshot)
-      const coachReply = await api.generateCoachReply({
+      const coachReply = await withTimeout(api.generateCoachReply({
         messages: nextMessages,
         context: {
           scenario: { name: scenario.name, description: scenario.description },
@@ -544,7 +555,11 @@ function AppInner() {
           sessionId: nextSnapshot.sessionId,
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
         },
-      })
+      }), 20_000, 'Coach reply request timed out.')
+      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
+        logVoiceMetric('coach_reply_ignored', { reason: 'session_inactive' })
+        return
+      }
       logVoiceMetric('coach_reply_ready', {
         elapsedMs: Date.now() - submitStartedAt,
         chars: coachReply.text.length,
@@ -563,9 +578,16 @@ function AppInner() {
       setStatus('session.status.requesting_voice')
       if (!coachReply.text.trim()) {
         setStatus('session.status.reply_without_text')
+        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+          scheduleResumeListening(500)
+        }
         return
       }
-      const voice = await synthesizeCoachSpeech(coachReply.text)
+      const voice = await withTimeout(synthesizeCoachSpeech(coachReply.text), 20_000, 'Coach voice request timed out.')
+      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
+        logVoiceMetric('tts_ignored', { reason: 'session_inactive' })
+        return
+      }
       logVoiceMetric('tts_ready', {
         elapsedMs: Date.now() - submitStartedAt,
         hasAudio: Boolean(voice.audioUrl),
@@ -584,6 +606,9 @@ function AppInner() {
       } else {
         playbackActiveRef.current = false
         setStatus('session.status.reply_without_audio')
+        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+          scheduleResumeListening(500)
+        }
       }
       const completedTurn = completeCoachPlayback({
         snapshot: nextSnapshot,
@@ -604,12 +629,15 @@ function AppInner() {
       })
       logVoiceMetric('mobile_session_request_error', requestError.logData)
       setStatus(requestError.displayMessage)
+      if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        scheduleResumeListening(900)
+      }
     } finally {
-      setBusy(false)
+      if (turnRequestRef.current === turnRequestId) setBusy(false)
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
-    logVoiceMetric, messages, scenario.description, scenario.name, snapshot, synthesizeCoachSpeech,
+    logVoiceMetric, messages, scenario.description, scenario.name, scheduleResumeListening, snapshot, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -759,9 +787,10 @@ function AppInner() {
   }, [busy, clearResumeListeningTimer])
 
   async function endSession() {
-    if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state }) || busy) return
+    if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state })) return
 
     // 立即结束 session，不等 API
+    turnRequestRef.current += 1
     sessionActiveRef.current = false
     canListenOnRouteRef.current = false
     playbackActiveRef.current = false
@@ -774,8 +803,8 @@ function AppInner() {
     setSnapshot(endedSnapshot)
     setIsSessionActive(false)
     setStatus('session.ended')
+    setBusy(false)
 
-    setBusy(true)
     const userTurns = messages.filter(m => m.role === 'user').length
     try {
       const result = await api.generateSummary({
@@ -795,8 +824,6 @@ function AppInner() {
       }).catch(() => undefined)
     } catch {
       // summary 失败不影响 session 已结束的状态
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -839,6 +866,12 @@ function AppInner() {
   }, [activeTab, loadHistory])
 
   async function runASRDiagnostics() {
+    if (asrDiagnosticActiveRef.current) {
+      setSettingsMessage('ASR diagnostic is already running.')
+      logVoiceMetric('asr_diagnostic_skipped', { reason: 'already_running' })
+      return
+    }
+
     if (auth.state !== 'signed-in') {
       setActiveTab('settings')
       setSettingsMessage('Sign in before running ASR diagnostics.')
@@ -846,6 +879,7 @@ function AppInner() {
       return
     }
 
+    asrDiagnosticActiveRef.current = true
     const startedAt = Date.now()
     logVoiceMetric('asr_diagnostic_start')
     setSettingsMessage('Checking ASR providers...')
@@ -924,14 +958,12 @@ function AppInner() {
         elapsedMs: Date.now() - startedAt,
       })
       setSettingsMessage(requestError.displayMessage)
+    } finally {
+      asrDiagnosticActiveRef.current = false
     }
   }
 
   async function runXunfeiASRStreamingDiagnostic(session: CreateASRSessionResponse, startedAt: number) {
-    if (asrDiagnosticActiveRef.current) {
-      setSettingsMessage('ASR diagnostic is already running.')
-      return
-    }
     if (!session.endpointUrl) {
       setSettingsMessage('ASR bootstrap returned no WebSocket URL.')
       logVoiceMetric('asr_stream_skipped', { reason: 'missing_endpoint_url' })
@@ -943,7 +975,6 @@ function AppInner() {
       return
     }
 
-    asrDiagnosticActiveRef.current = true
     clearResumeListeningTimer()
     await speechCancelListeningRef.current()
     setSettingsMessage('ASR streaming diagnostic is listening for 8 seconds. Speak now.')
@@ -967,7 +998,7 @@ function AppInner() {
         ? `ASR diagnostic transcript: ${result.transcript.trim()}`
         : `ASR diagnostic finished. Frames: ${result.frameCount}, bytes: ${result.totalBytes}.`)
     } finally {
-      asrDiagnosticActiveRef.current = false
+      // runASRDiagnostics owns the active flag so bootstrap failures and stream runs share one lock.
     }
   }
 
@@ -981,11 +1012,18 @@ function AppInner() {
       let settled = false
       let firstFrame = true
       let finalFrameSent = false
+      let audioSequence = 0
       let frameCount = 0
       let totalBytes = 0
       let transcript = ''
+      const transcriptSegments: string[] = []
       const streamStartedAt = Date.now()
       let firstPartialElapsedMs: number | null = null
+      let finalReceived = false
+      let providerMessageCount = 0
+      let lastProviderCode: number | null = null
+      let lastProviderStatus: number | null = null
+      let lastProviderMessage: string | null = null
 
       const settle = (callback: () => void) => {
         if (settled) return
@@ -993,8 +1031,9 @@ function AppInner() {
         if (stopTimer) clearTimeout(stopTimer)
         if (hardTimer) clearTimeout(hardTimer)
         frameSubscription?.remove()
-        stateSubscription?.remove()
-        void stopPcmCapture('diagnostic_settled').catch(() => undefined)
+        void stopPcmCapture('diagnostic_settled')
+          .catch(() => undefined)
+          .finally(() => stateSubscription?.remove())
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.close()
         }
@@ -1004,7 +1043,8 @@ function AppInner() {
       const sendAudioFrame = (status: 0 | 1 | 2, audioBase64: string) => {
         if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
         if (status === 2) finalFrameSent = true
-        socket.send(JSON.stringify(createXunfeiASRFrame(session, status, audioBase64)))
+        audioSequence += 1
+        socket.send(JSON.stringify(createXunfeiASRFrame(session, status, audioBase64, audioSequence)))
       }
 
       const finishAudio = () => {
@@ -1058,17 +1098,40 @@ function AppInner() {
       }
 
       socket.onmessage = event => {
+        providerMessageCount += 1
         const payload = parseJsonObject(event.data)
-        const code = typeof payload?.code === 'number' ? payload.code : 0
+        const header = getObject(payload?.header)
+        const code = typeof header?.code === 'number'
+          ? header.code
+          : typeof payload?.code === 'number'
+            ? payload.code
+            : 0
+        lastProviderCode = code
+        lastProviderMessage = typeof header?.message === 'string'
+          ? header.message
+          : typeof payload?.message === 'string'
+            ? payload.message
+            : null
         if (code !== 0) {
-          const message = typeof payload?.message === 'string' ? payload.message : `Xunfei ASR error ${code}`
+          const message = lastProviderMessage ?? `Xunfei ASR error ${code}`
           logVoiceMetric('asr_stream_provider_error', { code, message })
           settle(() => reject(new Error(message)))
           return
         }
-        const segment = extractXunfeiTranscript(payload)
-        if (segment) {
-          transcript += segment
+        const recognitionResult = extractXunfeiRecognitionResult(payload)
+        if (recognitionResult?.text) {
+          if (recognitionResult.pgs === 'rpl' && recognitionResult.rg) {
+            const [start, end] = recognitionResult.rg
+            for (let index = start; index <= end; index += 1) {
+              transcriptSegments[index] = ''
+            }
+          }
+          if (recognitionResult.sn != null) {
+            transcriptSegments[recognitionResult.sn] = recognitionResult.text
+          } else {
+            transcriptSegments.push(recognitionResult.text)
+          }
+          transcript = transcriptSegments.filter(Boolean).join('')
           if (firstPartialElapsedMs == null) {
             firstPartialElapsedMs = Date.now() - streamStartedAt
             logVoiceMetric('asr_first_partial', {
@@ -1079,8 +1142,14 @@ function AppInner() {
           logVoiceMetric('asr_partial', { chars: transcript.length })
         }
         const data = getObject(payload?.data)
-        const status = typeof data?.status === 'number' ? data.status : undefined
+        const status = typeof header?.status === 'number'
+          ? header.status
+          : typeof data?.status === 'number'
+            ? data.status
+            : undefined
+        lastProviderStatus = status ?? null
         if (status === 2) {
+          finalReceived = true
           logVoiceMetric('asr_final', {
             elapsedMs: Date.now() - streamStartedAt,
             chars: transcript.length,
@@ -1093,32 +1162,68 @@ function AppInner() {
         settle(() => reject(new Error('Xunfei ASR WebSocket error')))
       }
 
-      socket.onclose = () => {
+      socket.onclose = event => {
+        const closeData = {
+          code: typeof event?.code === 'number' ? event.code : null,
+          reason: typeof event?.reason === 'string' ? event.reason : '',
+          wasClean: Boolean(event?.wasClean),
+          finalReceived,
+          finalFrameSent,
+          frameCount,
+          totalBytes,
+          providerMessageCount,
+          lastProviderCode,
+          lastProviderStatus,
+          lastProviderMessage,
+        }
+        logVoiceMetric('asr_stream_socket_close', closeData)
+        if (!finalReceived && frameCount < 10) {
+          logVoiceMetric('asr_stream_closed_early', closeData)
+        }
         settle(() => resolve({ frameCount, totalBytes, transcript, streamElapsedMs: Date.now() - streamStartedAt, firstPartialElapsedMs }))
       }
     })
   }
 
-  function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string) {
+  function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string, sequence: number) {
     const providerConfig = session.providerConfig
-    const data = {
+    const header = {
+      app_id: providerConfig?.appId,
       status,
-      format: `audio/L16;rate=${providerConfig?.sampleRate ?? 16000}`,
+    }
+    const audio = {
       encoding: providerConfig?.audioEncoding ?? 'raw',
+      sample_rate: providerConfig?.sampleRate ?? 16000,
+      channels: providerConfig?.channels ?? 1,
+      bit_depth: providerConfig?.bitDepth ?? 16,
+      seq: sequence,
+      status,
       audio: audioBase64,
     }
-    if (status !== 0) return { data }
+    if (status !== 0) {
+      return {
+        header,
+        payload: { audio },
+      }
+    }
 
     return {
-      common: { app_id: providerConfig?.appId },
-      business: {
-        domain: providerConfig?.domain ?? 'slm',
-        language: providerConfig?.language ?? 'zh_cn',
-        accent: providerConfig?.accent ?? 'mandarin',
-        vad_eos: providerConfig?.eosMs ?? 900,
-        dwa: 'wpgs',
+      header,
+      parameter: {
+        iat: {
+          domain: providerConfig?.domain ?? 'slm',
+          language: providerConfig?.language ?? 'zh_cn',
+          accent: providerConfig?.accent ?? 'mandarin',
+          eos: providerConfig?.eosMs ?? 900,
+          dwa: 'wpgs',
+          result: {
+            encoding: 'utf8',
+            compress: 'raw',
+            format: 'json',
+          },
+        },
       },
-      data,
+      payload: { audio },
     }
   }
 
@@ -1136,10 +1241,38 @@ function AppInner() {
     return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
   }
 
-  function extractXunfeiTranscript(payload: Record<string, unknown> | null) {
+  function extractXunfeiRecognitionResult(payload: Record<string, unknown> | null) {
+    const payloadObject = getObject(payload?.payload)
+    const payloadResult = getObject(payloadObject?.result)
+    const encodedText = typeof payloadResult?.text === 'string' ? payloadResult.text : null
+    if (encodedText) {
+      const decoded = decodeBase64Utf8(encodedText)
+      const decodedPayload = parseJsonObject(decoded)
+      const decodedWords = extractXunfeiWords(decodedPayload?.ws)
+      if (decodedWords) {
+        const rg = Array.isArray(decodedPayload?.rg) &&
+          typeof decodedPayload.rg[0] === 'number' &&
+          typeof decodedPayload.rg[1] === 'number'
+          ? [decodedPayload.rg[0], decodedPayload.rg[1]] as [number, number]
+          : null
+        return {
+          text: decodedWords,
+          sn: typeof decodedPayload?.sn === 'number' ? decodedPayload.sn : null,
+          pgs: typeof decodedPayload?.pgs === 'string' ? decodedPayload.pgs : null,
+          rg,
+        }
+      }
+    }
+
     const data = getObject(payload?.data)
     const result = getObject(data?.result)
-    const words = result?.ws
+    const fallbackWords = extractXunfeiWords(result?.ws)
+    return fallbackWords
+      ? { text: fallbackWords, sn: null, pgs: null, rg: null }
+      : null
+  }
+
+  function extractXunfeiWords(words: unknown) {
     if (!Array.isArray(words)) return ''
     return words.map(item => {
       const word = getObject(item)
@@ -1150,6 +1283,20 @@ function AppInner() {
         return typeof candidateObject?.w === 'string' ? candidateObject.w : ''
       }).join('')
     }).join('')
+  }
+
+  function decodeBase64Utf8(value: string) {
+    try {
+      const decoder = globalThis.atob
+      if (!decoder) return ''
+      const binary = decoder(value)
+      const escaped = Array.from(binary)
+        .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join('')
+      return decodeURIComponent(escaped)
+    } catch {
+      return ''
+    }
   }
 
   async function deleteSession(id: string) {
