@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import {
   createMeteorVoiceApiClient,
-  MeteorVoiceApiError,
+  formatApiRequestError,
   type CreateASRSessionResponse,
   type HistorySession,
   type PreferencesResponse,
@@ -199,6 +199,8 @@ function AppInner() {
   const isCorrectionPlayingRef = useRef(false)
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const asrDiagnosticActiveRef = useRef(false)
+  const historyAutoLoadRef = useRef(false)
+  const settingsAutoLoadRef = useRef(false)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -486,12 +488,12 @@ function AppInner() {
         canListenOnRoute: canListenOnRouteRef.current,
       })
       setSnapshot(recovery.snapshot)
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error
-          ? error.message
-          : 'Request failed'
-      setStatus(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_session_submit',
+        presentation: 'banner',
+      })
+      logVoiceMetric('mobile_session_request_error', requestError.logData)
+      setStatus(requestError.displayMessage)
     } finally {
       setBusy(false)
     }
@@ -700,7 +702,7 @@ function AppInner() {
     setStatus('session.status.scenario_selected')
   }
 
-  async function loadHistory() {
+  const loadHistory = useCallback(async () => {
     if (historyLoading) return
     setHistoryLoading(true)
     setHistoryError(null)
@@ -710,14 +712,21 @@ function AppInner() {
       setSelectedHistory(result.sessions[0] ?? null)
       setSelectedHistoryTurns([])
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'History request failed'
-      setHistoryError(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_history_list',
+        presentation: 'inline',
+      })
+      setHistoryError(requestError.displayMessage)
     } finally {
       setHistoryLoading(false)
     }
-  }
+  }, [api, historyLoading])
+
+  useEffect(() => {
+    if (activeTab !== 'history' || historyAutoLoadRef.current) return
+    historyAutoLoadRef.current = true
+    void loadHistory()
+  }, [activeTab, loadHistory])
 
   async function runASRDiagnostics() {
     if (auth.state !== 'signed-in') {
@@ -732,6 +741,19 @@ function AppInner() {
     setSettingsMessage('Checking ASR providers...')
 
     try {
+      const authReady = await auth.refreshSession()
+      const authHeaders = getAuthHeaders() as Record<string, string>
+      const hasAuthorization = Boolean(authHeaders.Authorization)
+      logVoiceMetric('asr_auth_checked', {
+        refreshed: authReady,
+        hasAuthorization,
+      })
+      if (!authReady || !hasAuthorization) {
+        setSettingsMessage('Sign in again before running ASR diagnostics.')
+        logVoiceMetric('asr_auth_missing', { elapsedMs: Date.now() - startedAt })
+        return
+      }
+
       const providers = await api.listASRProviders()
       const selected = providers.providers.find(provider => provider.key === 'xunfei' && provider.enabled)
         ?? providers.providers.find(provider => provider.key === providers.default_provider)
@@ -771,11 +793,23 @@ function AppInner() {
       }
       setSettingsMessage(`ASR ${session.provider} bootstrap ready (${session.transport}). Native STT still active.`)
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'ASR diagnostic failed'
-      logVoiceMetric('asr_diagnostic_error', { message, elapsedMs: Date.now() - startedAt })
-      setSettingsMessage(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'asr_diagnostic',
+        presentation: 'inline',
+      })
+      if (requestError.kind === 'unauthorized') {
+        logVoiceMetric('asr_session_unauthorized', {
+          ...requestError.logData,
+          elapsedMs: Date.now() - startedAt,
+        })
+        setSettingsMessage(requestError.displayMessage)
+        return
+      }
+      logVoiceMetric('asr_diagnostic_error', {
+        ...requestError.logData,
+        elapsedMs: Date.now() - startedAt,
+      })
+      setSettingsMessage(requestError.displayMessage)
     }
   }
 
@@ -1008,14 +1042,15 @@ function AppInner() {
       const result = await api.listSessionTurns(item.id)
       setSelectedHistoryTurns(result.turns)
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'Turn detail request failed'
-      setHistoryError(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_history_turns',
+        presentation: 'inline',
+      })
+      setHistoryError(requestError.displayMessage)
     }
   }
 
-  async function loadPreferences() {
+  const loadPreferences = useCallback(async () => {
     if (settingsLoading) return
     setSettingsLoading(true)
     setSettingsMessage(null)
@@ -1034,14 +1069,21 @@ function AppInner() {
       if (profile) setSelectedAccentKey(profile.accentKey)
       setSettingsMessage(tr('session.status.preferences_loaded'))
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'Preferences request failed'
-      setSettingsMessage(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_preferences_load',
+        presentation: 'inline',
+      })
+      setSettingsMessage(requestError.displayMessage)
     } finally {
       setSettingsLoading(false)
     }
-  }
+  }, [api, setLocale, settingsLoading, tr])
+
+  useEffect(() => {
+    if (activeTab !== 'settings' || auth.state !== 'signed-in' || settingsAutoLoadRef.current) return
+    settingsAutoLoadRef.current = true
+    void loadPreferences()
+  }, [activeTab, auth.state, loadPreferences])
 
   async function saveProvider(provider: string) {
     setTtsProvider(provider)
@@ -1069,10 +1111,11 @@ function AppInner() {
       if (profile) setSelectedAccentKey(profile.accentKey)
       setSettingsMessage(tr('session.status.preferences_saved'))
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'Preferences save failed'
-      setSettingsMessage(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_preferences_save_provider',
+        presentation: 'inline',
+      })
+      setSettingsMessage(requestError.displayMessage)
     } finally {
       setSettingsLoading(false)
     }
@@ -1099,10 +1142,11 @@ function AppInner() {
       if (result.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(result.selected_voice_profile_id)
       setSettingsMessage(tr('session.status.practice_defaults_saved'))
     } catch (error) {
-      const message = error instanceof MeteorVoiceApiError
-        ? `${error.message} (${error.status})`
-        : error instanceof Error ? error.message : 'Preferences save failed'
-      setSettingsMessage(message)
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_preferences_save_practice',
+        presentation: 'inline',
+      })
+      setSettingsMessage(requestError.displayMessage)
     } finally {
       setSettingsLoading(false)
     }
@@ -1142,8 +1186,12 @@ function AppInner() {
       setTtsVoiceId(result.tts_voice_id)
       setSelectedVoiceProfileId(result.selected_voice_profile_id)
       if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
-    } catch {
-      // 静默失败
+    } catch (error) {
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_preferences_select_voice_profile',
+        presentation: 'silent',
+      })
+      logVoiceMetric('mobile_silent_request_error', requestError.logData)
     }
   }
 

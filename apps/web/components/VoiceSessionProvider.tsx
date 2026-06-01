@@ -34,6 +34,7 @@ import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-s
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
 import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import { useT } from '@/components/LanguageProvider'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 
 const mockTTS = createMockTTS()
 const activeSessionStorageKey = 'meteorvoice-active-session'
@@ -897,8 +898,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
         })
-        const result = await res.json() as { audioUrl?: string; error?: string }
-        if (!res.ok) throw new Error(result.error || `TTS request failed: ${res.status}`)
+        const result = await readApiJsonResponse<{ audioUrl?: string }>(res, 'TTS request failed')
         if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
 
         try {
@@ -1161,8 +1161,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
-        if (!res.ok) throw new Error('Semantic check failed')
-        const data = await res.json() as { judgment: 'done' | 'thinking' }
+        const data = await readApiJsonResponse<{ judgment: 'done' | 'thinking' }>(res, 'Semantic check failed')
         return data.judgment
       },
     })
@@ -1212,11 +1211,14 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
           },
         }),
       })
-      if (!res.ok) throw new Error(`Chat request failed: ${res.status}`)
-      response = await res.json() as ConversationResponse
-    } catch {
+      response = await readApiJsonResponse<ConversationResponse>(res, 'Chat request failed')
+    } catch (error) {
       if (!isCurrentTurn()) return
-      setStatusText(canListenOnRouteRef.current ? tr('session.tap_mic') : tr('session.paused'))
+      const requestError = formatApiRequestError(error, {
+        context: 'web_session_chat',
+        presentation: 'banner',
+      })
+      setStatusText(canListenOnRouteRef.current ? requestError.displayMessage : tr('session.paused'))
       updateSnapshot(current => recoverSessionError({
         snapshot: current,
         reason: 'coach_reply_failed',

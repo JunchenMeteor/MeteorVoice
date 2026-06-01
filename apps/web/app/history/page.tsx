@@ -5,6 +5,7 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 import { flushPendingPreferences } from '@/lib/tts-speed'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 
 interface HistorySession {
   id: string
@@ -78,8 +79,7 @@ export default function HistoryPage() {
     if (scenario) params.set('scenario', scenario)
 
     const res = await fetch(`/api/history?${params.toString()}`)
-    if (!res.ok) throw new Error('Failed to load')
-    return res.json() as Promise<{ sessions: HistorySession[]; hasMore: boolean }>
+    return readApiJsonResponse<{ sessions: HistorySession[]; hasMore: boolean }>(res, 'History request failed')
   }, [])
 
   // 首次加载
@@ -96,7 +96,10 @@ export default function HistoryPage() {
         }
       })
       .catch(err => {
-        setError(err instanceof Error ? err.message : t('history.load_error'))
+        setError(formatApiRequestError(err, {
+          context: 'web_history_list',
+          presentation: 'inline',
+        }).displayMessage)
       })
       .finally(() => setLoading(false))
   }, [filterScenario, loadSessions, t])
@@ -129,11 +132,13 @@ export default function HistoryPage() {
     setTurnsLoading(true)
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/turns`)
-      if (!res.ok) throw new Error('Failed to load turns')
-      const data = await res.json() as { turns: TurnData[] }
+      const data = await readApiJsonResponse<{ turns: TurnData[] }>(res, 'History turns request failed')
       setTurns(data.turns ?? [])
-    } catch {
-      setTurnsError(t('history.load_error'))
+    } catch (err) {
+      setTurnsError(formatApiRequestError(err, {
+        context: 'web_history_turns',
+        presentation: 'inline',
+      }).displayMessage)
     } finally {
       setTurnsLoading(false)
     }
