@@ -34,15 +34,32 @@ jobs:
       - name: Deploy
         shell: bash
         run: |
+          retry() {
+            local attempts="$1"
+            local delay="$2"
+            shift 2
+
+            local attempt=1
+            until "$@"; do
+              if [ "$attempt" -ge "$attempts" ]; then
+                return 1
+              fi
+
+              echo "Command failed. Retrying in ${delay}s (${attempt}/${attempts})..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
+          }
+
           cd '${{ steps.target.outputs.app_dir }}'
-          git fetch origin '${GITHUB_REF_NAME}'
+          retry 5 15 timeout 180s git fetch origin '${GITHUB_REF_NAME}'
           git checkout '${GITHUB_REF_NAME}'
           git reset --hard 'origin/${GITHUB_REF_NAME}'
-          npm ci
+          retry 3 15 npm ci
           set -a
           . /etc/meteorvoice/meteorvoice.env
           set +a
-          npm run build
+          retry 2 15 npm run build
           PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
             pm2 restart '${{ steps.target.outputs.pm2_name }}' --update-env || \
           PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
