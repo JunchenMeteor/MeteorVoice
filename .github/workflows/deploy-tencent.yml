@@ -60,9 +60,10 @@ jobs:
           . /etc/meteorvoice/meteorvoice.env
           set +a
           retry 2 15 npm run build
+          unset RUNNER_TRACKING_ID
           PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
             pm2 restart '${{ steps.target.outputs.pm2_name }}' --update-env || \
           PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
             pm2 start npm --name '${{ steps.target.outputs.pm2_name }}' -- run start --workspace @meteorvoice/web -- --hostname 127.0.0.1 --port '${{ steps.target.outputs.port }}'
           pm2 save
-          curl -fsS 'http://127.0.0.1:${{ steps.target.outputs.port }}/' >/dev/null
+          retry 12 5 curl -fsS 'http://127.0.0.1:${{ steps.target.outputs.port }}/' >/dev/null
