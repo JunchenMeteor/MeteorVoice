@@ -25,7 +25,7 @@ Do not store provider API keys in the database for the MVP. Keep keys in server-
 
 ## Environment Variables
 
-Local development uses `.env.local`.
+Local Web/API development uses `apps/web/.env.local`. The deployed Tencent server uses `/etc/meteorvoice/meteorvoice.env`.
 
 Vercel or another deployment platform should use provider-managed environment variables instead. Do not commit real keys.
 
@@ -55,7 +55,7 @@ XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
 ```
 
-5. Configure `.env.local` or deployment env vars:
+5. Configure `apps/web/.env.local`, `/etc/meteorvoice/meteorvoice.env`, or deployment env vars:
 
 ```env
 TTS_PROVIDER=xunfei

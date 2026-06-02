@@ -44,7 +44,7 @@ This gives you a single login surface with two formal account types:
 4. Run `003_tts_preferences.sql`.
 5. Run `004_productized_preferences.sql`.
 6. Run `005_tts_voice_preferences.sql` through `008_voice_profile_preferences.sql`.
-7. Copy the project URL and anon key into `.env.local`.
+7. Copy the project URL and anon key into `apps/web/.env.local` for Web/API local development and `apps/mobile/.env` using Expo's `EXPO_PUBLIC_*` names for mobile builds.
 8. Set Authentication redirect URLs for local development.
 
 ## What the RLS Policies Do

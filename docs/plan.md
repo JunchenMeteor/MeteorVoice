@@ -85,7 +85,7 @@ Recommended default stack:
 - AI workflow: LangGraph as an in-app library for the conversation workflow layer; do not deploy a separate LangGraph server in the MVP
 - AI utilities: LangChain only for prompt templates, provider adapters, structured output helpers, or future tool integration
 - Speech: browser microphone capture, STT/TTS abstraction, and mock providers for local demo
-- Env: `.env.local` for optional AI model, STT, and TTS provider keys
+- Env: `apps/web/.env.local` for optional AI model, STT, and TTS provider keys; deployed servers use `/etc/meteorvoice/meteorvoice.env`
 
 Current implementation status:
 

@@ -139,7 +139,7 @@ Recommended approach:
 - Prefer Vercel AI SDK as the primary AI request layer when building with TypeScript
 - Use LangGraph for multi-step learning flows from the start, but keep it isolated in a `conversationWorkflow` layer
 - Do not introduce LangChain broadly unless it removes real complexity
-- Keep all external AI and speech provider keys in `.env.local`
+- Keep all external AI and speech provider keys in Web/API runtime environment files such as `apps/web/.env.local` for local development and `/etc/meteorvoice/meteorvoice.env` for server deployments.
 - Keep paid provider usage optional in the MVP through mock providers and adapter interfaces
 - Make device switching and mobile access first-class requirements, not future enhancements
 - If a different stack is already preferred for implementation, keep these same product and cost constraints while swapping the concrete tools.
