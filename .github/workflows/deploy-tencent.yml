@@ -52,9 +52,9 @@ jobs:
           }
 
           cd '${{ steps.target.outputs.app_dir }}'
-          retry 5 15 timeout 180s git fetch origin '${GITHUB_REF_NAME}'
-          git checkout '${GITHUB_REF_NAME}'
-          git reset --hard 'origin/${GITHUB_REF_NAME}'
+          retry 5 15 timeout 180s git fetch origin "$GITHUB_REF_NAME"
+          git checkout "$GITHUB_REF_NAME"
+          git reset --hard "origin/$GITHUB_REF_NAME"
           retry 3 15 npm ci
           set -a
           . /etc/meteorvoice/meteorvoice.env
