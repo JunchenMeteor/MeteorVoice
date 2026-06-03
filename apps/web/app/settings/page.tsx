@@ -86,6 +86,28 @@ export default function SettingsPage() {
     }
   }, [])
 
+  const applyPreferenceUpdate = useCallback((data: PreferencesPayload, body: Record<string, unknown>) => {
+    setSettingsError(null)
+    if ('tts_provider' in body && data.tts_provider) setTtsProvider(data.tts_provider)
+    if ('tts_speed' in body && typeof data.tts_speed === 'number') {
+      const serverSpeed = data.tts_speed
+      const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
+        Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
+      ttsSpeedOptions[2])
+      setTtsSpeed(nextSpeed)
+      writeTTSSpeedPreference(nextSpeed)
+    }
+    if ('selected_voice_profile_id' in body || 'tts_provider' in body) {
+      if ('selected_voice_profile_id' in data) setSelectedVoiceProfileId(data.selected_voice_profile_id ?? null)
+      if ('tts_voice_id' in data) {
+        setTtsVoiceId(data.tts_voice_id ?? null)
+        writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
+      }
+      const profile = voiceProfiles.find(item => item.id === data.selected_voice_profile_id)
+      if (profile?.provider) setTtsProvider(profile.provider)
+    }
+  }, [voiceProfiles])
+
   const fetchPreferences = useCallback(async () => {
     const res = await fetch('/api/preferences', {
       headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
@@ -137,13 +159,12 @@ export default function SettingsPage() {
             headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
             body: JSON.stringify(body),
           })
-          await readApiJsonResponse<PreferencesPayload>(res, 'Preferences update failed')
-          return fetchPreferences()
+          return readApiJsonResponse<PreferencesPayload>(res, 'Preferences update failed')
         },
       },
     })
     if (results.preferences.status === 'fulfilled') {
-      applyPreferences(results.preferences.value)
+      applyPreferenceUpdate(results.preferences.value, body)
       setSettingsLoading(false)
       return
     }

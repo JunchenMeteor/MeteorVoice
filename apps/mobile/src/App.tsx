@@ -1374,6 +1374,34 @@ function AppInner() {
     setSettingsMessage(successMessage ?? tr('session.status.preferences_loaded'))
   }, [applyThemeLocal, setLocale, tr])
 
+  const applyTtsPreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
+    setTtsProvider(preferences.tts_provider ?? 'mock')
+    setTtsSpeed(preferences.tts_speed ?? 1)
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
+    const profiles = preferences.voice_profiles ?? voiceProfiles
+    const profile = profiles.find(item => item.id === preferences.selected_voice_profile_id)
+    if (profile) setSelectedAccentKey(profile.accentKey)
+    setSettingsMessage(successMessage)
+  }, [tr, voiceProfiles])
+
+  const applyPracticePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.practice_defaults_saved')) => {
+    setTtsProvider(preferences.tts_provider ?? 'mock')
+    setTtsSpeed(preferences.tts_speed ?? 1)
+    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
+    setSettingsMessage(successMessage)
+  }, [tr])
+
+  const applyVoiceProfilePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
+    setTtsProvider(preferences.tts_provider ?? 'mock')
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
+    const profiles = preferences.voice_profiles ?? voiceProfiles
+    const profile = profiles.find(item => item.id === preferences.selected_voice_profile_id)
+    if (profile) setSelectedAccentKey(profile.accentKey)
+    setSettingsMessage(successMessage)
+  }, [tr, voiceProfiles])
+
   const fetchSessionSttProviders = useCallback(async () => {
     const result = await api.listASRProviders()
     const providers: SessionSttProvider[] = ['native']
@@ -1524,12 +1552,12 @@ function AppInner() {
     }
 
     try {
-      await api.updatePreferences({
+      const preferences = await api.updatePreferences({
         tts_provider: provider,
         default_scenario_key: selectedScenarioKey,
         tts_speed: ttsSpeed,
       })
-      await loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
+      applyTtsPreferences(preferences)
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_save_provider',
@@ -1552,12 +1580,12 @@ function AppInner() {
     }
 
     try {
-      await api.updatePreferences({
+      const preferences = await api.updatePreferences({
         tts_provider: ttsProvider,
         default_scenario_key: selectedScenarioKey,
         tts_speed: ttsSpeed,
       })
-      await loadPreferences({ force: true, successMessage: tr('session.status.practice_defaults_saved') })
+      applyPracticePreferences(preferences)
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_save_practice',
@@ -1581,9 +1609,9 @@ function AppInner() {
           ttsSpeed: next,
           ttsProvider,
           defaultScenarioKey: selectedScenarioKey,
-        }).then(saved => {
-          if (saved) {
-            void loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
+        }).then(preferences => {
+          if (preferences) {
+            applyTtsPreferences(preferences)
           }
         })
       }, 600)
@@ -1604,8 +1632,8 @@ function AppInner() {
     if (auth.state !== 'signed-in') return
 
     try {
-      await api.updatePreferences({ selected_voice_profile_id: profile.id })
-      await loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
+      const preferences = await api.updatePreferences({ selected_voice_profile_id: profile.id })
+      applyVoiceProfilePreferences(preferences)
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_select_voice_profile',
