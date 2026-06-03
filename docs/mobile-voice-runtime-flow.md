@@ -20,9 +20,11 @@
 | `apps/mobile/src/nativeSpeech.ts` | `expo-speech-recognition` adapter，负责 STT start/result/abort、interim stable submit。 |
 | `apps/mobile/src/nativeAudio.ts` | `expo-audio` adapter，负责 TTS audio playback、iOS playback audio session。 |
 | `apps/mobile/src/voiceAudioSession.ts` | Optional Expo Swift module wrapper，当前用于 playback/recording session 兜底，不再介入 STT 主链路的 `voiceChat`。 |
+| `apps/mobile/src/components/AppFeedbackOverlay.tsx` | App 级 loading/error/阻断反馈渲染；状态来自 `packages/shared/src/feedback.ts`。 |
 | `packages/session-core/src/workflow.ts` | transcript gate、playback queue、cooldown 规则。 |
 | `packages/session-core/src/endpointing.ts` | 本地 fast-path、semantic endpoint 判停、timeout。 |
 | `packages/session-core/src/echo-guard.ts` | 播放结束后的 AI 自回声文本拦截。 |
+| `packages/shared/src/operation-group.ts` | Settings 等页面级多接口刷新使用的聚合 loading 工具。 |
 
 ## 主流程
 
@@ -270,6 +272,34 @@ only start STT if no playback and no audio playing
 - 中文短句如 `断句`, `不会用`, `怎么说`, `再说一遍` 直接 submit。
 - 不确定文本才走 `/api/semantic-endpoint`。
 - semantic endpoint timeout 为 800ms。
+
+## 回复语言和 ASR 语言
+
+Mobile 会话提交 AI turn 时会把当前 UI locale 作为 `responseLocale` 传给 `/api/chat`。该字段只控制 AI 教练回复、纠错解释和中英混合提示的语言。
+
+ASR/STT 的识别语言是另一条链路：
+
+- 生产会话当前仍使用 `expo-speech-recognition`。
+- Xunfei ASR 诊断路径默认使用 `languageMode: "mixed_zh_en"`，用于验证中英混合识别质量。
+- 后续如果根据 UI locale 动态切换 ASR language mode，只能影响 ASR session config，不能移除或替代 `responseLocale`。
+
+期望效果：
+
+| UI locale | 用户可说 | AI 回复/纠错 |
+| --- | --- | --- |
+| `zh` | 中文、英文、中英混合 | 中文优先 |
+| `en` | 中文、英文、中英混合 | 英文优先 |
+
+## Settings 刷新边界
+
+Mobile Settings 使用两种刷新策略：
+
+| 场景 | 策略 |
+| --- | --- |
+| 进入 Settings、登录成功、App 回前台、用户手动刷新 | `runAppOperationGroup()` 并发读取 preferences 和 ASR providers，然后一次性应用。 |
+| 点击 TTS provider、语速、练习默认项、voice profile | `PATCH /api/preferences` 成功后，用返回的 preferences 局部应用受影响字段。 |
+
+禁止在单项设置保存成功后立即全量 `loadPreferences({ force: true })`。这会造成设置页抖动、loading 重复出现，并可能把用户刚点击后的状态闪回。
 
 ## Voice Metrics
 
