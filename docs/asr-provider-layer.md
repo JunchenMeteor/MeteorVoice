@@ -4,8 +4,8 @@ This document is the executable implementation guide for the shared ASR provider
 
 ## Current Status
 
-- Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, mobile ASR bootstrap diagnostics, and contract tests.
-- Diagnostic-only: mobile can capture microphone PCM on iOS and stream it directly to Xunfei `zh_iat` from the Settings ASR diagnostic.
+- Implemented: shared ASR types, provider capability registry, runtime adapter boundary, API client methods, server provider registry, `/api/asr/providers`, `/api/asr/session`, Xunfei `zh_iat` signed WebSocket bootstrap, API abuse guard, mobile ASR bootstrap diagnostics, native PCM capture, direct Xunfei streaming diagnostic, P4 evaluation report, and contract tests.
+- Diagnostic-only: mobile can capture microphone PCM on iOS and stream it directly to Xunfei `zh_iat` from the Settings ASR diagnostic, then export P4 metrics for native-vs-remote comparison.
 - Not implemented yet: production mobile session switching, transcript event ingestion into the live turn state machine, WebSocket relay, and non-Xunfei remote adapters.
 - Production behavior remains unchanged: mobile live sessions still use `expo-speech-recognition` through `apps/mobile/src/nativeSpeech.ts`.
 
@@ -275,12 +275,18 @@ Mobile bootstrap diagnostic implementation:
   1. Requires a signed-in mobile user because `/api/asr/*` is a protected high-cost API surface.
   2. Calls `api.listASRProviders()` and records `asr_diagnostic_start` plus `asr_providers_loaded`.
   3. Selects enabled `xunfei` first, otherwise falls back to the configured default provider.
-  4. Calls `api.createASRSession()` with `mode: "streaming"` and `languageMode: "mixed_zh_en"`.
+4. Calls `api.createASRSession()` with `mode: "streaming"` and `languageMode: "mixed_zh_en"`.
   5. Records `asr_session_bootstrap_end` or `asr_diagnostic_error`.
   6. If Xunfei returns a WebSocket bootstrap, runs the P3 streaming diagnostic described below.
   7. Shows the result in Settings without changing production STT.
 
 This diagnostic validates server credentials, API auth, provider selection, signed URL creation, mobile API reachability, direct provider WebSocket reachability, native PCM capture, and provider transcript parsing. It is intentionally not wired into live sessions yet.
+
+Language routing note:
+
+- ASR `languageMode` controls recognition only.
+- AI response language is controlled separately by `ConversationContext.responseLocale`.
+- Current Xunfei `zh_iat` diagnostic normalizes non-English requests to `mixed_zh_en`; this is intentional so Chinese and mixed Chinese-English speech can be evaluated without changing production session behavior.
 
 ### P3: Client Adapter Interface
 

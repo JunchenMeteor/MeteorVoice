@@ -72,6 +72,7 @@ sequenceDiagram
 - Accent adaptation across sessions (American, British, Indian, Australian, and more)
 - Non-blocking correction panel — corrections appear without interrupting the conversation
 - Bilingual UI (English and Chinese) outside the conversation area
+- Response language routing — AI replies and correction explanations follow the selected UI language
 - Theme switching with CSS custom properties
 - Login, session history, and preference sync through Supabase
 - Mock AI/STT/TTS providers for local development without API keys
@@ -95,6 +96,7 @@ flowchart TB
         SharedPkg[shared<br/>types / i18n / provider interfaces]
         SessionCore[session-core<br/>turn lifecycle / workflow]
         APIClient[api-client<br/>typed API calls]
+        Runtime[shared runtime<br/>feedback / operation groups]
     end
 
     Web --> API
@@ -105,15 +107,23 @@ flowchart TB
     API --> TTS
     Web --> Shared
     Mobile --> Shared
+    Web --> Runtime
+    Mobile --> Runtime
 ```
 
 Responsibility boundaries:
 
 - `apps/web`: Next.js full-stack app — UI, API routes, server-side TTS/AI orchestration.
 - `apps/mobile`: Expo React Native native client — voice session UI, native audio, background keep-alive.
-- `packages/shared`: cross-client types, i18n strings, provider interfaces, TTS capabilities.
+- `packages/shared`: cross-client types, i18n strings, provider interfaces, TTS capabilities, app feedback state, and grouped async operation helpers.
 - `packages/session-core`: platform-neutral turn lifecycle and workflow state machine.
 - `packages/api-client`: typed API calls shared by Web and Mobile.
+
+Settings synchronization now separates full refresh and targeted updates:
+
+- Page entry, login, foreground resume, and manual refresh use grouped operations so multiple API requests share one loading state.
+- A single setting save uses the returned `/api/preferences` payload and applies only the affected settings domain.
+- AI response language is passed as `responseLocale`; ASR recognition language is configured separately.
 
 ## Project Structure
 
