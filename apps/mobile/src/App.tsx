@@ -14,6 +14,7 @@ import {
   formatApiRequestError,
   type CreateASRSessionResponse,
   type HistorySession,
+  type PreferencesResponse,
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
@@ -1346,18 +1347,52 @@ function AppInner() {
     }
   }
 
+  const applyPreferences = useCallback((preferences: PreferencesResponse, successMessage?: string) => {
+    setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
+    setTtsProvider(preferences.tts_provider ?? 'mock')
+    setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
+    setTtsSpeed(preferences.tts_speed ?? 1)
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+    if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
+    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
+    if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
+    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
+    const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
+    if (profile) setSelectedAccentKey(profile.accentKey)
+    if (preferences.ui_theme && !themeInitializedRef.current) {
+      themeInitializedRef.current = true
+      void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
+        const serverTs = new Date(preferences.ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
+        const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
+        if (serverTs >= localTs) {
+          applyThemeLocal(preferences.ui_theme as Parameters<typeof setThemeLocal>[0])
+        }
+      })
+    }
+    setSettingsMessage(successMessage ?? tr('session.status.preferences_loaded'))
+  }, [applyThemeLocal, setLocale, tr])
+
+  const fetchSessionSttProviders = useCallback(async () => {
+    const result = await api.listASRProviders()
+    const providers: SessionSttProvider[] = ['native']
+    if (result.providers.some(provider => provider.key === 'xunfei' && provider.enabled)) {
+      providers.push('xunfei')
+    }
+    return providers
+  }, [api])
+
+  const applySessionSttProviders = useCallback((providers: SessionSttProvider[]) => {
+    setAvailableSessionSttProviders(providers)
+    if (!providers.includes(sessionSttProvider)) {
+      setSessionSttProviderState('native')
+      void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
+    }
+  }, [sessionSttProvider])
+
   const loadSessionSttProviders = useCallback(async () => {
     try {
-      const result = await api.listASRProviders()
-      const providers: SessionSttProvider[] = ['native']
-      if (result.providers.some(provider => provider.key === 'xunfei' && provider.enabled)) {
-        providers.push('xunfei')
-      }
-      setAvailableSessionSttProviders(providers)
-      if (!providers.includes(sessionSttProvider)) {
-        setSessionSttProviderState('native')
-        void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
-      }
+      const providers = await fetchSessionSttProviders()
+      applySessionSttProviders(providers)
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_asr_providers_load',
@@ -1365,7 +1400,7 @@ function AppInner() {
       })
       logVoiceMetric('mobile_silent_request_error', requestError.logData)
     }
-  }, [api, logVoiceMetric, sessionSttProvider])
+  }, [applySessionSttProviders, fetchSessionSttProviders, logVoiceMetric])
 
   useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
 
@@ -1393,28 +1428,7 @@ function AppInner() {
     try {
       const preferences = await api.getPreferences()
       if (requestId !== settingsRequestRef.current) return
-      setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
-      setTtsProvider(preferences.tts_provider ?? 'mock')
-      setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
-      setTtsSpeed(preferences.tts_speed ?? 1)
-      if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
-      if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
-      if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-      if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
-      if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-      const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
-      if (profile) setSelectedAccentKey(profile.accentKey)
-      if (preferences.ui_theme && !themeInitializedRef.current) {
-        themeInitializedRef.current = true
-        void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
-          const serverTs = new Date(preferences.ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
-          const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
-          if (serverTs >= localTs) {
-            applyThemeLocal(preferences.ui_theme as Parameters<typeof setThemeLocal>[0])
-          }
-        })
-      }
-      setSettingsMessage(options.successMessage ?? tr('session.status.preferences_loaded'))
+      applyPreferences(preferences, options.successMessage)
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_load',
@@ -1426,15 +1440,60 @@ function AppInner() {
         setSettingsLoadingFlag(false)
       }
     }
-  }, [api, applyThemeLocal, auth.state, setLocale, setSettingsLoadingFlag, tr])
+  }, [api, applyPreferences, auth.state, setSettingsLoadingFlag, tr])
 
-  const reloadSettingsData = useCallback(() => {
-    void loadPreferences()
-    const timer = setTimeout(() => {
-      void loadSessionSttProviders()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [loadPreferences, loadSessionSttProviders])
+  const loadSettingsDataGroup = useCallback(() => {
+    if (settingsLoadingRef.current) return () => undefined
+    if (auth.state !== 'signed-in') {
+      setSettingsMessage(tr('settings.auth_required'))
+      return () => undefined
+    }
+
+    let cancelled = false
+    const requestId = ++settingsRequestRef.current
+    setSettingsLoadingFlag(true)
+    setSettingsMessage(null)
+
+    void Promise.allSettled([
+      api.getPreferences(),
+      fetchSessionSttProviders(),
+    ]).then(([preferencesResult, providersResult]) => {
+      if (cancelled || requestId !== settingsRequestRef.current) return
+
+      if (preferencesResult.status === 'fulfilled') {
+        applyPreferences(preferencesResult.value)
+      } else {
+        const requestError = formatApiRequestError(preferencesResult.reason, {
+          context: 'mobile_preferences_load',
+          presentation: 'inline',
+        })
+        setSettingsMessage(requestError.displayMessage)
+      }
+
+      if (providersResult.status === 'fulfilled') {
+        applySessionSttProviders(providersResult.value)
+      } else {
+        const requestError = formatApiRequestError(providersResult.reason, {
+          context: 'mobile_asr_providers_load',
+          presentation: 'silent',
+        })
+        logVoiceMetric('mobile_silent_request_error', requestError.logData)
+      }
+    }).finally(() => {
+      if (!cancelled && requestId === settingsRequestRef.current) {
+        setSettingsLoadingFlag(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    api, applyPreferences, applySessionSttProviders, auth.state,
+    fetchSessionSttProviders, logVoiceMetric, setSettingsLoadingFlag, tr,
+  ])
+
+  const reloadSettingsData = useCallback(() => loadSettingsDataGroup(), [loadSettingsDataGroup])
 
   useEffect(() => {
     if (auth.state !== 'signed-in') {
@@ -1569,11 +1628,10 @@ function AppInner() {
   useEffect(() => {
     if (auth.state !== 'signed-in') return
     const timer = setTimeout(() => {
-      void loadPreferences()
-      void loadSessionSttProviders()
+      loadSettingsDataGroup()
     }, 0)
     return () => clearTimeout(timer)
-  }, [auth.state, loadPreferences, loadSessionSttProviders])
+  }, [auth.state, loadSettingsDataGroup])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
