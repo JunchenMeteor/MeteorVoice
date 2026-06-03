@@ -33,7 +33,7 @@ import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
 import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { useT } from '@/components/LanguageProvider'
+import { useLocale, useT } from '@/components/LanguageProvider'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 
 const mockTTS = createMockTTS()
@@ -531,6 +531,7 @@ export function useVoiceSession() {
 export default function VoiceSessionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const tr = useT()
+  const { locale } = useLocale()
   const [initialState] = useState(readPersistedSessionState)
   const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
   const [accent, setAccent] = useState<AccentProfile>(() =>
@@ -1224,6 +1225,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
             accentProfile: { name: newAccent.name, region: newAccent.region },
             sessionId: currentSnapshot.sessionId,
             turnNumber: currentSnapshot.turnNumber + 1,
+            responseLocale: locale,
           },
         }),
       })

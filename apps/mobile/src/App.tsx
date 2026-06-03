@@ -711,6 +711,7 @@ function AppInner() {
           accentProfile: { name: accent.name, region: accent.region },
           sessionId: nextSnapshot.sessionId,
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
+          responseLocale: locale,
         },
       }), 20_000, 'Coach reply request timed out.')
       if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
@@ -795,7 +796,7 @@ function AppInner() {
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
-    logVoiceMetric, messages, scenario.description, scenario.name, scheduleResumeListening, snapshot, synthesizeCoachSpeech,
+    locale, logVoiceMetric, messages, scenario.description, scenario.name, scheduleResumeListening, snapshot, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {

@@ -26,4 +26,5 @@ export interface ConversationContext {
   accentProfile: { name: string; region: string }
   sessionId: string
   turnNumber: number
+  responseLocale?: 'en' | 'zh'
 }
