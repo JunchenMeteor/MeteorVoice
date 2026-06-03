@@ -176,7 +176,12 @@ export function SettingsScreen({
         <Text style={styles.cardTitle}>{tr('settings.language')}</Text>
         <View style={styles.chipRow}>
           {(['en', 'zh'] as const).map(l => (
-            <Pressable key={l} onPress={() => onSetLocale(l)} style={[styles.chip, locale === l && styles.chipActive]}>
+            <Pressable
+              key={l}
+              onPress={() => onSetLocale(l)}
+              disabled={settingsLoading}
+              style={[styles.chip, locale === l && styles.chipActive, settingsLoading && styles.chipDisabled]}
+            >
               <Text style={[styles.chipTxt, locale === l && styles.chipTxtActive]}>{l === 'en' ? tr('settings.language_en') : tr('settings.language_zh')}</Text>
             </Pressable>
           ))}

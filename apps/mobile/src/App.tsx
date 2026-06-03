@@ -425,6 +425,9 @@ function AppInner() {
   const auth = useMobileAuth()
   const getAuthHeaders = auth.getAuthHeaders
   const signOut = auth.signOut
+  const snapshotRef = useRef(snapshot)
+  const messagesRef = useRef(messages)
+  const localeRef = useRef(locale)
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
@@ -465,6 +468,18 @@ function AppInner() {
   const sessionAccentName = selectedVoiceProfile?.accentLabel ?? getAccentLabel(accent, locale)
   const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
+
+  useEffect(() => {
+    snapshotRef.current = snapshot
+  }, [snapshot])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    localeRef.current = locale
+  }, [locale])
   const handleUnauthorized = useCallback(() => {
     if (auth.state !== 'signed-in') return signOut(null)
     return signOut(tr('settings.auth_expired'))
@@ -575,6 +590,8 @@ function AppInner() {
     canListenOnRouteRef.current = true
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
     const nextSnapshot = startListeningSession(nextSessionId)
+    snapshotRef.current = nextSnapshot
+    messagesRef.current = []
     setSnapshot(nextSnapshot)
     setMessages([])
     setCorrectionHistory([])
@@ -673,6 +690,8 @@ function AppInner() {
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const submitStartedAt = Date.now()
     const transcript = sourceTranscript.trim()
+    const currentSnapshot = snapshotRef.current
+    const currentMessages = messagesRef.current
     if (
       busy ||
       audio.isRecording ||
@@ -680,14 +699,16 @@ function AppInner() {
       !canAcceptUserTranscript({
         activeSession: isSessionActive,
         canListenOnRoute: canListenOnRouteRef.current,
-        workflowState: snapshot.state,
+        workflowState: currentSnapshot.state,
         transcript,
       })
     ) return
 
-    const acceptedTurn = acceptTranscriptTurn({ snapshot, transcript, messages })
+    const acceptedTurn = acceptTranscriptTurn({ snapshot: currentSnapshot, transcript, messages: currentMessages })
     const nextMessages = acceptedTurn.messages
     let nextSnapshot = acceptedTurn.snapshot
+    snapshotRef.current = nextSnapshot
+    messagesRef.current = nextMessages
     setSnapshot(nextSnapshot)
     setMessages(nextMessages)
     setAudioUrl(null)
@@ -703,6 +724,7 @@ function AppInner() {
     try {
       setStatus('session.status.requesting_reply')
       nextSnapshot = requestCoachReply(nextSnapshot)
+      snapshotRef.current = nextSnapshot
       setSnapshot(nextSnapshot)
       const coachReply = await withTimeout(api.generateCoachReply({
         messages: nextMessages,
@@ -711,7 +733,7 @@ function AppInner() {
           accentProfile: { name: accent.name, region: accent.region },
           sessionId: nextSnapshot.sessionId,
           turnNumber: nextMessages.filter(message => message.role === 'user').length,
-          responseLocale: locale,
+          responseLocale: localeRef.current,
         },
       }), 20_000, 'Coach reply request timed out.')
       if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
@@ -730,6 +752,8 @@ function AppInner() {
         corrections: coachReply.corrections,
       })
       nextSnapshot = coachTurn.snapshot
+      snapshotRef.current = nextSnapshot
+      messagesRef.current = coachTurn.messages
       setMessages(coachTurn.messages)
       setSnapshot(nextSnapshot)
 
@@ -772,6 +796,7 @@ function AppInner() {
         snapshot: nextSnapshot,
         corrections: coachReply.corrections,
       })
+      snapshotRef.current = completedTurn.snapshot
       setSnapshot(completedTurn.snapshot)
     } catch (error) {
       const recovery = recoverSessionError({
@@ -780,6 +805,7 @@ function AppInner() {
         activeSession: isSessionActive,
         canListenOnRoute: canListenOnRouteRef.current,
       })
+      snapshotRef.current = recovery.snapshot
       setSnapshot(recovery.snapshot)
       const requestError = formatApiRequestError(error, {
         context: 'mobile_session_submit',
@@ -796,7 +822,7 @@ function AppInner() {
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
-    locale, logVoiceMetric, messages, scenario.description, scenario.name, scheduleResumeListening, snapshot, synthesizeCoachSpeech,
+    logVoiceMetric, scenario.description, scenario.name, scheduleResumeListening, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -814,10 +840,12 @@ function AppInner() {
       return
     }
 
+    const currentSnapshot = snapshotRef.current
+    const currentMessages = messagesRef.current
     const transcriptGate = gateUserTranscript({
       activeSession: sessionActiveRef.current,
       canListenOnRoute: canListenOnRouteRef.current,
-      workflowState: snapshot.state,
+      workflowState: currentSnapshot.state,
       transcript: endpointTranscript,
       playbackActive: playbackActiveRef.current,
       audioPlaying: audio.isPlaying,
@@ -839,7 +867,7 @@ function AppInner() {
 
     const echoGuard = shouldIgnoreLikelyPlaybackEcho({
       transcript: endpointTranscript,
-      lastAssistantResponse: snapshot.lastResponse,
+      lastAssistantResponse: currentSnapshot.lastResponse,
       playbackEndedAtMs: playbackEndedAtMsRef.current,
       nowMs: Date.now(),
     })
@@ -862,7 +890,7 @@ function AppInner() {
     const endpointResult = await judgeEndpoint({
       transcript: endpointTranscript,
       listeningDurationMs: Date.now() - listeningStartMsRef.current,
-      messages,
+      messages: currentMessages,
       scenario: scenario.key,
       semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
         const authHeaders = await getAuthHeaders()
@@ -896,7 +924,7 @@ function AppInner() {
     pendingNativeTranscriptRef.current = ''
     logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, logVoiceMetric, scenario.key, submitTurn])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
     if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
@@ -1004,7 +1032,7 @@ function AppInner() {
         mode: 'streaming',
         languageMode: 'mixed_zh_en',
         scenarioKey: scenario.key,
-        sessionId: snapshot.sessionId,
+        sessionId: snapshotRef.current.sessionId,
         endpointSilenceMs: 900,
         clientTraceId: `mobile-session-${Date.now()}`,
       })
@@ -1179,7 +1207,7 @@ function AppInner() {
     }
   }, [
     api, auth, availableSessionSttProviders, handleListeningEndedWithoutTranscript,
-    handleNativeFinalTranscript, logVoiceMetric, scenario.key, snapshot.sessionId,
+    handleNativeFinalTranscript, logVoiceMetric, scenario.key,
   ])
 
   const speech = useNativeSpeech({
@@ -1401,6 +1429,11 @@ function AppInner() {
     if (profile) setSelectedAccentKey(profile.accentKey)
     setSettingsMessage(successMessage)
   }, [tr, voiceProfiles])
+
+  const applyLocalePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
+    setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
+    setSettingsMessage(successMessage)
+  }, [setLocale, tr])
 
   const fetchSessionSttProviders = useCallback(async () => {
     const result = await api.listASRProviders()
@@ -1643,6 +1676,36 @@ function AppInner() {
     }
   }
 
+  async function saveLocalePreference(nextLocale: Locale) {
+    if (nextLocale === locale) return
+    setLocale(nextLocale)
+
+    if (auth.state !== 'signed-in') {
+      setSettingsMessage(tr('settings.auth_required'))
+      return
+    }
+
+    const requestId = ++settingsRequestRef.current
+    setSettingsLoadingFlag(true)
+    setSettingsMessage(null)
+    try {
+      const preferences = await api.updatePreferences({ locale: nextLocale })
+      if (requestId !== settingsRequestRef.current) return
+      applyLocalePreferences(preferences)
+    } catch (error) {
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_preferences_save_locale',
+        presentation: 'banner',
+      })
+      setSettingsMessage(requestError.displayMessage)
+      displayErrorFeedback(requestError, 'mobile_preferences_save_locale')
+    } finally {
+      if (requestId === settingsRequestRef.current) {
+        setSettingsLoadingFlag(false)
+      }
+    }
+  }
+
   async function submitAuth() {
     const normalizedEmail = email.trim()
     if (!normalizedEmail || !password || auth.state === 'loading') return
@@ -1786,7 +1849,7 @@ function AppInner() {
             appVersion={appVersion}
             voiceMetricsText={voiceMetricsText}
             asrEvaluationText={asrEvaluationText}
-            onSetLocale={l => setLocale(l as Locale)}
+            onSetLocale={l => void saveLocalePreference(l as Locale)}
             onSetTheme={setTheme}
             onSaveProvider={p => void saveProvider(p)}
             onSetSessionSttProvider={setSessionSttProvider}
