@@ -3,7 +3,7 @@ import { getPreferences, setPreferences } from '@/lib/server/preferences'
 
 export async function GET(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'preferences_get', windowMs: 60_000, maxRequests: 120 })
+    const guard = guardApiRequest(request, { name: 'preferences_get', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

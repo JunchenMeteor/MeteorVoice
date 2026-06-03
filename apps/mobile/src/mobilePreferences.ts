@@ -13,7 +13,8 @@ export type XunfeiVoice = {
 
 type PrefInput = {
   apiBaseUrl: string
-  getAuthHeaders: () => HeadersInit
+  getAuthHeaders: () => HeadersInit | Promise<HeadersInit>
+  onUnauthorized?: () => void | Promise<void>
   ttsProvider?: string
   ttsSpeed?: number
   defaultScenarioKey?: string
@@ -25,7 +26,7 @@ type PrefInput = {
 // 内存中记录同步失败的 key，下次成功 sync 时重试
 const pendingSyncKeys = new Set<string>()
 
-async function hasAuth(getAuthHeaders: () => HeadersInit) {
+async function hasAuth(getAuthHeaders: () => HeadersInit | Promise<HeadersInit>) {
   const headers = await getAuthHeaders()
   return !!(headers as Record<string, string>).Authorization
 }
@@ -47,7 +48,11 @@ export async function syncMobilePreferences(input: PrefInput) {
   if (Object.keys(body).length === 0) return
 
   try {
-    const api = createMeteorVoiceApiClient({ baseUrl: input.apiBaseUrl, headers: input.getAuthHeaders })
+    const api = createMeteorVoiceApiClient({
+      baseUrl: input.apiBaseUrl,
+      headers: input.getAuthHeaders,
+      onUnauthorized: input.onUnauthorized,
+    })
     await api.updatePreferences(body)
     // 成功后清除 pending
     pendingSyncKeys.clear()
@@ -61,7 +66,8 @@ export async function syncMobilePreferences(input: PrefInput) {
 
 export async function pullMobilePreferences(
   apiBaseUrl: string,
-  getAuthHeaders: () => HeadersInit,
+  getAuthHeaders: () => HeadersInit | Promise<HeadersInit>,
+  onUnauthorized?: () => void | Promise<void>,
 ): Promise<{
   ttsProvider: string
   ttsSpeed: number
@@ -82,7 +88,7 @@ export async function pullMobilePreferences(
   if (!authed) return null
 
   try {
-    const api = createMeteorVoiceApiClient({ baseUrl: apiBaseUrl, headers: getAuthHeaders })
+    const api = createMeteorVoiceApiClient({ baseUrl: apiBaseUrl, headers: getAuthHeaders, onUnauthorized })
     const raw = await api.getPreferences()
     pendingSyncKeys.clear()
     return {

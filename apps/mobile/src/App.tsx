@@ -418,6 +418,7 @@ function AppInner() {
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
   const getAuthHeaders = auth.getAuthHeaders
+  const signOut = auth.signOut
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
@@ -455,10 +456,13 @@ function AppInner() {
     ?? providerVoiceProfiles.find(profile => profile.status === 'active')
   const sessionAccentName = selectedVoiceProfile?.accentLabel ?? getAccentLabel(accent, locale)
   const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
+  const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
+  const handleUnauthorized = useCallback(() => signOut(tr('settings.auth_expired')), [signOut, tr])
   const api = useMemo(() => createMeteorVoiceApiClient({
     baseUrl: apiBaseUrl.trim(),
     headers: getAuthHeaders,
-  }), [apiBaseUrl, getAuthHeaders])
+    onUnauthorized: handleUnauthorized,
+  }), [apiBaseUrl, getAuthHeaders, handleUnauthorized])
   const applyThemeLocal = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
     setThemeLocal(k)
   }, [setThemeLocal])
@@ -469,8 +473,6 @@ function AppInner() {
     void SecureStore.setItemAsync('theme_set_at', now)
     void api.updatePreferences({ ui_theme: k }).catch(() => {})
   }, [setThemeLocal, api])
-  const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
-
   const clearResumeListeningTimer = useCallback(() => {
     if (!resumeListeningTimerRef.current) return
     clearTimeout(resumeListeningTimerRef.current)
@@ -846,11 +848,13 @@ function AppInner() {
       messages,
       scenario: scenario.key,
       semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
+        const authHeaders = await getAuthHeaders()
         const res = await fetch(`${baseUrl}/api/semantic-endpoint`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
+        if (res.status === 401) await handleUnauthorized()
         if (!res.ok) throw new Error('Semantic check failed')
         const data = await res.json() as { judgment: 'done' | 'thinking' }
         return data.judgment
@@ -875,7 +879,7 @@ function AppInner() {
     pendingNativeTranscriptRef.current = ''
     logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
     if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
@@ -1291,9 +1295,13 @@ function AppInner() {
   async function deleteSession(id: string) {
     setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
     try {
+      const authHeaders = await getAuthHeaders()
       await fetch(`${apiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: getAuthHeaders() as Record<string, string>,
+        headers: authHeaders as Record<string, string>,
+      }).then(res => {
+        if (res.status === 401) return handleUnauthorized()
+        return undefined
       })
     } catch {
       // 静默失败
@@ -1425,6 +1433,7 @@ function AppInner() {
         void syncMobilePreferences({
           apiBaseUrl: apiBaseUrl.trim(),
           getAuthHeaders: auth.getAuthHeaders,
+          onUnauthorized: handleUnauthorized,
           ttsSpeed: next,
           ttsProvider,
           defaultScenarioKey: selectedScenarioKey,
@@ -1540,8 +1549,8 @@ function AppInner() {
   // 登录后自动拉取偏好
   useEffect(() => {
     if (auth.state !== 'signed-in') return
-    void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
-  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs])
+    void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders, handleUnauthorized).then(applyPrefs)
+  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs, handleUnauthorized])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -1558,7 +1567,7 @@ function AppInner() {
 
       canListenOnRouteRef.current = true
       if (auth.state === 'signed-in') {
-        void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders).then(applyPrefs)
+        void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders, handleUnauthorized).then(applyPrefs)
       } else {
         void api.getPreferences().then(applyServerPreferences).catch(() => undefined)
       }
@@ -1570,7 +1579,7 @@ function AppInner() {
       }
     })
     return () => subscription.remove()
-  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy, clearResumeListeningTimer])
+  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy, clearResumeListeningTimer, handleUnauthorized])
 
   function playCorrection(text: string) {
     clearResumeListeningTimer()

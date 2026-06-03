@@ -15,11 +15,13 @@ import type {
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 export type ApiHeadersProvider = HeadersInit | (() => HeadersInit | Promise<HeadersInit>)
+export type ApiUnauthorizedHandler = () => void | Promise<void>
 
 export type ApiClientOptions = {
   baseUrl?: string
   fetch?: FetchLike
   headers?: ApiHeadersProvider
+  onUnauthorized?: ApiUnauthorizedHandler
 }
 
 export type ApiErrorBody = {
