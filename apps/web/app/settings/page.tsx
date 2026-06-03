@@ -43,6 +43,7 @@ function getVoiceProfileName(profile: VoiceProfile, locale: Locale) {
 type PreferencesPayload = {
   tts_provider?: string
   available_providers?: string[]
+  locale?: Locale
   tts_speed?: number
   tts_voice_id?: string | null
   voice_profiles?: VoiceProfile[]
@@ -68,6 +69,7 @@ export default function SettingsPage() {
 
   const applyPreferences = useCallback((data: PreferencesPayload) => {
     setSettingsError(null)
+    if (data.locale) setLocale(data.locale)
     if (data.tts_provider) setTtsProvider(data.tts_provider)
     if (data.available_providers) setAvailableProviders(data.available_providers)
     if (data.voice_profiles) setVoiceProfiles(data.voice_profiles)
@@ -84,10 +86,11 @@ export default function SettingsPage() {
       setTtsSpeed(nextSpeed)
       writeTTSSpeedPreference(nextSpeed)
     }
-  }, [])
+  }, [setLocale])
 
   const applyPreferenceUpdate = useCallback((data: PreferencesPayload, body: Record<string, unknown>) => {
     setSettingsError(null)
+    if ('locale' in body && data.locale) setLocale(data.locale)
     if ('tts_provider' in body && data.tts_provider) setTtsProvider(data.tts_provider)
     if ('tts_speed' in body && typeof data.tts_speed === 'number') {
       const serverSpeed = data.tts_speed
@@ -106,7 +109,7 @@ export default function SettingsPage() {
       const profile = voiceProfiles.find(item => item.id === data.selected_voice_profile_id)
       if (profile?.provider) setTtsProvider(profile.provider)
     }
-  }, [voiceProfiles])
+  }, [setLocale, voiceProfiles])
 
   const fetchPreferences = useCallback(async () => {
     const res = await fetch('/api/preferences', {
@@ -200,6 +203,12 @@ export default function SettingsPage() {
     void savePreferences({ selected_voice_profile_id: profile.id }, 'web_settings_voice_profile_save')
   }
 
+  function handleLocaleChange(nextLocale: Locale) {
+    if (nextLocale === locale) return
+    setLocale(nextLocale)
+    void savePreferences({ locale: nextLocale }, 'web_settings_locale_save')
+  }
+
   const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
   const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
     ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
@@ -255,7 +264,7 @@ export default function SettingsPage() {
               <button
                 key={l.key}
                 type="button"
-                onClick={() => setLocale(l.key)}
+                onClick={() => handleLocaleChange(l.key)}
                 disabled={settingsLoading}
                 className={`chip-action ${l.key === locale ? 'is-active' : ''}`}
               >

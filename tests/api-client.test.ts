@@ -91,6 +91,24 @@ describe('MeteorVoiceApiClient', () => {
     expect(new Headers(calls[0].init?.headers).get('Authorization')).toBe('Bearer mobile-token')
   })
 
+  it('persists locale through preferences PATCH', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = []
+    const client = createMeteorVoiceApiClient({
+      baseUrl: 'https://example.com',
+      fetch: async (input, init) => {
+        calls.push({ input, init })
+        return new Response(JSON.stringify({ locale: 'zh', tts_provider: 'mock' }), { status: 200 })
+      },
+    })
+
+    const result = await client.updatePreferences({ locale: 'zh' })
+
+    expect(result.locale).toBe('zh')
+    expect(calls[0].input).toBe('https://example.com/api/preferences')
+    expect(calls[0].init?.method).toBe('PATCH')
+    expect(calls[0].init?.body).toBe(JSON.stringify({ locale: 'zh' }))
+  })
+
   it('lists productized scenarios and accents with query parameters', async () => {
     const calls: string[] = []
     const client = createMeteorVoiceApiClient({
