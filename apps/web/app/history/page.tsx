@@ -95,7 +95,7 @@ export default function HistoryPage() {
         variant: 'hud',
         blocksInteraction: true,
       })
-      return
+      return () => hideAppFeedback(historyFeedbackSource)
     }
     hideAppFeedback(historyFeedbackSource)
   }, [historyBusy, historyLoadingMessage])

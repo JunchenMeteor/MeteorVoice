@@ -42,8 +42,23 @@ let appFeedbackState: AppFeedbackState | null = null
 const feedbackListeners = new Set<FeedbackListener>()
 
 function emitAppFeedback(next: AppFeedbackState | null) {
+  if (isSameFeedback(appFeedbackState, next)) return
   appFeedbackState = next
   feedbackListeners.forEach(listener => listener(appFeedbackState))
+}
+
+function isSameFeedback(current: AppFeedbackState | null, next: AppFeedbackState | null) {
+  if (current === next) return true
+  if (!current || !next) return false
+  return current.active === next.active &&
+    current.message === next.message &&
+    current.variant === next.variant &&
+    current.source === next.source &&
+    current.title === next.title &&
+    current.severity === next.severity &&
+    current.blocksInteraction === next.blocksInteraction &&
+    current.dismissible === next.dismissible &&
+    current.autoDismissMs === next.autoDismissMs
 }
 
 export const appFeedback = {
@@ -85,7 +100,7 @@ export function displayErrorFeedback(error: DisplayableErrorFeedback, source: st
     return
   }
 
-    appFeedback.show({
+  appFeedback.show({
     source,
     title: error.title,
     message: error.displayMessage,
