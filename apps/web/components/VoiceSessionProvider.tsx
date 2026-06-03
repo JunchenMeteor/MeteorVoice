@@ -27,7 +27,7 @@ import {
   updateVoiceActivitySnapshot,
   type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
+import { displayErrorFeedback, getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
@@ -1234,6 +1234,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         context: 'web_session_chat',
         presentation: 'banner',
       })
+      displayErrorFeedback(requestError, 'web_session_chat')
       setStatusText(canListenOnRouteRef.current ? requestError.displayMessage : tr('session.paused'))
       updateSnapshot(current => recoverSessionError({
         snapshot: current,

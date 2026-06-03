@@ -32,10 +32,10 @@ async function hasAuth(getAuthHeaders: () => HeadersInit | Promise<HeadersInit>)
 }
 
 export async function syncMobilePreferences(input: PrefInput) {
-  if (!input.apiBaseUrl) return
+  if (!input.apiBaseUrl) return false
 
   const authed = await hasAuth(input.getAuthHeaders)
-  if (!authed) return
+  if (!authed) return false
 
   const body: Record<string, unknown> = {}
   if (input.ttsProvider !== undefined) body.tts_provider = input.ttsProvider
@@ -45,7 +45,7 @@ export async function syncMobilePreferences(input: PrefInput) {
   if (input.selectedVoiceProfileId !== undefined) body.selected_voice_profile_id = input.selectedVoiceProfileId
   if (input.uiTheme !== undefined) body.ui_theme = input.uiTheme
 
-  if (Object.keys(body).length === 0) return
+  if (Object.keys(body).length === 0) return false
 
   try {
     const api = createMeteorVoiceApiClient({
@@ -56,11 +56,13 @@ export async function syncMobilePreferences(input: PrefInput) {
     await api.updatePreferences(body)
     // 成功后清除 pending
     pendingSyncKeys.clear()
+    return true
   } catch {
     // 静默失败，记录待同步项（应用重启后下次 API 拉取会自动覆盖）
     for (const key of Object.keys(body)) {
       pendingSyncKeys.add(key)
     }
+    return false
   }
 }
 
