@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 import { flushPendingPreferences } from '@/lib/tts-speed'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+import { displayErrorFeedback, hideAppFeedback, showAppFeedback } from '@meteorvoice/shared'
 
 interface HistorySession {
   id: string
@@ -35,6 +36,8 @@ interface TurnData {
 }
 
 const PAGE_SIZE = 20
+const historyFeedbackSource = 'web_history'
+const historyErrorFeedbackSource = 'web_history_error'
 
 export default function HistoryPage() {
   const { locale } = useLocale()
@@ -51,6 +54,8 @@ export default function HistoryPage() {
   const [turnsLoading, setTurnsLoading] = useState(false)
   const [turnsError, setTurnsError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const historyBusy = loading || loadingMore || turnsLoading || Boolean(deletingId)
+  const historyLoadingMessage = t('history.loading')
 
   function statusLabel(status: string) {
     const key = `history.status.${status}`
@@ -82,6 +87,19 @@ export default function HistoryPage() {
     return readApiJsonResponse<{ sessions: HistorySession[]; hasMore: boolean }>(res, 'History request failed')
   }, [])
 
+  useEffect(() => {
+    if (historyBusy) {
+      showAppFeedback({
+        source: historyFeedbackSource,
+        message: historyLoadingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      })
+      return
+    }
+    hideAppFeedback(historyFeedbackSource)
+  }, [historyBusy, historyLoadingMessage])
+
   // 首次加载
   useEffect(() => {
     void flushPendingPreferences()
@@ -96,10 +114,11 @@ export default function HistoryPage() {
         }
       })
       .catch(err => {
-        setError(formatApiRequestError(err, {
+        const requestError = formatApiRequestError(err, {
           context: 'web_history_list',
           presentation: 'inline',
-        }).displayMessage)
+        })
+        setError(requestError.displayMessage)
       })
       .finally(() => setLoading(false))
   }, [filterScenario, loadSessions, t])
@@ -112,8 +131,12 @@ export default function HistoryPage() {
       const data = await loadSessions(sessions.length, filterScenario)
       setSessions(prev => [...prev, ...(data.sessions ?? [])])
       setHasMore(data.hasMore)
-    } catch {
-      // 静默失败
+    } catch (err) {
+      const requestError = formatApiRequestError(err, {
+        context: 'web_history_load_more',
+        presentation: 'banner',
+      })
+      displayErrorFeedback(requestError, historyErrorFeedbackSource)
     } finally {
       setLoadingMore(false)
     }
@@ -135,10 +158,11 @@ export default function HistoryPage() {
       const data = await readApiJsonResponse<{ turns: TurnData[] }>(res, 'History turns request failed')
       setTurns(data.turns ?? [])
     } catch (err) {
-      setTurnsError(formatApiRequestError(err, {
+      const requestError = formatApiRequestError(err, {
         context: 'web_history_turns',
         presentation: 'inline',
-      }).displayMessage)
+      })
+      setTurnsError(requestError.displayMessage)
     } finally {
       setTurnsLoading(false)
     }
@@ -153,8 +177,12 @@ export default function HistoryPage() {
       if (res.ok) {
         setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
       }
-    } catch {
-      // 静默失败
+    } catch (err) {
+      const requestError = formatApiRequestError(err, {
+        context: 'web_history_delete',
+        presentation: 'banner',
+      })
+      displayErrorFeedback(requestError, historyErrorFeedbackSource)
     } finally {
       setDeletingId(null)
     }

@@ -14,7 +14,6 @@ import {
   formatApiRequestError,
   type CreateASRSessionResponse,
   type HistorySession,
-  type PreferencesResponse,
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
@@ -49,6 +48,9 @@ import {
   getTTSSpeedRouting,
   scenarios,
   t,
+  appFeedback,
+  displayErrorFeedback,
+  type AppFeedbackState,
   type ConversationMessage,
   type ConversationResponse,
   type Locale,
@@ -59,7 +61,7 @@ import * as SecureStore from 'expo-secure-store'
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
-import { pullMobilePreferences, syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
+import { syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
 import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
 import {
   addPcmFrameListener,
@@ -74,6 +76,7 @@ import { SessionScreen } from './screens/SessionScreen'
 import { HomeScreen } from './screens/HomeScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
@@ -390,6 +393,7 @@ function AppInner() {
   const [selectedHistoryTurns, setSelectedHistoryTurns] = useState<SessionTurnDto[]>([])
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const [activeFeedback, setActiveFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
   const [sessionSttProvider, setSessionSttProviderState] = useState<SessionSttProvider>('native')
@@ -447,6 +451,7 @@ function AppInner() {
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const historyAutoLoadRef = useRef(false)
   const settingsAutoLoadRef = useRef(false)
+  const settingsRequestRef = useRef(0)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -457,7 +462,10 @@ function AppInner() {
   const sessionAccentName = selectedVoiceProfile?.accentLabel ?? getAccentLabel(accent, locale)
   const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
-  const handleUnauthorized = useCallback(() => signOut(tr('settings.auth_expired')), [signOut, tr])
+  const handleUnauthorized = useCallback(() => {
+    if (auth.state !== 'signed-in') return signOut(null)
+    return signOut(tr('settings.auth_expired'))
+  }, [auth.state, signOut, tr])
   const api = useMemo(() => createMeteorVoiceApiClient({
     baseUrl: apiBaseUrl.trim(),
     headers: getAuthHeaders,
@@ -770,6 +778,7 @@ function AppInner() {
         presentation: 'banner',
       })
       logVoiceMetric('mobile_session_request_error', requestError.logData)
+      displayErrorFeedback(requestError, 'mobile_session_submit')
       setStatus(requestError.displayMessage)
       if (sessionActiveRef.current && canListenOnRouteRef.current) {
         scheduleResumeListening(900)
@@ -791,7 +800,7 @@ function AppInner() {
       .filter(Boolean)
       .join(' ')
 
-    if (!isSessionActive) {
+    if (!sessionActiveRef.current) {
       logVoiceMetric('transcript_ignored_inactive', { chars: transcript.length })
       setStatus('session.status.speech_captured')
       return
@@ -879,7 +888,7 @@ function AppInner() {
     pendingNativeTranscriptRef.current = ''
     logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, isSessionActive, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, logVoiceMetric, messages, scenario.key, snapshot.lastResponse, snapshot.state, submitTurn])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
     if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
@@ -1353,12 +1362,32 @@ function AppInner() {
     }
   }, [api, logVoiceMetric, sessionSttProvider])
 
-  const loadPreferences = useCallback(async () => {
-    if (settingsLoading) return
+  useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
+
+  useEffect(() => {
+    if (settingsLoading) {
+      appFeedback.show({
+        message: tr('settings.syncing'),
+        variant: 'hud',
+        source: 'settings',
+      })
+      return
+    }
+    appFeedback.hide('settings')
+  }, [settingsLoading, tr])
+
+  const loadPreferences = useCallback(async (options: { force?: boolean; successMessage?: string } = {}) => {
+    if (settingsLoading && !options.force) return
+    if (auth.state !== 'signed-in') {
+      setSettingsMessage(tr('settings.auth_required'))
+      return
+    }
+    const requestId = ++settingsRequestRef.current
     setSettingsLoading(true)
     setSettingsMessage(null)
     try {
       const preferences = await api.getPreferences()
+      if (requestId !== settingsRequestRef.current) return
       setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
       setTtsProvider(preferences.tts_provider ?? 'mock')
       setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
@@ -1370,7 +1399,17 @@ function AppInner() {
       if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
       const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
       if (profile) setSelectedAccentKey(profile.accentKey)
-      setSettingsMessage(tr('session.status.preferences_loaded'))
+      if (preferences.ui_theme && !themeInitializedRef.current) {
+        themeInitializedRef.current = true
+        void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
+          const serverTs = new Date(preferences.ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
+          const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
+          if (serverTs >= localTs) {
+            applyThemeLocal(preferences.ui_theme as Parameters<typeof setThemeLocal>[0])
+          }
+        })
+      }
+      setSettingsMessage(options.successMessage ?? tr('session.status.preferences_loaded'))
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_load',
@@ -1378,9 +1417,11 @@ function AppInner() {
       })
       setSettingsMessage(requestError.displayMessage)
     } finally {
-      setSettingsLoading(false)
+      if (requestId === settingsRequestRef.current) {
+        setSettingsLoading(false)
+      }
     }
-  }, [api, setLocale, settingsLoading, tr])
+  }, [api, applyThemeLocal, auth.state, setLocale, settingsLoading, tr])
 
   const reloadSettingsData = useCallback(() => {
     void loadPreferences()
@@ -1401,6 +1442,7 @@ function AppInner() {
   }, [activeTab, auth.state, reloadSettingsData])
 
   async function saveProvider(provider: string) {
+    settingsRequestRef.current += 1
     setTtsProvider(provider)
     setAudioUrl(null)
     playbackEndedAtMsRef.current = null
@@ -1413,18 +1455,12 @@ function AppInner() {
     }
 
     try {
-      const result = await api.updatePreferences({
+      await api.updatePreferences({
         tts_provider: provider,
         default_scenario_key: selectedScenarioKey,
         tts_speed: ttsSpeed,
       })
-      setTtsProvider(result.tts_provider)
-      setTtsSpeed(result.tts_speed)
-      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
-      if (result.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(result.selected_voice_profile_id)
-      const profile = result.voice_profiles?.find(item => item.id === result.selected_voice_profile_id)
-      if (profile) setSelectedAccentKey(profile.accentKey)
-      setSettingsMessage(tr('session.status.preferences_saved'))
+      await loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_save_provider',
@@ -1437,6 +1473,7 @@ function AppInner() {
   }
 
   async function savePracticePreferences() {
+    settingsRequestRef.current += 1
     setSettingsLoading(true)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') {
@@ -1446,16 +1483,12 @@ function AppInner() {
     }
 
     try {
-      const result = await api.updatePreferences({
+      await api.updatePreferences({
         tts_provider: ttsProvider,
         default_scenario_key: selectedScenarioKey,
         tts_speed: ttsSpeed,
       })
-      setTtsProvider(result.tts_provider)
-      setTtsSpeed(result.tts_speed)
-      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
-      if (result.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(result.selected_voice_profile_id)
-      setSettingsMessage(tr('session.status.practice_defaults_saved'))
+      await loadPreferences({ force: true, successMessage: tr('session.status.practice_defaults_saved') })
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_save_practice',
@@ -1479,6 +1512,10 @@ function AppInner() {
           ttsSpeed: next,
           ttsProvider,
           defaultScenarioKey: selectedScenarioKey,
+        }).then(saved => {
+          if (saved) {
+            void loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
+          }
         })
       }, 600)
       return next
@@ -1487,6 +1524,7 @@ function AppInner() {
 
   async function selectVoiceProfile(profile: VoiceProfile) {
     if (profile.status !== 'active') return
+    settingsRequestRef.current += 1
     setAudioUrl(null)
     playbackEndedAtMsRef.current = null
     setSelectedVoiceProfileId(profile.id)
@@ -1497,11 +1535,8 @@ function AppInner() {
     if (auth.state !== 'signed-in') return
 
     try {
-      const result = await api.updatePreferences({ selected_voice_profile_id: profile.id })
-      setTtsProvider(result.tts_provider)
-      setTtsVoiceId(result.tts_voice_id)
-      setSelectedVoiceProfileId(result.selected_voice_profile_id)
-      if (result.voice_profiles) setVoiceProfiles(result.voice_profiles)
+      await api.updatePreferences({ selected_voice_profile_id: profile.id })
+      await loadPreferences({ force: true, successMessage: tr('session.status.preferences_saved') })
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_preferences_select_voice_profile',
@@ -1518,52 +1553,6 @@ function AppInner() {
     if (success) setPassword('')
   }
 
-  const applyPrefs = useCallback((prefs: Awaited<ReturnType<typeof pullMobilePreferences>>) => {
-    if (!prefs) return
-    setTtsProvider(prefs.ttsProvider)
-    setTtsSpeed(prefs.ttsSpeed)
-    setAvailableProviders(prefs.availableProviders)
-    setTtsVoiceId(prefs.ttsVoiceId)
-    setVoiceProfiles(prefs.voiceProfiles)
-    setSelectedVoiceProfileId(prefs.selectedVoiceProfileId)
-    if (prefs.xunfeiVoices.length > 0) setXunfeiVoices(prefs.xunfeiVoices)
-    if (prefs.defaultScenarioKey) setSelectedScenarioKey(prefs.defaultScenarioKey)
-    const profile = prefs.voiceProfiles.find(item => item.id === prefs.selectedVoiceProfileId)
-    if (profile) setSelectedAccentKey(profile.accentKey)
-    if (prefs.locale === 'zh' || prefs.locale === 'en') setLocale(prefs.locale)
-    if (prefs.uiTheme && !themeInitializedRef.current) {
-      themeInitializedRef.current = true
-      void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
-        const serverTs = new Date(prefs.uiThemeUpdatedAt).getTime()
-        const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
-        if (serverTs >= localTs) {
-          applyThemeLocal(prefs.uiTheme as Parameters<typeof setThemeLocal>[0])
-        }
-      })
-    }
-  }, [applyThemeLocal, setLocale])
-
-  const applyServerPreferences = useCallback((preferences: PreferencesResponse) => {
-    setTtsProvider(preferences.tts_provider ?? 'mock')
-    setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
-    setTtsSpeed(preferences.tts_speed ?? 1)
-    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
-    if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
-    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-    if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
-    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-    const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
-    if (profile) setSelectedAccentKey(profile.accentKey)
-    if (preferences.locale === 'zh' || preferences.locale === 'en') setLocale(preferences.locale)
-  }, [setLocale])
-
-  useEffect(() => {
-    if (auth.state !== 'signed-in') return
-    void api.getPreferences()
-      .then(applyServerPreferences)
-      .catch(() => undefined)
-  }, [api, applyServerPreferences, auth.state])
-
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadSessionSttProviders()
@@ -1574,12 +1563,12 @@ function AppInner() {
   // 登录后自动拉取偏好
   useEffect(() => {
     if (auth.state !== 'signed-in') return
-    void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders, handleUnauthorized).then(applyPrefs)
     const timer = setTimeout(() => {
+      void loadPreferences()
       void loadSessionSttProviders()
     }, 0)
     return () => clearTimeout(timer)
-  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs, handleUnauthorized, loadSessionSttProviders])
+  }, [auth.state, loadPreferences, loadSessionSttProviders])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -1596,9 +1585,7 @@ function AppInner() {
 
       canListenOnRouteRef.current = true
       if (auth.state === 'signed-in') {
-        void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders, handleUnauthorized).then(applyPrefs)
-      } else {
-        void api.getPreferences().then(applyServerPreferences).catch(() => undefined)
+        void loadPreferences()
       }
 
       if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
@@ -1608,7 +1595,7 @@ function AppInner() {
       }
     })
     return () => subscription.remove()
-  }, [api, apiBaseUrl, applyPrefs, applyServerPreferences, auth.getAuthHeaders, auth.state, busy, clearResumeListeningTimer, handleUnauthorized])
+  }, [auth.state, busy, clearResumeListeningTimer, loadPreferences])
 
   function playCorrection(text: string) {
     clearResumeListeningTimer()
@@ -1740,7 +1727,10 @@ function AppInner() {
 
   return (
     <SafeAreaView style={styles.shell}>
-      <View style={styles.content}>{renderScreen()}</View>
+      <View style={styles.content}>
+        {renderScreen()}
+        <AppFeedbackOverlay feedback={activeFeedback} />
+      </View>
       <View style={styles.tabBarWrapper}>
         <View style={styles.tabBar}>
           {(['home', 'session', 'history', 'settings'] as Tab[]).map(tab => (

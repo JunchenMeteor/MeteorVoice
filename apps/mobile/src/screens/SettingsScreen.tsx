@@ -207,7 +207,12 @@ export function SettingsScreen({
         </View>
         <View style={styles.chipGrid}>
           {availableProviders.map(p => (
-            <Pressable key={p} onPress={() => onSaveProvider(p)} style={[styles.chip, ttsProvider === p && styles.chipActive]}>
+            <Pressable
+              key={p}
+              onPress={() => onSaveProvider(p)}
+              disabled={settingsLoading}
+              style={[styles.chip, ttsProvider === p && styles.chipActive, settingsLoading && styles.chipDisabled]}
+            >
               <Text style={[styles.chipTxt, ttsProvider === p && styles.chipTxtActive]}>
                 {tr(`settings.tts_provider_${p}`) !== `settings.tts_provider_${p}` ? tr(`settings.tts_provider_${p}`) : p}
               </Text>
@@ -225,7 +230,8 @@ export function SettingsScreen({
             <Pressable
               key={provider}
               onPress={() => onSetSessionSttProvider(provider)}
-              style={[styles.chip, sessionSttProvider === provider && styles.chipActive]}
+              disabled={settingsLoading}
+              style={[styles.chip, sessionSttProvider === provider && styles.chipActive, settingsLoading && styles.chipDisabled]}
             >
               <Text style={[styles.chipTxt, sessionSttProvider === provider && styles.chipTxtActive]}>
                 {tr(`settings.session_stt_provider_${provider}`)}
@@ -265,6 +271,7 @@ export function SettingsScreen({
                   <Pressable
                     key={profile.id}
                     onPress={() => !unavailable && onSelectVoiceProfile(profile)}
+                    disabled={settingsLoading || unavailable}
                     style={[styles.voiceCatalogChip, active && styles.chipActive, unavailable && styles.chipDisabled]}
                   >
                     <Text style={[styles.voiceCatalogName, active && styles.chipTxtActive]}>{voiceProfileName(profile)}</Text>
@@ -288,18 +295,18 @@ export function SettingsScreen({
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{tr('settings.tts_speed')}</Text>
         <View style={styles.speedRow}>
-          <Pressable onPress={() => onAdjustSpeed(-0.1)} style={styles.speedBtn}>
+          <Pressable onPress={() => onAdjustSpeed(-0.1)} disabled={settingsLoading} style={[styles.speedBtn, settingsLoading && styles.chipDisabled]}>
             <Text style={styles.speedBtnTxt}>−</Text>
           </Pressable>
           <View style={styles.speedTrack}>
             <View style={[styles.speedFill, { width: `${speedFill * 100}%` }]} />
           </View>
-          <Pressable onPress={() => onAdjustSpeed(0.1)} style={styles.speedBtn}>
+          <Pressable onPress={() => onAdjustSpeed(0.1)} disabled={settingsLoading} style={[styles.speedBtn, settingsLoading && styles.chipDisabled]}>
             <Text style={styles.speedBtnTxt}>+</Text>
           </Pressable>
           <Text style={styles.speedValue}>{ttsSpeed.toFixed(1)}×</Text>
         </View>
-        <Pressable onPress={onSavePracticePreferences} disabled={settingsLoading} style={styles.saveBtn}>
+        <Pressable onPress={onSavePracticePreferences} disabled={settingsLoading} style={[styles.saveBtn, settingsLoading && styles.disabled]}>
           <Text style={styles.saveBtnTxt}>{tr('settings.save')}</Text>
         </Pressable>
       </View>
