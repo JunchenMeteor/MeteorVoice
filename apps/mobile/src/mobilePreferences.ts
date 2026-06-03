@@ -1,4 +1,4 @@
-import { createMeteorVoiceApiClient } from '@meteorvoice/api-client'
+import { createMeteorVoiceApiClient, type PreferencesResponse } from '@meteorvoice/api-client'
 import type { VoiceProfile } from '@meteorvoice/shared'
 
 export type XunfeiVoice = {
@@ -31,11 +31,11 @@ async function hasAuth(getAuthHeaders: () => HeadersInit | Promise<HeadersInit>)
   return !!(headers as Record<string, string>).Authorization
 }
 
-export async function syncMobilePreferences(input: PrefInput) {
-  if (!input.apiBaseUrl) return false
+export async function syncMobilePreferences(input: PrefInput): Promise<PreferencesResponse | null> {
+  if (!input.apiBaseUrl) return null
 
   const authed = await hasAuth(input.getAuthHeaders)
-  if (!authed) return false
+  if (!authed) return null
 
   const body: Record<string, unknown> = {}
   if (input.ttsProvider !== undefined) body.tts_provider = input.ttsProvider
@@ -45,7 +45,7 @@ export async function syncMobilePreferences(input: PrefInput) {
   if (input.selectedVoiceProfileId !== undefined) body.selected_voice_profile_id = input.selectedVoiceProfileId
   if (input.uiTheme !== undefined) body.ui_theme = input.uiTheme
 
-  if (Object.keys(body).length === 0) return false
+  if (Object.keys(body).length === 0) return null
 
   try {
     const api = createMeteorVoiceApiClient({
@@ -53,16 +53,16 @@ export async function syncMobilePreferences(input: PrefInput) {
       headers: input.getAuthHeaders,
       onUnauthorized: input.onUnauthorized,
     })
-    await api.updatePreferences(body)
+    const preferences = await api.updatePreferences(body)
     // 成功后清除 pending
     pendingSyncKeys.clear()
-    return true
+    return preferences
   } catch {
     // 静默失败，记录待同步项（应用重启后下次 API 拉取会自动覆盖）
     for (const key of Object.keys(body)) {
       pendingSyncKeys.add(key)
     }
-    return false
+    return null
   }
 }
 
