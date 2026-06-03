@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Platform, Settings } from 'react-native'
 import { createClient, type Session, type SupabaseClient, type User } from '@supabase/supabase-js'
 import * as SecureStore from 'expo-secure-store'
 
@@ -15,9 +16,25 @@ export type MobileAuthState = ReturnType<typeof useMobileAuth>
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+const authStorageKey = 'meteorvoice-mobile-supabase-auth'
+const installMarkerKey = 'meteorvoice.installation_marker.v1'
+const installMarkerValue = 'installed'
+
+let shouldClearPersistedAuth = false
+if (Platform.OS === 'ios' && Settings.get(installMarkerKey) !== installMarkerValue) {
+  shouldClearPersistedAuth = true
+  Settings.set({ [installMarkerKey]: installMarkerValue })
+}
 
 const secureStorage = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
+  getItem: async (key: string) => {
+    if (shouldClearPersistedAuth && key === authStorageKey) {
+      shouldClearPersistedAuth = false
+      await SecureStore.deleteItemAsync(key)
+      return null
+    }
+    return SecureStore.getItemAsync(key)
+  },
   setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
   removeItem: (key: string) => SecureStore.deleteItemAsync(key),
 }
@@ -37,6 +54,7 @@ export function useMobileAuth() {
         autoRefreshToken: true,
         detectSessionInUrl: false,
         persistSession: true,
+        storageKey: authStorageKey,
         storage: secureStorage,
       },
     })
@@ -111,7 +129,7 @@ export function useMobileAuth() {
     }
   }, [client])
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (nextMessage: string | null = null) => {
     if (!client) return
     setState('loading')
     await client.auth.signOut()
@@ -119,6 +137,7 @@ export function useMobileAuth() {
     setSession(null)
     setUser(null)
     setState('signed-out')
+    setMessage(nextMessage)
   }, [client])
 
   const refreshSession = useCallback(async () => {
@@ -166,9 +185,10 @@ export function useMobileAuth() {
     return Boolean(data.session?.access_token)
   }, [client])
 
-  const getAuthHeaders = useCallback((): HeadersInit => (
-    sessionRef.current?.access_token ? { Authorization: `Bearer ${sessionRef.current.access_token}` } : {}
-  ), [])
+  const getAuthHeaders = useCallback(async (): Promise<HeadersInit> => {
+    await refreshSession()
+    return sessionRef.current?.access_token ? { Authorization: `Bearer ${sessionRef.current.access_token}` } : {}
+  }, [refreshSession])
 
   return {
     getAuthHeaders,

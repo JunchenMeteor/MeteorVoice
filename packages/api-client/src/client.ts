@@ -2,6 +2,7 @@ import type {
   ApiClientOptions,
   ApiErrorBody,
   ApiHeadersProvider,
+  ApiUnauthorizedHandler,
   CreateASRSessionRequest,
   CreateASRSessionResponse,
   CreateSessionRequest,
@@ -43,11 +44,13 @@ export class MeteorVoiceApiClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof fetch
   private readonly headers?: ApiHeadersProvider
+  private readonly onUnauthorized?: ApiUnauthorizedHandler
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
     this.fetchImpl = options.fetch ?? fetch
     this.headers = options.headers
+    this.onUnauthorized = options.onUnauthorized
   }
 
   getPreferences() {
@@ -160,6 +163,9 @@ export class MeteorVoiceApiClient {
 
     if (!response.ok) {
       const message = isApiErrorBody(body) ? body.error : `Request failed with status ${response.status}`
+      if (response.status === 401) {
+        await this.onUnauthorized?.()
+      }
       throw new MeteorVoiceApiError(message, response.status, body)
     }
 
