@@ -4,7 +4,7 @@ import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { displayErrorFeedback, hideAppFeedback, showAppFeedback, type Locale, type VoiceProfile } from '@meteorvoice/shared'
+import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup, type Locale, type VoiceProfile } from '@meteorvoice/shared'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { useCallback, useEffect, useState } from 'react'
@@ -86,55 +86,34 @@ export default function SettingsPage() {
     }
   }, [])
 
-  const loadPreferences = useCallback(async (showOverlay = false) => {
-    if (showOverlay) {
-      setSettingsLoading(true)
-      showAppFeedback({
+  const fetchPreferences = useCallback(async () => {
+    const res = await fetch('/api/preferences', {
+      headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+    })
+    return readApiJsonResponse<PreferencesPayload>(res, 'Preferences request failed')
+  }, [])
+
+  useEffect(() => {
+    async function loadInitialPreferences() {
+      const results = await runAppOperationGroup({
         source: settingsFeedbackSource,
-        message: settingsSyncingMessage,
-        variant: 'hud',
-        blocksInteraction: true,
+        tasks: {
+          preferences: fetchPreferences,
+        },
       })
-    }
-    try {
-      const res = await fetch('/api/preferences', {
-        headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
-      })
-      const data = await readApiJsonResponse<PreferencesPayload>(res, 'Preferences request failed')
-      applyPreferences(data)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
+      if (results.preferences.status === 'fulfilled') {
+        applyPreferences(results.preferences.value)
+        return
+      }
+      const requestError = formatApiRequestError(results.preferences.reason, {
         context: 'web_settings_preferences_load',
         presentation: 'inline',
       })
       setSettingsError(requestError.displayMessage)
-    } finally {
-      if (showOverlay) {
-        setSettingsLoading(false)
-        hideAppFeedback(settingsFeedbackSource)
-      }
-    }
-  }, [applyPreferences, settingsSyncingMessage])
-
-  useEffect(() => {
-    async function loadInitialPreferences() {
-      try {
-        const res = await fetch('/api/preferences', {
-          headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
-        })
-        const data = await readApiJsonResponse<PreferencesPayload>(res, 'Preferences request failed')
-        applyPreferences(data)
-      } catch (error) {
-        const requestError = formatApiRequestError(error, {
-          context: 'web_settings_preferences_load',
-          presentation: 'inline',
-        })
-        setSettingsError(requestError.displayMessage)
-      }
     }
 
     void loadInitialPreferences()
-  }, [applyPreferences])
+  }, [applyPreferences, fetchPreferences])
 
   useEffect(() => () => {
     hideAppFeedback(settingsFeedbackSource)
@@ -144,20 +123,32 @@ export default function SettingsPage() {
     if (settingsLoading) return
     setSettingsLoading(true)
     setSettingsError(null)
-    showAppFeedback({
+    const results = await runAppOperationGroup({
       source: settingsFeedbackSource,
-      message: settingsSyncingMessage,
-      variant: 'hud',
-      blocksInteraction: true,
+      feedback: {
+        message: settingsSyncingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      },
+      tasks: {
+        preferences: async () => {
+          const res = await fetch('/api/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
+            body: JSON.stringify(body),
+          })
+          await readApiJsonResponse<PreferencesPayload>(res, 'Preferences update failed')
+          return fetchPreferences()
+        },
+      },
     })
+    if (results.preferences.status === 'fulfilled') {
+      applyPreferences(results.preferences.value)
+      setSettingsLoading(false)
+      return
+    }
     try {
-      const res = await fetch('/api/preferences', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
-        body: JSON.stringify(body),
-      })
-      await readApiJsonResponse<PreferencesPayload>(res, 'Preferences update failed')
-      await loadPreferences()
+      throw results.preferences.reason
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context,
@@ -167,7 +158,6 @@ export default function SettingsPage() {
       displayErrorFeedback(requestError, settingsErrorFeedbackSource)
     } finally {
       setSettingsLoading(false)
-      hideAppFeedback(settingsFeedbackSource)
     }
   }
 
