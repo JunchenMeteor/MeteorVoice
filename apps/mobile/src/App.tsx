@@ -47,6 +47,7 @@ import {
   getScenarioDescription,
   getScenarioLabel,
   getTTSSpeedRouting,
+  runAppOperationGroup,
   scenarios,
   t,
   appFeedback,
@@ -1454,10 +1455,13 @@ function AppInner() {
     setSettingsLoadingFlag(true)
     setSettingsMessage(null)
 
-    void Promise.allSettled([
-      api.getPreferences(),
-      fetchSessionSttProviders(),
-    ]).then(([preferencesResult, providersResult]) => {
+    void runAppOperationGroup({
+      source: 'mobile_settings_data',
+      tasks: {
+        preferences: () => api.getPreferences(),
+        providers: fetchSessionSttProviders,
+      },
+    }).then(({ preferences: preferencesResult, providers: providersResult }) => {
       if (cancelled || requestId !== settingsRequestRef.current) return
 
       if (preferencesResult.status === 'fulfilled') {
