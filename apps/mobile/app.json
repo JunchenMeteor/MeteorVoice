@@ -11,19 +11,23 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tzcpa.meteorvoice",
-      "buildNumber": "2026053107",
+      "buildNumber": "2026060301",
       "deploymentTarget": "18.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions.",
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSSpeechRecognitionUsageDescription": "MeteorVoice uses speech recognition to turn your practice speech into text."
+        "NSSpeechRecognitionUsageDescription": "MeteorVoice uses speech recognition to turn your practice speech into text.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
       "package": "com.jcmeteor.meteorvoice",
-      "versionCode": 2026053107,
+      "versionCode": 2026060301,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",

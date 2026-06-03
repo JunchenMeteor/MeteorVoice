@@ -1268,6 +1268,10 @@ function AppInner() {
 
   const loadHistory = useCallback(async () => {
     if (historyLoading) return
+    if (auth.state !== 'signed-in') {
+      setHistoryError(tr('history.auth_required'))
+      return
+    }
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -1284,13 +1288,18 @@ function AppInner() {
     } finally {
       setHistoryLoading(false)
     }
-  }, [api, historyLoading])
+  }, [api, auth.state, historyLoading, tr])
 
   useEffect(() => {
-    if (activeTab !== 'history' || historyAutoLoadRef.current) return
+    if (activeTab !== 'history') return
+    if (auth.state !== 'signed-in') {
+      historyAutoLoadRef.current = false
+      return
+    }
+    if (historyAutoLoadRef.current) return
     historyAutoLoadRef.current = true
     void loadHistory()
-  }, [activeTab, loadHistory])
+  }, [activeTab, auth.state, loadHistory])
 
   async function deleteSession(id: string) {
     setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
@@ -1323,6 +1332,27 @@ function AppInner() {
     }
   }
 
+  const loadSessionSttProviders = useCallback(async () => {
+    try {
+      const result = await api.listASRProviders()
+      const providers: SessionSttProvider[] = ['native']
+      if (result.providers.some(provider => provider.key === 'xunfei' && provider.enabled)) {
+        providers.push('xunfei')
+      }
+      setAvailableSessionSttProviders(providers)
+      if (!providers.includes(sessionSttProvider)) {
+        setSessionSttProviderState('native')
+        void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
+      }
+    } catch (error) {
+      const requestError = formatApiRequestError(error, {
+        context: 'mobile_asr_providers_load',
+        presentation: 'silent',
+      })
+      logVoiceMetric('mobile_silent_request_error', requestError.logData)
+    }
+  }, [api, logVoiceMetric, sessionSttProvider])
+
   const loadPreferences = useCallback(async () => {
     if (settingsLoading) return
     setSettingsLoading(true)
@@ -1352,11 +1382,23 @@ function AppInner() {
     }
   }, [api, setLocale, settingsLoading, tr])
 
-  useEffect(() => {
-    if (activeTab !== 'settings' || auth.state !== 'signed-in' || settingsAutoLoadRef.current) return
-    settingsAutoLoadRef.current = true
+  const reloadSettingsData = useCallback(() => {
     void loadPreferences()
-  }, [activeTab, auth.state, loadPreferences])
+    const timer = setTimeout(() => {
+      void loadSessionSttProviders()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadPreferences, loadSessionSttProviders])
+
+  useEffect(() => {
+    if (auth.state !== 'signed-in') {
+      settingsAutoLoadRef.current = false
+      return
+    }
+    if (activeTab !== 'settings' || settingsAutoLoadRef.current) return
+    settingsAutoLoadRef.current = true
+    return reloadSettingsData()
+  }, [activeTab, auth.state, reloadSettingsData])
 
   async function saveProvider(provider: string) {
     setTtsProvider(provider)
@@ -1516,41 +1558,28 @@ function AppInner() {
   }, [setLocale])
 
   useEffect(() => {
+    if (auth.state !== 'signed-in') return
     void api.getPreferences()
       .then(applyServerPreferences)
       .catch(() => undefined)
-  }, [api, applyServerPreferences])
+  }, [api, applyServerPreferences, auth.state])
 
   useEffect(() => {
-    let cancelled = false
-    void api.listASRProviders()
-      .then(result => {
-        if (cancelled) return
-        const providers: SessionSttProvider[] = ['native']
-        if (result.providers.some(provider => provider.key === 'xunfei' && provider.enabled)) {
-          providers.push('xunfei')
-        }
-        setAvailableSessionSttProviders(providers)
-        if (!providers.includes(sessionSttProvider)) {
-          setSessionSttProviderState('native')
-          void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
-        }
-      })
-      .catch(error => {
-        const requestError = formatApiRequestError(error, {
-          context: 'mobile_asr_providers_load',
-          presentation: 'silent',
-        })
-        logVoiceMetric('mobile_silent_request_error', requestError.logData)
-      })
-    return () => { cancelled = true }
-  }, [api, logVoiceMetric, sessionSttProvider])
+    const timer = setTimeout(() => {
+      void loadSessionSttProviders()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadSessionSttProviders])
 
   // 登录后自动拉取偏好
   useEffect(() => {
     if (auth.state !== 'signed-in') return
     void pullMobilePreferences(apiBaseUrl.trim(), auth.getAuthHeaders, handleUnauthorized).then(applyPrefs)
-  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs, handleUnauthorized])
+    const timer = setTimeout(() => {
+      void loadSessionSttProviders()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [auth.state, apiBaseUrl, auth.getAuthHeaders, applyPrefs, handleUnauthorized, loadSessionSttProviders])
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -1680,7 +1709,7 @@ function AppInner() {
             onSetSessionSttProvider={setSessionSttProvider}
             onAdjustSpeed={adjustSpeed}
             onSavePracticePreferences={() => void savePracticePreferences()}
-            onLoadPreferences={() => void loadPreferences()}
+            onLoadPreferences={() => { reloadSettingsData() }}
             onSelectVoiceProfile={profile => void selectVoiceProfile(profile)}
             onSetEmail={setEmail}
             onSetPassword={setPassword}
