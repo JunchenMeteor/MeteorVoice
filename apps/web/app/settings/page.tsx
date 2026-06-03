@@ -136,6 +136,10 @@ export default function SettingsPage() {
     void loadInitialPreferences()
   }, [applyPreferences])
 
+  useEffect(() => () => {
+    hideAppFeedback(settingsFeedbackSource)
+  }, [])
+
   async function savePreferences(body: Record<string, unknown>, context: string) {
     if (settingsLoading) return
     setSettingsLoading(true)

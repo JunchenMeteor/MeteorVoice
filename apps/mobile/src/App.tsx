@@ -452,6 +452,7 @@ function AppInner() {
   const historyAutoLoadRef = useRef(false)
   const settingsAutoLoadRef = useRef(false)
   const settingsRequestRef = useRef(0)
+  const settingsLoadingRef = useRef(false)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -471,6 +472,10 @@ function AppInner() {
     headers: getAuthHeaders,
     onUnauthorized: handleUnauthorized,
   }), [apiBaseUrl, getAuthHeaders, handleUnauthorized])
+  const setSettingsLoadingFlag = useCallback((loading: boolean) => {
+    settingsLoadingRef.current = loading
+    setSettingsLoading(loading)
+  }, [])
   const applyThemeLocal = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
     setThemeLocal(k)
   }, [setThemeLocal])
@@ -1365,7 +1370,7 @@ function AppInner() {
   useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
 
   useEffect(() => {
-    if (settingsLoading) {
+    if (settingsLoading && activeTab === 'settings') {
       appFeedback.show({
         message: tr('settings.syncing'),
         variant: 'hud',
@@ -1374,16 +1379,16 @@ function AppInner() {
       return
     }
     appFeedback.hide('settings')
-  }, [settingsLoading, tr])
+  }, [activeTab, settingsLoading, tr])
 
   const loadPreferences = useCallback(async (options: { force?: boolean; successMessage?: string } = {}) => {
-    if (settingsLoading && !options.force) return
+    if (settingsLoadingRef.current && !options.force) return
     if (auth.state !== 'signed-in') {
       setSettingsMessage(tr('settings.auth_required'))
       return
     }
     const requestId = ++settingsRequestRef.current
-    setSettingsLoading(true)
+    setSettingsLoadingFlag(true)
     setSettingsMessage(null)
     try {
       const preferences = await api.getPreferences()
@@ -1418,10 +1423,10 @@ function AppInner() {
       setSettingsMessage(requestError.displayMessage)
     } finally {
       if (requestId === settingsRequestRef.current) {
-        setSettingsLoading(false)
+        setSettingsLoadingFlag(false)
       }
     }
-  }, [api, applyThemeLocal, auth.state, setLocale, settingsLoading, tr])
+  }, [api, applyThemeLocal, auth.state, setLocale, setSettingsLoadingFlag, tr])
 
   const reloadSettingsData = useCallback(() => {
     void loadPreferences()
@@ -1446,11 +1451,11 @@ function AppInner() {
     setTtsProvider(provider)
     setAudioUrl(null)
     playbackEndedAtMsRef.current = null
-    setSettingsLoading(true)
+    setSettingsLoadingFlag(true)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') {
       setSettingsMessage(tr('session.status.preferences_saved'))
-      setSettingsLoading(false)
+      setSettingsLoadingFlag(false)
       return
     }
 
@@ -1468,17 +1473,17 @@ function AppInner() {
       })
       setSettingsMessage(requestError.displayMessage)
     } finally {
-      setSettingsLoading(false)
+      setSettingsLoadingFlag(false)
     }
   }
 
   async function savePracticePreferences() {
     settingsRequestRef.current += 1
-    setSettingsLoading(true)
+    setSettingsLoadingFlag(true)
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') {
       setSettingsMessage(tr('session.status.practice_defaults_saved'))
-      setSettingsLoading(false)
+      setSettingsLoadingFlag(false)
       return
     }
 
@@ -1496,7 +1501,7 @@ function AppInner() {
       })
       setSettingsMessage(requestError.displayMessage)
     } finally {
-      setSettingsLoading(false)
+      setSettingsLoadingFlag(false)
     }
   }
 
