@@ -37,14 +37,44 @@ export type DisplayableErrorFeedback = {
 }
 
 type FeedbackListener = (feedback: AppFeedbackState | null) => void
+type FeedbackEntry = AppFeedbackState & {
+  source: string
+  order: number
+}
 
 let appFeedbackState: AppFeedbackState | null = null
+let feedbackOrder = 0
+const feedbackBySource = new Map<string, FeedbackEntry>()
 const feedbackListeners = new Set<FeedbackListener>()
+const defaultFeedbackSource = 'app'
 
 function emitAppFeedback(next: AppFeedbackState | null) {
   if (isSameFeedback(appFeedbackState, next)) return
   appFeedbackState = next
   feedbackListeners.forEach(listener => listener(appFeedbackState))
+}
+
+function publishActiveFeedback() {
+  const next = Array.from(feedbackBySource.values())
+    .sort((a, b) => a.order - b.order)
+    .at(-1) ?? null
+
+  if (!next) {
+    emitAppFeedback(null)
+    return
+  }
+
+  emitAppFeedback({
+    active: next.active,
+    message: next.message,
+    variant: next.variant,
+    source: next.source,
+    title: next.title,
+    severity: next.severity,
+    blocksInteraction: next.blocksInteraction,
+    dismissible: next.dismissible,
+    autoDismissMs: next.autoDismissMs,
+  })
 }
 
 function isSameFeedback(current: AppFeedbackState | null, next: AppFeedbackState | null) {
@@ -75,15 +105,28 @@ export const appFeedback = {
   },
 
   show(feedback: AppFeedbackInput) {
-    emitAppFeedback({
+    const source = feedback.source ?? defaultFeedbackSource
+    const next: FeedbackEntry = {
       ...feedback,
+      source,
       active: feedback.active ?? true,
-    })
+      order: feedbackOrder + 1,
+    }
+    const existing = feedbackBySource.get(source)
+    if (existing && isSameFeedback(existing, next)) return
+    feedbackOrder = next.order
+    feedbackBySource.set(source, next)
+    publishActiveFeedback()
   },
 
   hide(source?: string) {
-    if (source && appFeedbackState?.source !== source) return
-    emitAppFeedback(null)
+    if (!source) {
+      feedbackBySource.clear()
+      emitAppFeedback(null)
+      return
+    }
+    feedbackBySource.delete(source)
+    publishActiveFeedback()
   },
 }
 
