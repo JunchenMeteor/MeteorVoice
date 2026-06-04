@@ -395,6 +395,8 @@ function AppInner() {
   const [selectedHistoryTurns, setSelectedHistoryTurns] = useState<SessionTurnDto[]>([])
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const [authSubmitting, setAuthSubmitting] = useState(false)
+  const [scenarioSwitching, setScenarioSwitching] = useState(false)
   const [activeFeedback, setActiveFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
@@ -456,6 +458,8 @@ function AppInner() {
   const settingsAutoLoadRef = useRef(false)
   const settingsRequestRef = useRef(0)
   const settingsLoadingRef = useRef(false)
+  const activeTabRef = useRef(activeTab)
+  const listeningTeardownRef = useRef<Promise<void> | null>(null)
 
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
   const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
@@ -492,6 +496,10 @@ function AppInner() {
   useEffect(() => {
     sessionSttProviderRef.current = sessionSttProvider
   }, [sessionSttProvider])
+
+  useEffect(() => {
+    activeTabRef.current = activeTab
+  }, [activeTab])
 
   const listeningStartupStatus = useCallback((provider = sessionSttProviderRef.current) => (
     provider === 'xunfei'
@@ -536,8 +544,72 @@ function AppInner() {
     )
     const entry = { ts: Date.now(), stage, data: sanitizedData }
     console.info('[voice-metrics]', JSON.stringify(entry))
-    setVoiceMetrics(previous => [...previous.slice(-79), entry])
+    setVoiceMetrics(previous => [...previous.slice(-239), entry])
   }, [])
+
+  const logUserAction = useCallback((action: string, data: Record<string, unknown> = {}) => {
+    logVoiceMetric('user_action', {
+      action,
+      activeTab: activeTabRef.current,
+      scenario: selectedScenarioKey,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+      sttProvider: sessionSttProviderRef.current,
+      pendingTeardown: Boolean(listeningTeardownRef.current),
+      ...data,
+    })
+  }, [busy, logVoiceMetric, selectedScenarioKey])
+
+  const runListeningTeardown = useCallback((reason: string, action: () => void | Promise<void>) => {
+    const startedAt = Date.now()
+    logVoiceMetric('listening_teardown_start', {
+      reason,
+      provider: sessionSttProviderRef.current,
+      activeTab: activeTabRef.current,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+    })
+    const task = Promise.resolve()
+      .then(action)
+      .catch(error => {
+        logVoiceMetric('listening_teardown_error', {
+          reason,
+          message: error instanceof Error ? error.message : 'Listening teardown failed',
+        })
+      })
+      .finally(() => {
+        if (listeningTeardownRef.current === task) {
+          listeningTeardownRef.current = null
+        }
+        logVoiceMetric('listening_teardown_done', {
+          reason,
+          elapsedMs: Date.now() - startedAt,
+        })
+      })
+    listeningTeardownRef.current = task
+    return task
+  }, [logVoiceMetric])
+
+  const waitForListeningTeardown = useCallback(async (context: string) => {
+    const pending = listeningTeardownRef.current
+    if (!pending) return
+    const startedAt = Date.now()
+    logVoiceMetric('listening_teardown_wait', { context })
+    await pending
+    logVoiceMetric('listening_teardown_wait_done', {
+      context,
+      elapsedMs: Date.now() - startedAt,
+    })
+  }, [logVoiceMetric])
+
+  const cancelListeningForReason = useCallback((reason: string) => (
+    runListeningTeardown(reason, async () => {
+      await speechCancelListeningRef.current()
+    })
+  ), [runListeningTeardown])
 
   const voiceMetricsText = useMemo(() => {
     return voiceMetrics
@@ -631,6 +703,11 @@ function AppInner() {
   }
 
   async function startSession() {
+    logUserAction('session_start_tap', { scenario: scenario.key })
+    if (scenarioSwitching) {
+      logVoiceMetric('session_start_blocked', { reason: 'scenario_switching' })
+      return
+    }
     if (auth.state !== 'signed-in') {
       setActiveTab('settings')
       setStatus('login.signin')
@@ -638,6 +715,13 @@ function AppInner() {
     }
 
     setStatus('session.status.preparing_listening')
+    logVoiceMetric('session_start_requested', {
+      scenario: scenario.key,
+      activeTab: activeTabRef.current,
+      pendingTeardown: Boolean(listeningTeardownRef.current),
+    })
+    await waitForListeningTeardown('session_start')
+    await cancelListeningForReason('session_start_reset')
     const listeningProvider = await ensureSessionSttProviderForStart()
     logVoiceMetric('session_start', {
       scenario: scenario.key,
@@ -667,6 +751,11 @@ function AppInner() {
     setSummary(null)
     setIsSessionActive(true)
     setStatus(listeningStartupStatus(listeningProvider))
+    logVoiceMetric('session_listening_start_requested', {
+      sttProvider: listeningProvider,
+      sessionId: nextSessionId,
+      canListenOnRoute: canListenOnRouteRef.current,
+    })
     void startListeningWithProviderRef.current(listeningProvider, 'en-US')
   }
 
@@ -685,9 +774,9 @@ function AppInner() {
     if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
       playbackStartedRef.current = true
       logVoiceMetric('playback_started', { audioUrl })
-      void speechCancelListeningRef.current()
+      void cancelListeningForReason('playback_started')
     }
-  }, [audio.isPlaying, audioUrl, logVoiceMetric])
+  }, [audio.isPlaying, audioUrl, cancelListeningForReason, logVoiceMetric])
 
   useEffect(() => {
     if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
@@ -730,7 +819,7 @@ function AppInner() {
         playbackStartedRef.current = false
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
-        void speechCancelListeningRef.current()
+        void cancelListeningForReason('play_next_audio')
         setStatus('session.status.playing_reply')
         setAudioUrl(nextQueue.currentAudioUrl)
         return
@@ -751,7 +840,10 @@ function AppInner() {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening])
+  }, [
+    audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, cancelListeningForReason,
+    clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening,
+  ])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const submitStartedAt = Date.now()
@@ -783,7 +875,7 @@ function AppInner() {
     playbackEndedAtMsRef.current = null
     pendingNativeTranscriptRef.current = ''
     clearResumeListeningTimer()
-    await speechCancelListeningRef.current()
+    await cancelListeningForReason('submit_turn')
     setBusy(true)
     const turnRequestId = ++turnRequestRef.current
 
@@ -846,7 +938,7 @@ function AppInner() {
         playbackStartedRef.current = false
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
-        await speechCancelListeningRef.current()
+        await cancelListeningForReason('playback_enqueue')
         setStatus('session.status.playing_reply')
         setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
         setAudioUrl(voice.audioUrl)
@@ -887,8 +979,9 @@ function AppInner() {
       if (turnRequestRef.current === turnRequestId) setBusy(false)
     }
   }, [
-    accent.name, accent.region, api, audio.isRecording, busy, clearResumeListeningTimer, isSessionActive,
-    logVoiceMetric, scenario.description, scenario.name, scheduleResumeListening, synthesizeCoachSpeech,
+    accent.name, accent.region, api, audio.isRecording, busy, cancelListeningForReason,
+    clearResumeListeningTimer, isSessionActive, logVoiceMetric, scenario.description, scenario.name,
+    scheduleResumeListening, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -925,7 +1018,7 @@ function AppInner() {
         chars: endpointTranscript.length,
       })
       if (transcriptGate.reason === 'playback_active') {
-        void speechCancelListeningRef.current()
+        void cancelListeningForReason('transcript_gate_playback_active')
       }
       pendingNativeTranscriptRef.current = ''
       return
@@ -990,14 +1083,21 @@ function AppInner() {
     pendingNativeTranscriptRef.current = ''
     logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, listeningStartupStatus, logVoiceMetric, scenario.key, submitTurn])
+  }, [
+    apiBaseUrl, audio.isPlaying, auth.state, cancelListeningForReason, getAuthHeaders, handleUnauthorized,
+    listeningStartupStatus, logVoiceMetric, scenario.key, submitTurn,
+  ])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
     if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
       logVoiceMetric('stt_end_restart_skipped', {
+        sessionActive: sessionActiveRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        activeTab: activeTabRef.current,
         busy,
         playbackActive: playbackActiveRef.current,
         audioPlaying: audioPlayingRef.current,
+        provider: sessionSttProviderRef.current,
       })
       return
     }
@@ -1342,6 +1442,16 @@ function AppInner() {
   }, [isSessionActive])
 
   const selectTab = useCallback((tab: Tab) => {
+    logUserAction('tab_tap', { to: tab, from: activeTabRef.current })
+    logVoiceMetric('tab_change', {
+      from: activeTabRef.current,
+      to: tab,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+    })
     setActiveTab(tab)
     if (tab !== 'session') {
       canListenOnRouteRef.current = false
@@ -1349,7 +1459,7 @@ function AppInner() {
       clearResumeListeningTimer()
       endpointRequestRef.current += 1
       pendingNativeTranscriptRef.current = ''
-      void speechCancelListeningRef.current()
+      void cancelListeningForReason(`tab:${tab}`)
       if (sessionActiveRef.current) setStatus('session.paused')
       return
     }
@@ -1360,10 +1470,18 @@ function AppInner() {
       setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }
-  }, [busy, clearResumeListeningTimer, listeningStartupStatus])
+  }, [busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, logUserAction, logVoiceMetric])
 
   async function endSession() {
+    logUserAction('session_stop_tap')
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state })) return
+    logVoiceMetric('session_end_requested', {
+      sessionId: snapshot.sessionId,
+      state: snapshot.state,
+      messages: messages.length,
+      activeTab: activeTabRef.current,
+      pendingTeardown: Boolean(listeningTeardownRef.current),
+    })
 
     // 立即结束 session，不等 API
     turnRequestRef.current += 1
@@ -1379,7 +1497,7 @@ function AppInner() {
     audio.stopPlayback()
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
-    void speechCancelListeningRef.current()
+    void cancelListeningForReason('session_end')
     const endedSnapshot = endActiveSession(snapshot).snapshot
     setSnapshot(endedSnapshot)
     setIsSessionActive(false)
@@ -1408,16 +1526,49 @@ function AppInner() {
     }
   }
 
-  function selectScenario(key: string) {
-    setSelectedScenarioKey(key)
-    setMessages([])
-    setCorrectionHistory([])
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    setSummary(null)
-    setSnapshot(createInitialSnapshot('mobile-session'))
-    setIsSessionActive(false)
-    setStatus('session.status.scenario_selected')
+  async function selectScenario(key: string) {
+    if (scenarioSwitching) {
+      logUserAction('scenario_tap_ignored_switching', { to: key })
+      return
+    }
+    logUserAction('scenario_tap', { to: key, from: selectedScenarioKey })
+    logVoiceMetric('scenario_select_requested', {
+      from: selectedScenarioKey,
+      to: key,
+      activeTab: activeTabRef.current,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      pendingTeardown: Boolean(listeningTeardownRef.current),
+    })
+    setScenarioSwitching(true)
+    setStatus('session.status.switching_session')
+    try {
+      turnRequestRef.current += 1
+      endpointRequestRef.current += 1
+      sessionActiveRef.current = false
+      canListenOnRouteRef.current = false
+      playbackActiveRef.current = false
+      audioPlayingRef.current = false
+      playbackStartedRef.current = false
+      playbackEndedAtMsRef.current = null
+      clearResumeListeningTimer()
+      pendingNativeTranscriptRef.current = ''
+      audio.stopPlayback()
+      setBusy(false)
+      await cancelListeningForReason('scenario_change')
+      setSelectedScenarioKey(key)
+      setMessages([])
+      setCorrectionHistory([])
+      setAudioUrl(null)
+      setPlaybackQueue(createPlaybackQueueSnapshot())
+      setSummary(null)
+      setSnapshot(createInitialSnapshot('mobile-session'))
+      setIsSessionActive(false)
+      setStatus('session.status.scenario_selected')
+      logVoiceMetric('scenario_selected', { key })
+    } finally {
+      setScenarioSwitching(false)
+    }
   }
 
   const loadHistory = useCallback(async () => {
@@ -1589,6 +1740,30 @@ function AppInner() {
     }
     appFeedback.hide('settings')
   }, [activeTab, settingsLoading, tr])
+
+  useEffect(() => {
+    if (authSubmitting && activeTab === 'settings') {
+      appFeedback.show({
+        message: tr('login.loading'),
+        variant: 'hud',
+        source: 'auth',
+      })
+      return
+    }
+    appFeedback.hide('auth')
+  }, [activeTab, authSubmitting, tr])
+
+  useEffect(() => {
+    if (scenarioSwitching) {
+      appFeedback.show({
+        message: tr('session.status.switching_session'),
+        variant: 'hud',
+        source: 'session-transition',
+      })
+      return
+    }
+    appFeedback.hide('session-transition')
+  }, [scenarioSwitching, tr])
 
   const loadPreferences = useCallback(async (options: { force?: boolean; successMessage?: string } = {}) => {
     if (settingsLoadingRef.current && !options.force) return
@@ -1819,9 +1994,25 @@ function AppInner() {
 
   async function submitAuth() {
     const normalizedEmail = email.trim()
-    if (!normalizedEmail || !password || auth.state === 'loading') return
-    const success = await auth.submit(authMode, normalizedEmail, password)
-    if (success) setPassword('')
+    if (!normalizedEmail || !password || auth.state === 'loading' || authSubmitting) return
+    logUserAction('auth_submit_tap', {
+      mode: authMode,
+      hasEmail: Boolean(normalizedEmail),
+      passwordLength: password.length,
+    })
+    setAuthSubmitting(true)
+    try {
+      const success = await auth.submit(authMode, normalizedEmail, password)
+      logVoiceMetric('auth_submit_done', { mode: authMode, success })
+      if (success) setPassword('')
+    } catch (error) {
+      logVoiceMetric('auth_submit_error', {
+        mode: authMode,
+        message: error instanceof Error ? error.message : 'Auth submit failed',
+      })
+    } finally {
+      setAuthSubmitting(false)
+    }
   }
 
   useEffect(() => {
@@ -1843,17 +2034,29 @@ function AppInner() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active') {
+        logVoiceMetric('app_state_inactive', {
+          nextState,
+          sessionActive: sessionActiveRef.current,
+          activeTab: activeTabRef.current,
+        })
         canListenOnRouteRef.current = false
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
         endpointRequestRef.current += 1
         pendingNativeTranscriptRef.current = ''
-        void speechCancelListeningRef.current()
+        void cancelListeningForReason(`app_state:${nextState}`)
         if (sessionActiveRef.current) setStatus('session.paused')
         return
       }
 
       canListenOnRouteRef.current = true
+      logVoiceMetric('app_state_active', {
+        sessionActive: sessionActiveRef.current,
+        activeTab: activeTabRef.current,
+        busy,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })
       if (auth.state === 'signed-in') {
         void loadPreferences()
       }
@@ -1865,11 +2068,12 @@ function AppInner() {
       }
     })
     return () => subscription.remove()
-  }, [auth.state, busy, clearResumeListeningTimer, listeningStartupStatus, loadPreferences])
+  }, [auth.state, busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, loadPreferences, logVoiceMetric])
 
   function playCorrection(text: string) {
+    logUserAction('play_correction_tap', { chars: text.length })
     clearResumeListeningTimer()
-    void speechCancelListeningRef.current()
+    void cancelListeningForReason('play_correction')
     void synthesizeCoachSpeech(text).then(voice => {
       if (voice.audioUrl) {
         isCorrectionPlayingRef.current = true
@@ -1904,7 +2108,10 @@ function AppInner() {
             onStart={startSession}
             onEnd={() => void endSession()}
             onPlayCorrection={playCorrection}
-            onSubmitText={text => void submitTurn(text)}
+            onSubmitText={text => {
+              logUserAction('manual_text_submit', { chars: text.trim().length })
+              void submitTurn(text)
+            }}
           />
         )
       case 'home':
@@ -1915,6 +2122,7 @@ function AppInner() {
             scenarios={scenarios}
             selectedScenarioKey={selectedScenarioKey}
             isSessionActive={isSessionActive}
+            scenarioSwitching={scenarioSwitching}
             onSelectScenario={selectScenario}
             onGoToSession={() => selectTab('session')}
           />
@@ -1949,6 +2157,7 @@ function AppInner() {
             selectedVoiceProfileId={selectedVoiceProfileId}
             xunfeiVoices={xunfeiVoices}
             settingsLoading={settingsLoading}
+            authSubmitting={authSubmitting}
             settingsMessage={settingsMessage}
             auth={auth}
             email={email}
@@ -1960,29 +2169,70 @@ function AppInner() {
             appVersion={appVersion}
             voiceMetricsText={voiceMetricsText}
             asrEvaluationText={asrEvaluationText}
-            onSetLocale={l => void saveLocalePreference(l as Locale)}
-            onSetTheme={setTheme}
-            onSaveProvider={p => void saveProvider(p)}
-            onSetSessionSttProvider={setSessionSttProvider}
-            onAdjustSpeed={adjustSpeed}
-            onSavePracticePreferences={() => void savePracticePreferences()}
-            onLoadPreferences={() => { reloadSettingsData() }}
-            onSelectVoiceProfile={profile => void selectVoiceProfile(profile)}
+            onSetLocale={localeValue => {
+              logUserAction('settings_locale_tap', { locale: localeValue })
+              void saveLocalePreference(localeValue as Locale)
+            }}
+            onSetTheme={key => {
+              logUserAction('settings_theme_tap', { theme: key })
+              setTheme(key)
+            }}
+            onSaveProvider={provider => {
+              logUserAction('settings_tts_provider_tap', { provider })
+              void saveProvider(provider)
+            }}
+            onSetSessionSttProvider={provider => {
+              logUserAction('settings_stt_provider_tap', { provider })
+              setSessionSttProvider(provider)
+            }}
+            onAdjustSpeed={delta => {
+              logUserAction('settings_tts_speed_tap', { delta })
+              adjustSpeed(delta)
+            }}
+            onSavePracticePreferences={() => {
+              logUserAction('settings_save_preferences_tap')
+              void savePracticePreferences()
+            }}
+            onLoadPreferences={() => {
+              logUserAction('settings_reload_tap')
+              reloadSettingsData()
+            }}
+            onSelectVoiceProfile={profile => {
+              logUserAction('settings_voice_profile_tap', { profileId: profile.id, provider: profile.provider })
+              void selectVoiceProfile(profile)
+            }}
             onSetEmail={setEmail}
             onSetPassword={setPassword}
-            onSetAuthMode={setAuthMode}
+            onSetAuthMode={mode => {
+              logUserAction('auth_mode_tap', { mode })
+              setAuthMode(mode)
+            }}
             onSubmitAuth={() => void submitAuth()}
-            onSignOut={() => void auth.signOut()}
-            onSetApiBaseUrl={updateApiBaseUrl}
-            onResetApiBaseUrl={resetApiBaseUrl}
-            onClearVoiceMetrics={() => setVoiceMetrics([])}
+            onSignOut={() => {
+              logUserAction('auth_sign_out_tap')
+              void auth.signOut()
+            }}
+            onSetApiBaseUrl={value => {
+              logUserAction('settings_api_base_url_edit', { hasValue: Boolean(value.trim()) })
+              updateApiBaseUrl(value)
+            }}
+            onResetApiBaseUrl={() => {
+              logUserAction('settings_api_base_url_reset_tap')
+              resetApiBaseUrl()
+            }}
+            onClearVoiceMetrics={() => {
+              logUserAction('diagnostics_clear_tap')
+              setVoiceMetrics([])
+            }}
             onShareVoiceMetrics={() => {
+              logUserAction('diagnostics_share_tap', { entries: voiceMetrics.length })
               void Share.share({
                 title: 'MeteorVoice voice diagnostics',
                 message: voiceMetricsText || 'No voice metrics yet.',
               })
             }}
             onShareASREvaluation={() => {
+              logUserAction('diagnostics_asr_share_tap', { entries: voiceMetrics.length })
               void Share.share({
                 title: 'MeteorVoice ASR P4 evaluation',
                 message: asrEvaluationText,
