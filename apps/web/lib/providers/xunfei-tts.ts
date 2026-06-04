@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import WebSocket from 'ws'
 import type { TTSProvider, TTSResult } from './types'
-import { resolveXunfeiVoiceForAccent } from './xunfei-voices'
+import { resolveXunfeiVoiceForText } from './xunfei-voices'
 
 const host = 'tts-api.xfyun.cn'
 const path = '/v2/tts'
@@ -46,7 +46,7 @@ export function createXunfeiTTS(): TTSProvider {
             business: {
               aue: 'lame',
               sfl: 1,
-              vcn: resolveXunfeiVoiceForAccent(options?.accent, process.env, Date.now(), options?.voiceId),
+              vcn: resolveXunfeiVoiceForText(text, options?.accent, process.env, Date.now(), options?.voiceId),
               speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
               volume: 50,
               pitch: 50,
