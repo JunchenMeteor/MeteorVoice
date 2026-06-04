@@ -438,6 +438,7 @@ function AppInner() {
     stateSubscription: { remove: () => void } | null
     finalizeTimer: ReturnType<typeof setTimeout> | null
     hardTimer: ReturnType<typeof setTimeout> | null
+    noFrameTimer: ReturnType<typeof setTimeout> | null
     settled: boolean
   } | null>(null)
   const endpointRequestRef = useRef(0)
@@ -1010,6 +1011,7 @@ function AppInner() {
     current.settled = true
     if (current.finalizeTimer) clearTimeout(current.finalizeTimer)
     if (current.hardTimer) clearTimeout(current.hardTimer)
+    if (current.noFrameTimer) clearTimeout(current.noFrameTimer)
     current.frameSubscription?.remove()
     current.stateSubscription?.remove()
     if (current.socket && current.socket.readyState === WebSocket.OPEN) {
@@ -1037,6 +1039,7 @@ function AppInner() {
     let stateSubscription: { remove: () => void } | null = null
     let finalizeTimer: ReturnType<typeof setTimeout> | null = null
     let hardTimer: ReturnType<typeof setTimeout> | null = null
+    let noFrameTimer: ReturnType<typeof setTimeout> | null = null
     let settled = false
     let firstFrame = true
     let finalFrameSent = false
@@ -1055,8 +1058,16 @@ function AppInner() {
         stateSubscription,
         finalizeTimer,
         hardTimer,
+        noFrameTimer,
         settled,
       }
+    }
+
+    const clearNoFrameTimer = () => {
+      if (!noFrameTimer) return
+      clearTimeout(noFrameTimer)
+      noFrameTimer = null
+      updateCurrent()
     }
 
     const settle = (reason: string, submitted: boolean) => {
@@ -1065,6 +1076,7 @@ function AppInner() {
       updateCurrent()
       if (finalizeTimer) clearTimeout(finalizeTimer)
       if (hardTimer) clearTimeout(hardTimer)
+      if (noFrameTimer) clearTimeout(noFrameTimer)
       frameSubscription?.remove()
       void stopPcmCapture(`session_${reason}`).catch(() => undefined).finally(() => stateSubscription?.remove())
       if (socket && socket.readyState === WebSocket.OPEN) socket.close()
@@ -1139,6 +1151,7 @@ function AppInner() {
         if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
         frameCount += 1
         totalBytes += event.byteCount
+        if (frameCount === 1) clearNoFrameTimer()
         sendAudioFrame(firstFrame ? 0 : 1, event.audioBase64, session)
         firstFrame = false
         if (frameCount === 1 || frameCount % 50 === 0) {
@@ -1165,6 +1178,18 @@ function AppInner() {
             frameSizeBytes: status.frameSizeBytes,
           })
           setStatus('session.status.listening')
+          noFrameTimer = setTimeout(() => {
+            if (settled || frameCount > 0) return
+            logVoiceMetric('stt_pcm_no_frame', {
+              provider: 'xunfei',
+              elapsedMs: Date.now() - streamStartedAt,
+              pcmStatusFrameCount: status.frameCount,
+              pcmStatusTotalBytes: status.totalBytes,
+            })
+            settle('pcm_no_frame', false)
+            handleListeningEndedWithoutTranscript()
+          }, 1800)
+          updateCurrent()
         }).catch(error => {
           logVoiceMetric('stt_provider_error', {
             provider: 'xunfei',
@@ -1351,6 +1376,7 @@ function AppInner() {
     clearResumeListeningTimer()
     endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
+    audio.stopPlayback()
     setAudioUrl(null)
     setPlaybackQueue(createPlaybackQueueSnapshot())
     void speechCancelListeningRef.current()
