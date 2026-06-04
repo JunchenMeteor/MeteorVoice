@@ -199,7 +199,12 @@ public class VoicePcmCaptureModule: Module {
       queue: nil
     ) { [weak self] notification in
       let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+      let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue ?? 0)
       self?.captureQueue.async {
+        if reason == .categoryChange {
+          self?.sendState("route_change_ignored", message: "route_change:\(reasonValue ?? 0)")
+          return
+        }
         self?.restartCaptureEngine(reason: "route_change:\(reasonValue ?? 0)")
       }
     }
