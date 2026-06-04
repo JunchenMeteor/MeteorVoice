@@ -14,6 +14,9 @@ public class VoicePcmCaptureModule: Module {
   private var frameSizeBytes = 1280
   private var frameDurationMs = 40
   private var sampleRate = 16000.0
+  private var routeChangeObserver: NSObjectProtocol?
+  private var interruptionObserver: NSObjectProtocol?
+  private var mediaServicesResetObserver: NSObjectProtocol?
 
   public func definition() -> ModuleDefinition {
     Name("VoicePcmCapture")
@@ -42,18 +45,10 @@ public class VoicePcmCaptureModule: Module {
     frameDurationMs = options["frameDurationMs"] as? Int ?? 40
     frameSizeBytes = Int(sampleRate * Double(frameDurationMs) / 1000.0) * 2
 
-    let session = AVAudioSession.sharedInstance()
-    try session.setCategory(
-      .playAndRecord,
-      mode: .voiceChat,
-      options: [.allowBluetoothHFP, .defaultToSpeaker]
-    )
-    try session.setActive(true)
-    try session.overrideOutputAudioPort(.speaker)
+    try configureAudioSession()
 
     let nextEngine = AVAudioEngine()
-    let inputNode = nextEngine.inputNode
-    let inputFormat = inputNode.outputFormat(forBus: 0)
+    let inputFormat = nextEngine.inputNode.outputFormat(forBus: 0)
     guard let nextTargetFormat = AVAudioFormat(
       commonFormat: .pcmFormatInt16,
       sampleRate: sampleRate,
@@ -80,28 +75,20 @@ public class VoicePcmCaptureModule: Module {
     startedAtMs = nowMs()
     targetFormat = nextTargetFormat
     converter = nextConverter
-    engine = nextEngine
     isCapturing = true
 
-    let tapBufferSize = AVAudioFrameCount(max(1024, Int(inputFormat.sampleRate * 0.04)))
-    inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: inputFormat) { [weak self] buffer, _ in
-      self?.captureQueue.async {
-        self?.handleInputBuffer(buffer)
-      }
-    }
-
     do {
-      nextEngine.prepare()
-      try nextEngine.start()
+      try installAndStartEngine(nextEngine, inputFormat: inputFormat)
     } catch {
       isCapturing = false
-      inputNode.removeTap(onBus: 0)
+      nextEngine.inputNode.removeTap(onBus: 0)
       engine = nil
       converter = nil
       targetFormat = nil
       throw error
     }
 
+    installAudioSessionObservers()
     sendState("started", message: nil)
     return currentStatus()
   }
@@ -118,10 +105,144 @@ public class VoicePcmCaptureModule: Module {
     converter = nil
     targetFormat = nil
     pendingPcm.removeAll(keepingCapacity: false)
+    removeAudioSessionObservers()
 
     let status = currentStatus(reason: reason)
     sendState("stopped", message: reason)
     return status
+  }
+
+  private func configureAudioSession() throws {
+    let session = AVAudioSession.sharedInstance()
+    try session.setCategory(
+      .playAndRecord,
+      mode: .voiceChat,
+      options: [.allowBluetoothHFP, .defaultToSpeaker]
+    )
+    try session.setActive(true)
+    try session.overrideOutputAudioPort(.speaker)
+  }
+
+  private func installAndStartEngine(_ nextEngine: AVAudioEngine, inputFormat: AVAudioFormat) throws {
+    let inputNode = nextEngine.inputNode
+    let tapBufferSize = AVAudioFrameCount(max(1024, Int(inputFormat.sampleRate * 0.04)))
+    inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: inputFormat) { [weak self] buffer, _ in
+      self?.captureQueue.async {
+        self?.handleInputBuffer(buffer)
+      }
+    }
+    nextEngine.prepare()
+    try nextEngine.start()
+    engine = nextEngine
+  }
+
+  private func restartCaptureEngine(reason: String) {
+    guard isCapturing else {
+      return
+    }
+
+    sendState("restarting", message: reason)
+    engine?.inputNode.removeTap(onBus: 0)
+    engine?.stop()
+    engine = nil
+    converter = nil
+    targetFormat = nil
+    pendingPcm.removeAll(keepingCapacity: false)
+
+    do {
+      try configureAudioSession()
+      let nextEngine = AVAudioEngine()
+      let inputFormat = nextEngine.inputNode.outputFormat(forBus: 0)
+      guard let nextTargetFormat = AVAudioFormat(
+        commonFormat: .pcmFormatInt16,
+        sampleRate: sampleRate,
+        channels: 1,
+        interleaved: false
+      ) else {
+        throw NSError(
+          domain: "VoicePcmCapture",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey: "Failed to recreate target PCM format."]
+        )
+      }
+      guard let nextConverter = AVAudioConverter(from: inputFormat, to: nextTargetFormat) else {
+        throw NSError(
+          domain: "VoicePcmCapture",
+          code: 4,
+          userInfo: [NSLocalizedDescriptionKey: "Failed to recreate PCM converter."]
+        )
+      }
+
+      targetFormat = nextTargetFormat
+      converter = nextConverter
+      try installAndStartEngine(nextEngine, inputFormat: inputFormat)
+      sendState("restarted", message: reason)
+    } catch {
+      isCapturing = false
+      engine?.inputNode.removeTap(onBus: 0)
+      engine?.stop()
+      engine = nil
+      converter = nil
+      targetFormat = nil
+      pendingPcm.removeAll(keepingCapacity: false)
+      removeAudioSessionObservers()
+      sendState("error", message: error.localizedDescription)
+    }
+  }
+
+  private func installAudioSessionObservers() {
+    removeAudioSessionObservers()
+    let center = NotificationCenter.default
+    routeChangeObserver = center.addObserver(
+      forName: AVAudioSession.routeChangeNotification,
+      object: AVAudioSession.sharedInstance(),
+      queue: nil
+    ) { [weak self] notification in
+      let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+      self?.captureQueue.async {
+        self?.restartCaptureEngine(reason: "route_change:\(reasonValue ?? 0)")
+      }
+    }
+    interruptionObserver = center.addObserver(
+      forName: AVAudioSession.interruptionNotification,
+      object: AVAudioSession.sharedInstance(),
+      queue: nil
+    ) { [weak self] notification in
+      let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+      let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+      guard type == .ended else {
+        self?.sendState("interrupted", message: "audio_session_interruption")
+        return
+      }
+      self?.captureQueue.async {
+        self?.restartCaptureEngine(reason: "interruption_ended")
+      }
+    }
+    mediaServicesResetObserver = center.addObserver(
+      forName: AVAudioSession.mediaServicesWereResetNotification,
+      object: AVAudioSession.sharedInstance(),
+      queue: nil
+    ) { [weak self] _ in
+      self?.captureQueue.async {
+        self?.restartCaptureEngine(reason: "media_services_reset")
+      }
+    }
+  }
+
+  private func removeAudioSessionObservers() {
+    let center = NotificationCenter.default
+    if let routeChangeObserver {
+      center.removeObserver(routeChangeObserver)
+      self.routeChangeObserver = nil
+    }
+    if let interruptionObserver {
+      center.removeObserver(interruptionObserver)
+      self.interruptionObserver = nil
+    }
+    if let mediaServicesResetObserver {
+      center.removeObserver(mediaServicesResetObserver)
+      self.mediaServicesResetObserver = nil
+    }
   }
 
   private func handleInputBuffer(_ buffer: AVAudioPCMBuffer) {
