@@ -12,18 +12,19 @@ interface Props {
   scenarios: Scenario[]
   selectedScenarioKey: string
   isSessionActive: boolean
-  onSelectScenario: (key: string) => void
+  scenarioSwitching: boolean
+  onSelectScenario: (key: string) => void | Promise<void>
   onGoToSession: () => void
 }
 
 export function HomeScreen({
   tr, locale, scenarios,
-  selectedScenarioKey, isSessionActive,
+  selectedScenarioKey, isSessionActive, scenarioSwitching,
   onSelectScenario, onGoToSession,
 }: Props) {
   const { C } = useTheme()
-  function handleScenario(key: string) {
-    onSelectScenario(key)
+  async function handleScenario(key: string) {
+    await onSelectScenario(key)
     onGoToSession()
   }
 
@@ -40,6 +41,7 @@ export function HomeScreen({
       borderWidth: 1, borderColor: C.border, padding: 14, gap: 6,
     },
     cardActive: { borderColor: C.accent, backgroundColor: 'rgba(49,95,72,0.2)' },
+    cardDisabled: { opacity: 0.5 },
     cardIcon: { fontSize: 22 },
     cardName: { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
     cardNameActive: { color: C.cream },
@@ -75,8 +77,9 @@ export function HomeScreen({
           const active = item.key === selectedScenarioKey
           return (
             <Pressable
-              style={[styles.card, active && styles.cardActive]}
-              onPress={() => handleScenario(item.key)}
+              style={[styles.card, active && styles.cardActive, scenarioSwitching && styles.cardDisabled]}
+              disabled={scenarioSwitching}
+              onPress={() => { void handleScenario(item.key) }}
             >
               <Text style={styles.cardIcon}>{item.icon}</Text>
               <Text style={[styles.cardName, active && styles.cardNameActive]} numberOfLines={1}>
@@ -99,4 +102,3 @@ export function HomeScreen({
     </ScrollView>
   )
 }
-

@@ -19,6 +19,7 @@ interface Props {
   selectedVoiceProfileId: string | null
   xunfeiVoices: XunfeiVoice[]
   settingsLoading: boolean
+  authSubmitting: boolean
   settingsMessage: string | null
   auth: MobileAuthState
   email: string
@@ -53,7 +54,7 @@ interface Props {
 export function SettingsScreen({
   tr, locale, ttsProvider, availableProviders, sessionSttProvider, availableSessionSttProviders, ttsSpeed,
   ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
-  settingsLoading, settingsMessage,
+  settingsLoading, authSubmitting, settingsMessage,
   auth, email, password, authMode, apiBaseUrl, apiBaseUrlSource, defaultApiBaseUrl, appVersion, voiceMetricsText, asrEvaluationText,
   onSetLocale, onSetTheme, onSaveProvider, onSetSessionSttProvider, onAdjustSpeed, onSavePracticePreferences,
   onLoadPreferences, onSelectVoiceProfile,
@@ -349,10 +350,10 @@ export function SettingsScreen({
           <Text style={styles.cardTitle}>Voice diagnostics</Text>
           <View style={styles.chipRow}>
             <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>Share</Text>
+              <Text style={styles.smallBtnTxt}>Logs</Text>
             </Pressable>
             <Pressable onPress={onShareASREvaluation} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>P4</Text>
+              <Text style={styles.smallBtnTxt}>ASR</Text>
             </Pressable>
             <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
               <Text style={styles.smallBtnTxt}>Clear</Text>
@@ -379,7 +380,12 @@ export function SettingsScreen({
           ) : (
             <View style={styles.modeSwitch}>
               {(['sign-in', 'sign-up'] as const).map(m => (
-                <Pressable key={m} onPress={() => onSetAuthMode(m)} style={[styles.modeBtn, authMode === m && styles.modeBtnActive]}>
+                <Pressable
+                  key={m}
+                  onPress={() => onSetAuthMode(m)}
+                  disabled={authSubmitting || auth.state === 'loading'}
+                  style={[styles.modeBtn, authMode === m && styles.modeBtnActive, (authSubmitting || auth.state === 'loading') && styles.disabled]}
+                >
                   <Text style={[styles.modeBtnTxt, authMode === m && styles.modeBtnTxtActive]}>
                     {m === 'sign-in' ? tr('login.signin') : tr('login.signup')}
                   </Text>
@@ -403,15 +409,21 @@ export function SettingsScreen({
             <TextInput
               style={styles.input} value={email} onChangeText={onSetEmail}
               autoCapitalize="none" autoCorrect={false} inputMode="email"
+              editable={!authSubmitting && auth.state !== 'loading'}
               placeholder={tr('login.account_placeholder')} placeholderTextColor={C.textMuted}
             />
             <TextInput
               style={styles.input} value={password} onChangeText={onSetPassword}
+              editable={!authSubmitting && auth.state !== 'loading'}
               secureTextEntry placeholder={tr('login.password')} placeholderTextColor={C.textMuted}
             />
-            <Pressable onPress={onSubmitAuth} disabled={auth.state === 'loading'} style={[styles.saveBtn, auth.state === 'loading' && styles.disabled]}>
+            <Pressable
+              onPress={onSubmitAuth}
+              disabled={authSubmitting || auth.state === 'loading'}
+              style={[styles.saveBtn, (authSubmitting || auth.state === 'loading') && styles.disabled]}
+            >
               <Text style={styles.saveBtnTxt}>
-                {auth.state === 'loading' ? tr('login.loading') : authMode === 'sign-in' ? tr('login.signin') : tr('login.signup')}
+                {authSubmitting || auth.state === 'loading' ? tr('login.loading') : authMode === 'sign-in' ? tr('login.signin') : tr('login.signup')}
               </Text>
             </Pressable>
           </View>
