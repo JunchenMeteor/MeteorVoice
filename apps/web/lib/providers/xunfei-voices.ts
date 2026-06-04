@@ -88,6 +88,19 @@ export function getDefaultXunfeiVoiceId(nowMs = Date.now()) {
     ?? null
 }
 
+export function getDefaultXunfeiVoiceIdForLanguage(language: 'en' | 'zh', nowMs = Date.now()) {
+  const activeVoices = getSelectableXunfeiVoices(nowMs).filter(voice => voice.status === 'active')
+  if (language === 'zh') {
+    return activeVoices.find(voice => voice.id === XUNFEI_TRIAL_VOICE_YEZI)?.id
+      ?? activeVoices.find(voice => voice.language === 'zh')?.id
+      ?? activeVoices[0]?.id
+      ?? null
+  }
+  return activeVoices.find(voice => voice.language === 'en')?.id
+    ?? activeVoices[0]?.id
+    ?? null
+}
+
 export function getSelectableXunfeiVoices(nowMs = Date.now()) {
   return [...xunfeiVoiceCatalog]
     .sort((left, right) =>
@@ -153,4 +166,34 @@ export function resolveXunfeiVoiceForAccent(
   }
 
   return voice
+}
+
+function containsChineseText(text: string) {
+  return /[\u3400-\u9fff]/.test(text)
+}
+
+export function resolveXunfeiVoiceForText(
+  text: string,
+  accent?: string,
+  env: XunfeiVoiceEnv = process.env,
+  nowMs = Date.now(),
+  voiceId?: string | null,
+) {
+  if (!containsChineseText(text)) {
+    return resolveXunfeiVoiceForAccent(accent, env, nowMs, voiceId)
+  }
+
+  const selectedVoice = voiceId?.trim()
+  if (selectedVoice) {
+    if (isExpiredTrialVoice(selectedVoice, nowMs)) {
+      throw new Error(`Xunfei trial voice "${selectedVoice}" expired at 2026-06-09 00:00 Asia/Shanghai. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
+    }
+    const info = xunfeiVoiceById.get(selectedVoice)
+    if (info?.language === 'zh') return selectedVoice
+  }
+
+  const chineseVoice = getDefaultXunfeiVoiceIdForLanguage('zh', nowMs)
+  if (chineseVoice) return chineseVoice
+
+  return resolveXunfeiVoiceForAccent(accent, env, nowMs, voiceId)
 }

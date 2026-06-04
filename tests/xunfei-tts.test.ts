@@ -3,9 +3,11 @@ import {
   XUNFEI_TRIAL_VOICE_CATHERINE,
   XUNFEI_TRIAL_VOICE_EXPIRES_AT,
   XUNFEI_TRIAL_VOICE_RYAN,
+  XUNFEI_TRIAL_VOICE_YEZI,
   getConfiguredXunfeiVoices,
   hasXunfeiVoiceConfig,
   resolveXunfeiVoiceForAccent,
+  resolveXunfeiVoiceForText,
 } from '@/lib/providers/xunfei-voices'
 
 const beforeTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT) - 1
@@ -67,5 +69,25 @@ describe('Xunfei TTS voice config', () => {
         status: 'active',
       },
     ])
+  })
+
+  it('routes Chinese text away from English-only voices', () => {
+    expect(resolveXunfeiVoiceForText(
+      '你好，可以继续练习这个表达。',
+      'American English',
+      {},
+      beforeTrialExpiry,
+      XUNFEI_TRIAL_VOICE_RYAN,
+    )).toBe(XUNFEI_TRIAL_VOICE_YEZI)
+  })
+
+  it('keeps selected English voices for English text', () => {
+    expect(resolveXunfeiVoiceForText(
+      'That sounds good. You can say it more naturally.',
+      'American English',
+      {},
+      beforeTrialExpiry,
+      XUNFEI_TRIAL_VOICE_RYAN,
+    )).toBe(XUNFEI_TRIAL_VOICE_RYAN)
   })
 })

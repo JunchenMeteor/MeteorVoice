@@ -190,5 +190,5 @@ export function buildMixedChineseSpokenHint(text: string, locale: 'en' | 'zh' = 
   if (!mixedChineseText) return null
   const suggestion = mixedChineseVocabulary[mixedChineseText] ?? 'say that part in English'
   if (locale === 'zh') return `“${mixedChineseText}” 可以用英语说成 “${suggestion}”。`
-  return `You can say "${suggestion}" for "${mixedChineseText}".`
+  return `You can say "${suggestion}" for that phrase.`
 }

@@ -428,6 +428,7 @@ function AppInner() {
   const snapshotRef = useRef(snapshot)
   const messagesRef = useRef(messages)
   const localeRef = useRef(locale)
+  const sessionSttProviderRef = useRef(sessionSttProvider)
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
@@ -480,6 +481,16 @@ function AppInner() {
   useEffect(() => {
     localeRef.current = locale
   }, [locale])
+
+  useEffect(() => {
+    sessionSttProviderRef.current = sessionSttProvider
+  }, [sessionSttProvider])
+
+  const listeningStartupStatus = useCallback(() => (
+    sessionSttProviderRef.current === 'xunfei'
+      ? 'session.status.preparing_listening'
+      : 'session.status.listening'
+  ), [])
   const handleUnauthorized = useCallback(() => {
     if (auth.state !== 'signed-in') return signOut(null)
     return signOut(tr('settings.auth_expired'))
@@ -540,10 +551,10 @@ function AppInner() {
         return
       }
       listeningStartMsRef.current = Date.now()
-      if (updateStatus) setStatus('session.status.listening')
+      if (updateStatus) setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }, delayMs)
-  }, [clearResumeListeningTimer, logVoiceMetric])
+  }, [clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric])
 
   useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
 
@@ -600,7 +611,7 @@ function AppInner() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
-    setStatus('session.status.listening')
+    setStatus(listeningStartupStatus())
     void speechStartListeningRef.current('en-US')
   }
 
@@ -877,7 +888,7 @@ function AppInner() {
         chars: endpointTranscript.length,
       })
       pendingNativeTranscriptRef.current = ''
-      setStatus('session.status.listening')
+      setStatus(listeningStartupStatus())
       if (!playbackActiveRef.current && !audioPlayingRef.current) {
         void speechStartListeningRef.current('en-US')
       }
@@ -914,7 +925,7 @@ function AppInner() {
 
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
-      setStatus('session.status.listening')
+      setStatus(listeningStartupStatus())
       if (!playbackActiveRef.current && !audioPlayingRef.current) {
         void speechStartListeningRef.current('en-US')
       }
@@ -924,7 +935,7 @@ function AppInner() {
     pendingNativeTranscriptRef.current = ''
     logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
     void submitTurn(endpointTranscript)
-  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, logVoiceMetric, scenario.key, submitTurn])
+  }, [apiBaseUrl, audio.isPlaying, auth.state, getAuthHeaders, handleUnauthorized, listeningStartupStatus, logVoiceMetric, scenario.key, submitTurn])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
     if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
@@ -1041,9 +1052,8 @@ function AppInner() {
         return nativeSpeechStartListeningRef.current('en-US')
       }
 
-      logVoiceMetric('stt_start', { provider: 'xunfei' })
-      listeningStartMsRef.current = streamStartedAt
-      setStatus('session.status.listening')
+      logVoiceMetric('stt_bootstrap_start', { provider: 'xunfei' })
+      setStatus('session.status.preparing_listening')
       await nativeSpeechCancelListeningRef.current()
 
       socket = new WebSocket(session.endpointUrl)
@@ -1091,6 +1101,16 @@ function AppInner() {
         void startPcmCapture({
           sampleRate: session.providerConfig?.sampleRate ?? 16000,
           frameDurationMs: session.providerConfig?.frameIntervalMs ?? 40,
+        }).then(status => {
+          listeningStartMsRef.current = Date.now()
+          logVoiceMetric('stt_start', { provider: 'xunfei' })
+          logVoiceMetric('stt_ready', {
+            provider: 'xunfei',
+            elapsedMs: Date.now() - streamStartedAt,
+            sampleRate: status.sampleRate,
+            frameSizeBytes: status.frameSizeBytes,
+          })
+          setStatus('session.status.listening')
         }).catch(error => {
           logVoiceMetric('stt_provider_error', {
             provider: 'xunfei',
@@ -1253,10 +1273,10 @@ function AppInner() {
     canListenOnRouteRef.current = true
     if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
       listeningStartMsRef.current = Date.now()
-      setStatus('session.status.listening')
+      setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }
-  }, [busy, clearResumeListeningTimer])
+  }, [busy, clearResumeListeningTimer, listeningStartupStatus])
 
   async function endSession() {
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state })) return
@@ -1749,12 +1769,12 @@ function AppInner() {
 
       if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
         listeningStartMsRef.current = Date.now()
-        setStatus('session.status.listening')
+        setStatus(listeningStartupStatus())
         void speechStartListeningRef.current('en-US')
       }
     })
     return () => subscription.remove()
-  }, [auth.state, busy, clearResumeListeningTimer, loadPreferences])
+  }, [auth.state, busy, clearResumeListeningTimer, listeningStartupStatus, loadPreferences])
 
   function playCorrection(text: string) {
     clearResumeListeningTimer()
