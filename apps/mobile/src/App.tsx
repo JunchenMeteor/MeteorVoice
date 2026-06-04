@@ -413,13 +413,6 @@ function AppInner() {
   const [apiSessionId] = useState<string | null>(null)
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
-  useEffect(() => {
-    SecureStore.getItemAsync(sessionSttProviderStorageKey).then(value => {
-      if (value === 'xunfei' || value === 'native') {
-        setSessionSttProviderState(value)
-      }
-    })
-  }, [])
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
@@ -429,6 +422,9 @@ function AppInner() {
   const messagesRef = useRef(messages)
   const localeRef = useRef(locale)
   const sessionSttProviderRef = useRef(sessionSttProvider)
+  const sessionSttProviderHydratedRef = useRef(false)
+  const sessionSttProvidersLoadedRef = useRef(false)
+  const startListeningWithProviderRef = useRef<(provider: SessionSttProvider, lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
   const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
@@ -471,6 +467,16 @@ function AppInner() {
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
   useEffect(() => {
+    SecureStore.getItemAsync(sessionSttProviderStorageKey).then(value => {
+      if (value === 'xunfei' || value === 'native') {
+        sessionSttProviderRef.current = value
+        setSessionSttProviderState(value)
+      }
+      sessionSttProviderHydratedRef.current = true
+    })
+  }, [])
+
+  useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
 
@@ -486,8 +492,8 @@ function AppInner() {
     sessionSttProviderRef.current = sessionSttProvider
   }, [sessionSttProvider])
 
-  const listeningStartupStatus = useCallback(() => (
-    sessionSttProviderRef.current === 'xunfei'
+  const listeningStartupStatus = useCallback((provider = sessionSttProviderRef.current) => (
+    provider === 'xunfei'
       ? 'session.status.preparing_listening'
       : 'session.status.listening'
   ), [])
@@ -577,19 +583,67 @@ function AppInner() {
   }, [])
 
   const setSessionSttProvider = useCallback((provider: SessionSttProvider) => {
+    sessionSttProviderRef.current = provider
     setSessionSttProviderState(provider)
     void SecureStore.setItemAsync(sessionSttProviderStorageKey, provider)
     logVoiceMetric('stt_provider_selected', { provider })
   }, [logVoiceMetric, setSessionSttProviderState])
 
-  function startSession() {
+  async function ensureSessionSttProviderForStart() {
+    let provider = sessionSttProviderRef.current
+
+    if (!sessionSttProviderHydratedRef.current) {
+      const stored = await SecureStore.getItemAsync(sessionSttProviderStorageKey)
+      if (stored === 'xunfei' || stored === 'native') {
+        provider = stored
+        sessionSttProviderRef.current = stored
+        setSessionSttProviderState(stored)
+      }
+      sessionSttProviderHydratedRef.current = true
+    }
+
+    if (auth.state === 'signed-in' && !sessionSttProvidersLoadedRef.current) {
+      try {
+        const result = await api.listASRProviders()
+        const providers: SessionSttProvider[] = ['native']
+        if (result.providers.some(item => item.key === 'xunfei' && item.enabled)) {
+          providers.push('xunfei')
+        }
+        setAvailableSessionSttProviders(providers)
+        sessionSttProvidersLoadedRef.current = true
+        if (!providers.includes(provider)) {
+          provider = 'native'
+          sessionSttProviderRef.current = 'native'
+          setSessionSttProviderState('native')
+          void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
+        }
+      } catch (error) {
+        const requestError = formatApiRequestError(error, {
+          context: 'mobile_asr_providers_load',
+          presentation: 'silent',
+        })
+        logVoiceMetric('mobile_silent_request_error', requestError.logData)
+      }
+    }
+
+    return provider
+  }
+
+  async function startSession() {
     if (auth.state !== 'signed-in') {
       setActiveTab('settings')
       setStatus('login.signin')
       return
     }
 
-    logVoiceMetric('session_start', { scenario: scenario.key, accent: accent.key, provider: ttsProvider })
+    setStatus('session.status.preparing_listening')
+    const listeningProvider = await ensureSessionSttProviderForStart()
+    logVoiceMetric('session_start', {
+      scenario: scenario.key,
+      accent: accent.key,
+      provider: ttsProvider,
+      sttProvider: listeningProvider,
+    })
     endpointRequestRef.current += 1
     clearResumeListeningTimer()
     playbackActiveRef.current = false
@@ -611,8 +665,8 @@ function AppInner() {
     setPlaybackQueue(createPlaybackQueueSnapshot())
     setSummary(null)
     setIsSessionActive(true)
-    setStatus(listeningStartupStatus())
-    void speechStartListeningRef.current('en-US')
+    setStatus(listeningStartupStatus(listeningProvider))
+    void startListeningWithProviderRef.current(listeningProvider, 'en-US')
   }
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
@@ -1248,8 +1302,13 @@ function AppInner() {
     speechCancelListeningRef.current = sessionSttProvider === 'xunfei'
       ? cancelXunfeiSessionListening
       : speech.cancelListening
+    startListeningWithProviderRef.current = (provider, lang) => (
+      provider === 'xunfei'
+        ? startXunfeiSessionListening()
+        : speech.startListening(lang)
+    )
   }, [
-    cancelXunfeiSessionListening, sessionSttProvider, speech.cancelListening, speech.startListening,
+    cancelXunfeiSessionListening, sessionSttProvider, speech, speech.cancelListening, speech.startListening,
     startXunfeiSessionListening,
   ])
 
@@ -1286,10 +1345,14 @@ function AppInner() {
     sessionActiveRef.current = false
     canListenOnRouteRef.current = false
     playbackActiveRef.current = false
+    audioPlayingRef.current = false
+    playbackStartedRef.current = false
     playbackEndedAtMsRef.current = null
     clearResumeListeningTimer()
     endpointRequestRef.current += 1
     pendingNativeTranscriptRef.current = ''
+    setAudioUrl(null)
+    setPlaybackQueue(createPlaybackQueueSnapshot())
     void speechCancelListeningRef.current()
     const endedSnapshot = endActiveSession(snapshot).snapshot
     setSnapshot(endedSnapshot)
@@ -1467,6 +1530,7 @@ function AppInner() {
   const applySessionSttProviders = useCallback((providers: SessionSttProvider[]) => {
     setAvailableSessionSttProviders(providers)
     if (!providers.includes(sessionSttProvider)) {
+      sessionSttProviderRef.current = 'native'
       setSessionSttProviderState('native')
       void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
     }
@@ -1476,6 +1540,7 @@ function AppInner() {
     try {
       const providers = await fetchSessionSttProviders()
       applySessionSttProviders(providers)
+      sessionSttProvidersLoadedRef.current = true
     } catch (error) {
       const requestError = formatApiRequestError(error, {
         context: 'mobile_asr_providers_load',
