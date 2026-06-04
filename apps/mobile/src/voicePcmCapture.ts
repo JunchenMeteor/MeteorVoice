@@ -32,7 +32,7 @@ export type PcmCaptureFrameEvent = {
 }
 
 export type PcmCaptureStateEvent = PcmCaptureStatus & {
-  state: 'started' | 'stopped' | 'error' | 'restarting' | 'restarted' | 'interrupted'
+  state: 'started' | 'stopped' | 'error' | 'restarting' | 'restarted' | 'interrupted' | 'route_change_ignored'
   message?: string
 }
 

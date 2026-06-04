@@ -449,6 +449,7 @@ function AppInner() {
   const canListenOnRouteRef = useRef(true)
   const playbackActiveRef = useRef(false)
   const audioPlayingRef = useRef(false)
+  const busyRef = useRef(false)
   const playbackStartedRef = useRef(false)
   const playbackEndedAtMsRef = useRef<number | null>(null)
   const pendingNativeTranscriptRef = useRef('')
@@ -500,6 +501,10 @@ function AppInner() {
   useEffect(() => {
     activeTabRef.current = activeTab
   }, [activeTab])
+
+  useEffect(() => {
+    busyRef.current = busy
+  }, [busy])
 
   const listeningStartupStatus = useCallback((provider = sessionSttProviderRef.current) => (
     provider === 'xunfei'
@@ -1123,6 +1128,29 @@ function AppInner() {
   }, [logVoiceMetric])
 
   const startXunfeiSessionListening = useCallback(async () => {
+    const canUseXunfeiRoute = (context: string) => {
+      const allowed = sessionActiveRef.current &&
+        canListenOnRouteRef.current &&
+        !busyRef.current &&
+        !playbackActiveRef.current &&
+        !audioPlayingRef.current &&
+        activeTabRef.current === 'session'
+      if (!allowed) {
+        logVoiceMetric('stt_start_aborted', {
+          provider: 'xunfei',
+          context,
+          sessionActive: sessionActiveRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          activeTab: activeTabRef.current,
+          busy: busyRef.current,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+        })
+      }
+      return allowed
+    }
+
+    if (!canUseXunfeiRoute('entry')) return false
     if (xunfeiSessionSttRef.current && !xunfeiSessionSttRef.current.settled) return true
     if (!availableSessionSttProviders.includes('xunfei') || !isPcmCaptureAvailable()) {
       logVoiceMetric('stt_provider_fallback', {
@@ -1202,6 +1230,7 @@ function AppInner() {
 
     try {
       const authReady = await auth.refreshSession()
+      if (!canUseXunfeiRoute('after_auth_refresh')) return false
       if (!authReady) return nativeSpeechStartListeningRef.current('en-US')
 
       const session = await api.createASRSession({
@@ -1213,6 +1242,10 @@ function AppInner() {
         endpointSilenceMs: 900,
         clientTraceId: `mobile-session-${Date.now()}`,
       })
+      if (!canUseXunfeiRoute('after_session_create')) {
+        logVoiceMetric('stt_start_stale_after_bootstrap', { provider: 'xunfei' })
+        return false
+      }
       if (session.provider !== 'xunfei' || session.status !== 'created' || session.transport !== 'websocket' || !session.endpointUrl) {
         logVoiceMetric('stt_provider_fallback', { requested: 'xunfei', reason: 'session_not_ready' })
         return nativeSpeechStartListeningRef.current('en-US')
@@ -1226,6 +1259,10 @@ function AppInner() {
       updateCurrent()
 
       const finishAudio = () => {
+        if (!canUseXunfeiRoute('finish_audio')) {
+          settle('route_inactive', false)
+          return
+        }
         if (finalFrameSent) return
         sendAudioFrame(2, '', session)
         void stopPcmCapture('session_endpoint').catch(() => undefined)
@@ -1248,6 +1285,10 @@ function AppInner() {
       })
 
       frameSubscription = addPcmFrameListener((event: PcmCaptureFrameEvent) => {
+        if (!canUseXunfeiRoute('pcm_frame')) {
+          settle('route_inactive', false)
+          return
+        }
         if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
         frameCount += 1
         totalBytes += event.byteCount
@@ -1265,10 +1306,19 @@ function AppInner() {
       })
 
       socket.onopen = () => {
+        if (!canUseXunfeiRoute('socket_open')) {
+          settle('route_inactive', false)
+          return
+        }
         void startPcmCapture({
           sampleRate: session.providerConfig?.sampleRate ?? 16000,
           frameDurationMs: session.providerConfig?.frameIntervalMs ?? 40,
         }).then(status => {
+          if (!canUseXunfeiRoute('after_pcm_start')) {
+            void stopPcmCapture('session_route_inactive').catch(() => undefined)
+            settle('route_inactive', false)
+            return
+          }
           listeningStartMsRef.current = Date.now()
           logVoiceMetric('stt_start', { provider: 'xunfei' })
           logVoiceMetric('stt_ready', {
@@ -1303,6 +1353,10 @@ function AppInner() {
       }
 
       socket.onmessage = event => {
+        if (!canUseXunfeiRoute('socket_message')) {
+          settle('route_inactive', false)
+          return
+        }
         const payload = parseJsonObject(event.data)
         const header = getObject(payload?.header)
         const code = typeof header?.code === 'number'
