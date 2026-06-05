@@ -126,7 +126,21 @@ export const accentProfiles: AccentProfile[] = [
 ]
 
 export function pickRandomAccent(): AccentProfile {
-  return accentProfiles[Math.floor(Math.random() * accentProfiles.length)]
+  return accentProfiles[pickSecureRandomIndex(accentProfiles.length)] ?? accentProfiles[0]
+}
+
+function pickSecureRandomIndex(length: number) {
+  if (length <= 1) return 0
+  if (typeof globalThis.crypto?.getRandomValues !== 'function') return 0
+
+  const maxUnbiasedValue = Math.floor(0x100000000 / length) * length
+  const value = new Uint32Array(1)
+
+  do {
+    globalThis.crypto.getRandomValues(value)
+  } while (value[0] >= maxUnbiasedValue)
+
+  return value[0] % length
 }
 
 export function getScenarioLabel(scenario: Scenario, locale: Locale) {
