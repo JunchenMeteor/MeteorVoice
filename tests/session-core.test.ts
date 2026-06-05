@@ -475,5 +475,9 @@ describe('session-core turn guard helpers', () => {
     ])
     expect(splitSpokenText('你好。Say it again? Great!', { maxCharsPerSegment: 8 })).toEqual(['你好。', 'Say it again?', 'Great!'])
     expect(splitSpokenText('First. Second. Third.', { maxCharsPerSegment: 7, maxSegments: 2 })).toEqual(['First.', 'Second. Third.'])
+    expect(splitSpokenText('He said, "Let us start."   Then repeat it (slowly).', { maxCharsPerSegment: 24 })).toEqual([
+      'He said, "Let us start."',
+      'Then repeat it (slowly).',
+    ])
   })
 })
