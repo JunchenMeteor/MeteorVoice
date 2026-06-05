@@ -52,8 +52,9 @@ export type VoiceProfile = {
   status: VoiceProfileStatus
 }
 
-const sentenceBoundaryPattern = /[^.!?。！？]+[.!?。！？]+(?:["'”’)]*)?|[^.!?。！？]+$/g
 const whitespacePattern = /\s+/g
+const sentenceTerminators = new Set(['.', '!', '?', '。', '！', '？'])
+const closingPunctuation = new Set(['"', "'", '”', '’', ')'])
 
 export interface SpokenSegmentOptions {
   maxSegments?: number
@@ -66,10 +67,7 @@ export function splitSpokenText(text: string, options: SpokenSegmentOptions = {}
 
   const maxSegments = options.maxSegments ?? 4
   const maxCharsPerSegment = options.maxCharsPerSegment ?? 60
-  const rawSentences = normalized
-    .match(sentenceBoundaryPattern)
-    ?.map(segment => segment.trim())
-    .filter(Boolean) ?? [normalized]
+  const rawSentences = splitSentences(normalized)
 
   const segments: string[] = []
 
@@ -91,6 +89,32 @@ export function splitSpokenText(text: string, options: SpokenSegmentOptions = {}
   }
 
   return segments
+}
+
+function splitSentences(text: string): string[] {
+  const sentences: string[] = []
+  let start = 0
+  let index = 0
+
+  while (index < text.length) {
+    if (!sentenceTerminators.has(text[index])) {
+      index += 1
+      continue
+    }
+
+    index += 1
+    while (index < text.length && closingPunctuation.has(text[index])) {
+      index += 1
+    }
+
+    const sentence = text.slice(start, index).trim()
+    if (sentence) sentences.push(sentence)
+    start = index
+  }
+
+  const trailing = text.slice(start).trim()
+  if (trailing) sentences.push(trailing)
+  return sentences.length ? sentences : [text]
 }
 
 export const ttsProviderCapabilities = {

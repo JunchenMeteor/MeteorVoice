@@ -118,7 +118,7 @@ function createClientSessionId() {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
   }
 
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  throw new Error('Web Crypto is required to create a voice session id')
 }
 
 function createDefaultPersistedState(): PersistedVoiceSessionState {

@@ -1,3 +1,4 @@
+import nodeCrypto from 'crypto'
 import {
   asrProviderKeys,
   createASRProviderDescriptor,
@@ -95,8 +96,8 @@ function requiredEnvNames(provider: ASRProviderKey) {
 }
 
 function createASRSessionId(provider: ASRProviderKey) {
-  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  return `asr_${provider}_${random}`
+  const randomUUID = typeof globalThis.crypto?.randomUUID === 'function'
+    ? () => globalThis.crypto.randomUUID()
+    : () => nodeCrypto.randomUUID()
+  return `asr_${provider}_${randomUUID()}`
 }
