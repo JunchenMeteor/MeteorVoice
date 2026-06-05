@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   accentProfiles,
   findAccentByKeyOrName,
@@ -8,8 +8,15 @@ import {
   getDifficultyLabel,
   getScenarioDescription,
   getScenarioLabel,
+  pickRandomAccent,
   scenarios,
 } from '@/lib/scenarios'
+
+const originalCrypto = globalThis.crypto
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('localized scenario content', () => {
   it('returns localized scenario labels and descriptions', () => {
@@ -45,5 +52,18 @@ describe('localized accent content', () => {
     expect(findAccentByKeyOrName('british')?.key).toBe('british')
     expect(findAccentByKeyOrName('英式英语')?.key).toBe('british')
     expect(findAccentByKeyOrName('British English')?.key).toBe('british')
+  })
+
+  it('uses Web Crypto when picking a random accent', () => {
+    vi.stubGlobal('crypto', {
+      ...originalCrypto,
+      getRandomValues: vi.fn((array: Uint32Array) => {
+        array[0] = 2
+        return array
+      }),
+    })
+
+    expect(pickRandomAccent()).toBe(accentProfiles[2])
+    expect(globalThis.crypto.getRandomValues).toHaveBeenCalled()
   })
 })
