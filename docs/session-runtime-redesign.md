@@ -214,6 +214,7 @@ if callback.generation !== runtime.generation:
 - Update route presence synchronously before triggering side effects.
 - Stop using stale `activeTab` as the hard gate for STT.
 - Keep active session alive across tab changes.
+- Implementation: `apps/mobile/src/sessionRuntime.ts` owns `SessionRoutePresence`, `routePresenceForTab`, and listening selectors. `App.tsx` updates route presence before side effects.
 
 ### P2 - STT Runtime Queue
 
@@ -221,18 +222,21 @@ if callback.generation !== runtime.generation:
 - Add `streamId` and `generation` to Xunfei stream state.
 - Add bounded stop settlement and restart debounce.
 - Ignore stale socket/PCM callbacks.
+- Implementation: `XunfeiSessionSttState`, `enqueueRuntimeOperation`, stopped signals, stream guards, restart debounce, and prewarm lifecycle are in runtime modules and consumed by `App.tsx`.
 
 ### P3 - Request And Playback Closure
 
 - Add `submit_turn_done`, `submit_turn_error`, `submit_turn_timeout`, and stale/cancel logs.
 - Ensure chat, semantic endpoint, TTS, and playback transitions are all bounded by timeout or cancellation.
 - Stop playback immediately on session stop.
+- Implementation: `apps/mobile/src/sessionTurnRuntime.ts` owns turn stale checks, endpoint writeback checks, and terminal error classification. Playback resume uses selectors instead of inline route/busy checks.
 
 ### P4 - Scenario Switching Contract
 
 - Same scenario while active: navigate to Practice and keep the session.
 - Different scenario while active: require user confirmation before ending old session and starting the new one.
 - New session gets a new generation and clean messages.
+- Implementation: `shouldConfirmScenarioSwitch` defines the confirmation contract. Confirmed scenario replacement increments generation, cancels STT/request/playback state, and creates a clean snapshot.
 
 ### P5 - Selector Cleanup
 
@@ -244,6 +248,7 @@ if callback.generation !== runtime.generation:
   - `isPlaying`
   - `statusText`
 - Avoid reintroducing page-level boolean combinations such as `sessionActive && activeTab === 'session' && !busy && !audioPlaying`.
+- Implementation: listening gates, route presence, playback resume, playback-tail prewarm, scenario confirmation, endpoint writeback, and turn stale checks now go through runtime selectors/helpers. Remaining direct UI state reads in `App.tsx` are glue for screen rendering and settings/history workflows.
 
 ## Acceptance Checks
 

@@ -81,98 +81,50 @@ import { HomeScreen } from './screens/HomeScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
+import {
+  STT_PREWARM_STALE_TIMEOUT_MS,
+  STT_RESTART_DEBOUNCE_MS,
+  STT_STOP_SETTLE_TIMEOUT_MS,
+  canStartListening,
+  createASREvaluationReport,
+  createStoppedSignal,
+  delay,
+  enqueueRuntimeOperation,
+  getPlaybackTailPrewarmDecision,
+  routePresenceForTab,
+  settleWithTimeout,
+  shouldConfirmScenarioSwitch,
+  shouldResumeListening,
+  withTimeout,
+  type ApiBaseUrlSource,
+  type SessionRoutePresence,
+  type SessionSttProvider,
+  type Tab,
+  type VoiceMetricEntry,
+  type XunfeiSessionSttState,
+} from './sessionRuntime'
+import {
+  createXunfeiASRFrame,
+  extractXunfeiRecognitionResult,
+  getObject,
+  parseJsonObject,
+} from './xunfeiAsrWire'
+import {
+  canApplyEndpointResult,
+  classifyRequestTerminalStage,
+  isTurnStale,
+} from './sessionTurnRuntime'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
 const apiBaseUrlStorageKey = 'api_base_url'
 const sessionSttProviderStorageKey = 'session_stt_provider'
-type Tab = 'session' | 'home' | 'history' | 'settings'
-type ApiBaseUrlSource = 'default' | 'user'
-type SessionSttProvider = 'native' | 'xunfei'
-type SessionRoutePresence = 'inSession' | 'outSession'
-type VoiceMetricEntry = {
-  ts: number
-  stage: string
-  data: Record<string, unknown>
-}
-
-type ASREvaluationRun = {
-  startedAt?: number
-  firstPartialMs?: number | null
-  finalMs?: number | null
-  chars?: number
-  source?: string
-  frameCount?: number
-  totalBytes?: number
-  error?: string
-}
-
-type XunfeiSessionSttState = {
-  socket: WebSocket | null
-  frameSubscription: { remove: () => void } | null
-  stateSubscription: { remove: () => void } | null
-  finalizeTimer: ReturnType<typeof setTimeout> | null
-  hardTimer: ReturnType<typeof setTimeout> | null
-  noFrameTimer: ReturnType<typeof setTimeout> | null
-  stoppedTimer: ReturnType<typeof setTimeout> | null
-  streamId: number
-  generation: number
-  prewarmed: boolean
-  recordingStarted: boolean
-  settled: boolean
-  stopped: Promise<void>
-  resolveStopped: () => void
-  startRecording?: (context: string) => Promise<void>
-}
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'nav.home',
   session: 'nav.practice',
   history: 'nav.history',
   settings: 'nav.settings',
-}
-
-const STT_STOP_SETTLE_TIMEOUT_MS = 800
-const STT_RESTART_DEBOUNCE_MS = 200
-const STT_PLAYBACK_PREWARM_MIN_DURATION_MS = 1800
-const STT_PLAYBACK_PREWARM_MIN_WINDOW_MS = 320
-const STT_PLAYBACK_PREWARM_MAX_WINDOW_MS = 900
-const STT_PREWARM_STALE_TIMEOUT_MS = 3500
-
-function delay(ms: number) {
-  return new Promise<void>(resolve => setTimeout(resolve, ms))
-}
-
-async function settleWithTimeout(promise: Promise<void>, timeoutMs: number) {
-  let timeout: ReturnType<typeof setTimeout> | null = null
-  try {
-    await Promise.race([
-      promise,
-      new Promise<void>(resolve => {
-        timeout = setTimeout(resolve, timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeout) clearTimeout(timeout)
-  }
-}
-
-function createStoppedSignal() {
-  let resolveStopped: () => void = () => undefined
-  const stopped = new Promise<void>(resolve => {
-    resolveStopped = resolve
-  })
-  return { stopped, resolveStopped }
-}
-
-function getPlaybackPrewarmWindowMs(durationSeconds: number | null | undefined) {
-  if (!durationSeconds || !Number.isFinite(durationSeconds)) return 0
-  const durationMs = durationSeconds * 1000
-  if (durationMs < STT_PLAYBACK_PREWARM_MIN_DURATION_MS) return 0
-  return Math.min(
-    STT_PLAYBACK_PREWARM_MAX_WINDOW_MS,
-    Math.max(STT_PLAYBACK_PREWARM_MIN_WINDOW_MS, Math.round(durationMs * 0.18)),
-  )
 }
 
 function TabIcon({ tab, color }: { tab: Tab; color: string }) {
@@ -203,211 +155,6 @@ function TabIcon({ tab, color }: { tab: Tab; color: string }) {
       </View>
     </View>
   )
-}
-
-function createASREvaluationReport(entries: VoiceMetricEntry[]) {
-  const nativeRuns: ASREvaluationRun[] = []
-  const remoteRuns: ASREvaluationRun[] = []
-  let currentNative: ASREvaluationRun | null = null
-  let currentRemote: ASREvaluationRun | null = null
-
-  for (const entry of entries) {
-    if (entry.stage === 'stt_start') {
-      currentNative = { startedAt: entry.ts }
-      nativeRuns.push(currentNative)
-    } else if (entry.stage === 'stt_first_partial' && currentNative) {
-      currentNative.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
-      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
-    } else if (entry.stage === 'stt_submit' && currentNative) {
-      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
-      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
-      currentNative.source = typeof entry.data.source === 'string' ? entry.data.source : undefined
-    } else if (entry.stage === 'stt_end' && currentNative && currentNative.finalMs == null) {
-      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
-    }
-
-    if (entry.stage === 'asr_stream_start') {
-      currentRemote = { startedAt: entry.ts }
-      remoteRuns.push(currentRemote)
-    } else if (entry.stage === 'asr_first_partial' && currentRemote) {
-      currentRemote.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
-      currentRemote.chars = readMetricNumber(entry.data.chars) ?? currentRemote.chars
-    } else if (entry.stage === 'asr_stream_done' && currentRemote) {
-      currentRemote.finalMs = readMetricNumber(entry.data.streamElapsedMs) ?? readMetricNumber(entry.data.elapsedMs)
-      currentRemote.chars = readMetricNumber(entry.data.transcriptChars) ?? currentRemote.chars
-      currentRemote.frameCount = readMetricNumber(entry.data.frameCount) ?? undefined
-      currentRemote.totalBytes = readMetricNumber(entry.data.totalBytes) ?? undefined
-    } else if (entry.stage === 'asr_stream_provider_error' && currentRemote) {
-      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Provider error'
-    } else if (entry.stage === 'asr_diagnostic_error' && currentRemote) {
-      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Diagnostic error'
-    }
-  }
-
-  const latestNative = nativeRuns.at(-1)
-  const latestRemote = remoteRuns.at(-1)
-  return [
-    'ASR P4 evaluation report',
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    `Native runs: ${nativeRuns.length}`,
-    formatASRRun('Latest native', latestNative),
-    '',
-    `Remote Xunfei runs: ${remoteRuns.length}`,
-    formatASRRun('Latest remote', latestRemote),
-    '',
-    'Acceptance checks:',
-    '- Compare first partial latency between native and remote.',
-    '- Compare final latency between native and remote.',
-    '- Compare transcript chars and exported raw metrics against the spoken script.',
-    '- Do not switch production STT until remote accuracy and latency are better on device.',
-  ].join('\n')
-}
-
-function formatASRRun(label: string, run: ASREvaluationRun | undefined) {
-  if (!run) return `${label}: no run captured`
-  return [
-    `${label}:`,
-    `  startedAt: ${run.startedAt ? new Date(run.startedAt).toLocaleString() : 'unknown'}`,
-    `  firstPartialMs: ${formatMetricValue(run.firstPartialMs)}`,
-    `  finalMs: ${formatMetricValue(run.finalMs)}`,
-    `  chars: ${formatMetricValue(run.chars)}`,
-    run.source ? `  source: ${run.source}` : null,
-    run.frameCount != null ? `  frameCount: ${run.frameCount}` : null,
-    run.totalBytes != null ? `  totalBytes: ${run.totalBytes}` : null,
-    run.error ? `  error: ${run.error}` : null,
-  ].filter(Boolean).join('\n')
-}
-
-function readMetricNumber(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function formatMetricValue(value: number | null | undefined) {
-  return value == null ? 'n/a' : String(value)
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeoutMs)
-    promise
-      .then(resolve, reject)
-      .finally(() => clearTimeout(timer))
-  })
-}
-
-function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string, sequence: number) {
-  const providerConfig = session.providerConfig
-  const header = {
-    app_id: providerConfig?.appId,
-    status,
-  }
-  const audio = {
-    encoding: providerConfig?.audioEncoding ?? 'raw',
-    sample_rate: providerConfig?.sampleRate ?? 16000,
-    channels: providerConfig?.channels ?? 1,
-    bit_depth: providerConfig?.bitDepth ?? 16,
-    seq: sequence,
-    status,
-    audio: audioBase64,
-  }
-  if (status !== 0) {
-    return {
-      header,
-      payload: { audio },
-    }
-  }
-
-  return {
-    header,
-    parameter: {
-      iat: {
-        domain: providerConfig?.domain ?? 'slm',
-        language: providerConfig?.language ?? 'zh_cn',
-        accent: providerConfig?.accent ?? 'mandarin',
-        eos: providerConfig?.eosMs ?? 900,
-        dwa: 'wpgs',
-        result: {
-          encoding: 'utf8',
-          compress: 'raw',
-          format: 'json',
-        },
-      },
-    },
-    payload: { audio },
-  }
-}
-
-function parseJsonObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'string') return null
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function getObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
-}
-
-function extractXunfeiRecognitionResult(payload: Record<string, unknown> | null) {
-  const payloadObject = getObject(payload?.payload)
-  const payloadResult = getObject(payloadObject?.result)
-  const encodedText = typeof payloadResult?.text === 'string' ? payloadResult.text : null
-  if (encodedText) {
-    const decoded = decodeBase64Utf8(encodedText)
-    const decodedPayload = parseJsonObject(decoded)
-    const decodedWords = extractXunfeiWords(decodedPayload?.ws)
-    if (decodedWords) {
-      const rg = Array.isArray(decodedPayload?.rg) &&
-        typeof decodedPayload.rg[0] === 'number' &&
-        typeof decodedPayload.rg[1] === 'number'
-        ? [decodedPayload.rg[0], decodedPayload.rg[1]] as [number, number]
-        : null
-      return {
-        text: decodedWords,
-        sn: typeof decodedPayload?.sn === 'number' ? decodedPayload.sn : null,
-        pgs: typeof decodedPayload?.pgs === 'string' ? decodedPayload.pgs : null,
-        rg,
-      }
-    }
-  }
-
-  const data = getObject(payload?.data)
-  const result = getObject(data?.result)
-  const fallbackWords = extractXunfeiWords(result?.ws)
-  return fallbackWords
-    ? { text: fallbackWords, sn: null, pgs: null, rg: null }
-    : null
-}
-
-function extractXunfeiWords(words: unknown) {
-  if (!Array.isArray(words)) return ''
-  return words.map(item => {
-    const word = getObject(item)
-    const candidates = word?.cw
-    if (!Array.isArray(candidates)) return ''
-    return candidates.map(candidate => {
-      const candidateObject = getObject(candidate)
-      return typeof candidateObject?.w === 'string' ? candidateObject.w : ''
-    }).join('')
-  }).join('')
-}
-
-function decodeBase64Utf8(value: string) {
-  try {
-    const decoder = globalThis.atob
-    if (!decoder) return ''
-    const binary = decoder(value)
-    const escaped = Array.from(binary)
-      .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-      .join('')
-    return decodeURIComponent(escaped)
-  } catch {
-    return ''
-  }
 }
 
 export default function App() {
@@ -705,46 +452,34 @@ function AppInner() {
   }, [logVoiceMetric])
 
   const canStartSessionListening = useCallback((context: string, generation = sessionGenerationRef.current) => {
-    const allowed = sessionActiveRef.current &&
-      routePresenceRef.current === 'inSession' &&
-      canListenOnRouteRef.current &&
-      !busyRef.current &&
-      !playbackActiveRef.current &&
-      !audioPlayingRef.current &&
-      generation === sessionGenerationRef.current
+    const gate = {
+      sessionActive: sessionActiveRef.current,
+      routePresence: routePresenceRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy: busyRef.current,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+      generation,
+      currentGeneration: sessionGenerationRef.current,
+    }
+    const allowed = canStartListening(gate)
     if (!allowed) {
       logVoiceMetric('stt_start_aborted', {
         context,
-        sessionActive: sessionActiveRef.current,
-        routePresence: routePresenceRef.current,
-        canListenOnRoute: canListenOnRouteRef.current,
-        activeTab: activeTabRef.current,
-        busy: busyRef.current,
-        playbackActive: playbackActiveRef.current,
-        audioPlaying: audioPlayingRef.current,
-        generation,
-        currentGeneration: sessionGenerationRef.current,
+        ...gate,
       })
     }
     return allowed
   }, [logVoiceMetric])
 
   const enqueueSttOperation = useCallback(<T,>(label: string, operation: () => Promise<T>) => {
-    const startedAt = Date.now()
-    const task = sttOperationQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        logVoiceMetric('stt_operation_start', { label })
-        try {
-          return await operation()
-        } finally {
-          logVoiceMetric('stt_operation_done', {
-            label,
-            elapsedMs: Date.now() - startedAt,
-          })
-        }
-      })
-    sttOperationQueueRef.current = task.then(() => undefined, () => undefined)
+    const { task, queue } = enqueueRuntimeOperation({
+      queue: sttOperationQueueRef.current,
+      label,
+      log: logVoiceMetric,
+      operation,
+    })
+    sttOperationQueueRef.current = queue
     return task
   }, [logVoiceMetric])
 
@@ -982,10 +717,28 @@ function AppInner() {
         playbackActiveRef.current = false
         playbackStartedRef.current = false
         playbackEndedAtMsRef.current = Date.now()
-        setStatus(sessionActiveRef.current && canListenOnRouteRef.current
+        setStatus(shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: busyRef.current,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: sessionGenerationRef.current,
+          currentGeneration: sessionGenerationRef.current,
+        })
           ? 'session.status.listening'
           : 'session.status.reply_played')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        if (shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: busyRef.current,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: sessionGenerationRef.current,
+          currentGeneration: sessionGenerationRef.current,
+        })) {
           scheduleResumeListening(900, false)
         }
         return
@@ -1018,7 +771,16 @@ function AppInner() {
       playbackEndedAtMsRef.current = Date.now()
       logVoiceMetric('playback_finished', { audioUrl })
       setStatus('session.status.reply_played')
-      if (sessionActiveRef.current && canListenOnRouteRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+        generation: sessionGenerationRef.current,
+        currentGeneration: sessionGenerationRef.current,
+      })) {
         scheduleResumeListening()
       }
     }
@@ -1094,7 +856,13 @@ function AppInner() {
           responseLocale: localeRef.current,
         },
       }), 20_000, 'Coach reply request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current || submitGeneration !== sessionGenerationRef.current) {
+      if (isTurnStale({
+        turnRequestId,
+        currentTurnRequestId: turnRequestRef.current,
+        generation: submitGeneration,
+        currentGeneration: sessionGenerationRef.current,
+        sessionActive: sessionActiveRef.current,
+      })) {
         logSubmitTerminal('submit_turn_ignored_stale', { reason: 'coach_reply_stale' })
         return
       }
@@ -1118,14 +886,29 @@ function AppInner() {
       setStatus('session.status.requesting_voice')
       if (!coachReply.text.trim()) {
         setStatus('session.status.reply_without_text')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        if (shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: false,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: submitGeneration,
+          currentGeneration: sessionGenerationRef.current,
+        })) {
           scheduleResumeListening(500)
         }
         logSubmitTerminal('submit_turn_done', { reason: 'reply_without_text' })
         return
       }
       const voice = await withTimeout(synthesizeCoachSpeech(coachReply.text), 20_000, 'Coach voice request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current || submitGeneration !== sessionGenerationRef.current) {
+      if (isTurnStale({
+        turnRequestId,
+        currentTurnRequestId: turnRequestRef.current,
+        generation: submitGeneration,
+        currentGeneration: sessionGenerationRef.current,
+        sessionActive: sessionActiveRef.current,
+      })) {
         logSubmitTerminal('submit_turn_ignored_stale', { reason: 'tts_stale' })
         return
       }
@@ -1147,7 +930,16 @@ function AppInner() {
       } else {
         playbackActiveRef.current = false
         setStatus('session.status.reply_without_audio')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        if (shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: false,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: submitGeneration,
+          currentGeneration: sessionGenerationRef.current,
+        })) {
           scheduleResumeListening(500)
         }
       }
@@ -1159,9 +951,8 @@ function AppInner() {
       setSnapshot(completedTurn.snapshot)
       logSubmitTerminal('submit_turn_done', { hasAudio: Boolean(voice.audioUrl) })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Coach request failed'
-      const timeout = message.toLowerCase().includes('timed out')
-      logSubmitTerminal(timeout ? 'submit_turn_timeout' : 'submit_turn_error', { message })
+      const terminal = classifyRequestTerminalStage(error)
+      logSubmitTerminal(terminal.stage, { message: terminal.message })
       const recovery = recoverSessionError({
         snapshot: nextSnapshot,
         reason: 'coach_reply_failed',
@@ -1177,7 +968,16 @@ function AppInner() {
       logVoiceMetric('mobile_session_request_error', requestError.logData)
       displayErrorFeedback(requestError, 'mobile_session_submit')
       setStatus(requestError.displayMessage)
-      if (sessionActiveRef.current && canListenOnRouteRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: false,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+        generation: submitGeneration,
+        currentGeneration: sessionGenerationRef.current,
+      })) {
         scheduleResumeListening(900)
       }
     } finally {
@@ -1249,7 +1049,14 @@ function AppInner() {
       })
       pendingNativeTranscriptRef.current = ''
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
@@ -1286,12 +1093,25 @@ function AppInner() {
       })
       pendingNativeTranscriptRef.current = endpointTranscript
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
     }
-    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) {
+    if (!canApplyEndpointResult({
+      endpointRequestId,
+      currentEndpointRequestId: endpointRequestRef.current,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      playbackActive: playbackActiveRef.current,
+    })) {
       logVoiceMetric('endpoint_ignored_stale', {
         endpointRequestId,
         currentEndpointRequestId: endpointRequestRef.current,
@@ -1310,7 +1130,14 @@ function AppInner() {
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
@@ -1325,9 +1152,17 @@ function AppInner() {
   ])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
-    if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
+    if (!shouldResumeListening({
+      sessionActive: sessionActiveRef.current,
+      routePresence: routePresenceRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+    })) {
       logVoiceMetric('stt_end_restart_skipped', {
         sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
         canListenOnRoute: canListenOnRouteRef.current,
         activeTab: activeTabRef.current,
         busy,
@@ -1860,20 +1695,25 @@ function AppInner() {
       sttPrewarmAudioUrlRef.current = null
       return
     }
-    if (sessionSttProvider !== 'xunfei' || !audio.isPlaying || !playbackActiveRef.current) return
-    if (sttPrewarmAudioUrlRef.current === audioUrl) return
-    const prewarmWindowMs = getPlaybackPrewarmWindowMs(audio.playbackDurationSeconds)
-    if (!prewarmWindowMs || audio.playbackRemainingMs == null) return
-    if (audio.playbackRemainingMs > prewarmWindowMs) return
+    const prewarmDecision = getPlaybackTailPrewarmDecision({
+      provider: sessionSttProvider,
+      isPlaying: audio.isPlaying,
+      playbackActive: playbackActiveRef.current,
+      audioUrl,
+      prewarmedAudioUrl: sttPrewarmAudioUrlRef.current,
+      playbackDurationSeconds: audio.playbackDurationSeconds,
+      playbackRemainingMs: audio.playbackRemainingMs,
+    })
+    if (!prewarmDecision.shouldPrewarm || prewarmDecision.remainingMs == null) return
 
     sttPrewarmAudioUrlRef.current = audioUrl
-    const remainingMs = Math.round(audio.playbackRemainingMs)
-    const durationMs = Math.round((audio.playbackDurationSeconds ?? 0) * 1000)
+    const remainingMs = Math.round(prewarmDecision.remainingMs)
+    const durationMs = Math.round(prewarmDecision.durationMs ?? 0)
     const timer = setTimeout(() => {
       logVoiceMetric('stt_prewarm_scheduled', {
         provider: 'xunfei',
         remainingMs,
-        windowMs: prewarmWindowMs,
+        windowMs: prewarmDecision.windowMs,
         durationMs,
       })
       void startXunfeiSessionListening(true)
@@ -1902,8 +1742,9 @@ function AppInner() {
       audioPlaying: audioPlayingRef.current,
     })
     setActiveTab(tab)
-    if (tab !== 'session') {
-      setRoutePresence('outSession', `tab:${tab}`)
+    const nextRoutePresence = routePresenceForTab(tab)
+    setRoutePresence(nextRoutePresence, `tab:${tab}`)
+    if (nextRoutePresence === 'outSession') {
       playbackEndedAtMsRef.current = null
       clearResumeListeningTimer()
       endpointRequestRef.current += 1
@@ -1913,7 +1754,6 @@ function AppInner() {
       return
     }
 
-    setRoutePresence('inSession', 'tab:session')
     if (canStartSessionListening('tab_session')) {
       listeningStartMsRef.current = Date.now()
       setStatus(listeningStartupStatus())
@@ -1935,7 +1775,7 @@ function AppInner() {
       pendingTeardown: Boolean(listeningTeardownRef.current),
     })
 
-    // 立即结束 session，不等 API
+    // End the local session immediately; summary sync is best-effort.
     turnRequestRef.current += 1
     sessionGenerationRef.current += 1
     sessionActiveRef.current = false
@@ -1975,7 +1815,7 @@ function AppInner() {
         corrections: correctionHistory,
       }).catch(() => undefined)
     } catch {
-      // summary 失败不影响 session 已结束的状态
+      // Summary failure must not undo the local ended state.
     }
   }
 
@@ -2002,7 +1842,11 @@ function AppInner() {
       logVoiceMetric('scenario_select_same', { key, sessionActive: sessionActiveRef.current })
       return true
     }
-    if (sessionActiveRef.current) {
+    if (shouldConfirmScenarioSwitch({
+      currentScenarioKey: selectedScenarioKey,
+      nextScenarioKey: key,
+      sessionActive: sessionActiveRef.current,
+    })) {
       const confirmed = await confirmScenarioSwitch()
       logVoiceMetric('scenario_switch_confirmed', { from: selectedScenarioKey, to: key, confirmed })
       if (!confirmed) return false
@@ -2095,7 +1939,7 @@ function AppInner() {
         return undefined
       })
     } catch {
-      // 静默失败
+      // Best-effort deletion; keep optimistic local state.
     }
   }
 
@@ -2526,7 +2370,7 @@ function AppInner() {
         return
       }
 
-      setRoutePresence(activeTabRef.current === 'session' ? 'inSession' : 'outSession', 'app_state:active')
+      setRoutePresence(routePresenceForTab(activeTabRef.current), 'app_state:active')
       logVoiceMetric('app_state_active', {
         sessionActive: sessionActiveRef.current,
         activeTab: activeTabRef.current,
