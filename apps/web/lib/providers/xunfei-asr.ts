@@ -3,6 +3,15 @@ import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice
 
 const zhIatHost = 'iat.xf-yun.com'
 const zhIatPath = '/v1'
+const signedUrlTtlMs = 4 * 60 * 1000
+const signedUrlRefreshSkewMs = 30 * 1000
+
+type CachedSignedUrl = {
+  endpointUrl: string
+  expiresAtMs: number
+}
+
+let cachedSignedUrl: CachedSignedUrl | null = null
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim()
@@ -23,6 +32,18 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
   return `wss://${zhIatHost}${zhIatPath}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${zhIatHost}`
 }
 
+function getCachedAuthUrl(apiKey: string, apiSecret: string, now: number) {
+  if (cachedSignedUrl && cachedSignedUrl.expiresAtMs - signedUrlRefreshSkewMs > now) {
+    return cachedSignedUrl
+  }
+
+  cachedSignedUrl = {
+    endpointUrl: createAuthUrl(apiKey, apiSecret),
+    expiresAtMs: now + signedUrlTtlMs,
+  }
+  return cachedSignedUrl
+}
+
 export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<ASRSessionBootstrapResponse> {
   const appId = requireEnv('XUNFEI_ASR_APP_ID')
   const apiKey = requireEnv('XUNFEI_ASR_API_KEY')
@@ -34,6 +55,7 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
   }
 
   const now = Date.now()
+  const signedUrl = getCachedAuthUrl(apiKey, apiSecret, now)
   const sessionId = config.sessionId ?? `asr_xunfei_${crypto.randomUUID()}`
   const eosMs = Math.min(6000, Math.max(600, config.endpointSilenceMs ?? 900))
 
@@ -42,8 +64,8 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
     status: 'created',
     sessionId,
     transport: 'websocket',
-    endpointUrl: createAuthUrl(apiKey, apiSecret),
-    expiresAt: new Date(now + 4 * 60 * 1000).toISOString(),
+    endpointUrl: signedUrl.endpointUrl,
+    expiresAt: new Date(signedUrl.expiresAtMs).toISOString(),
     providerConfig: {
       appId,
       domain: 'slm',
