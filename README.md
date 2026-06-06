@@ -243,7 +243,7 @@ Set the API base URL in `apps/mobile/app.json`:
 ```json
 "extra": {
   "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
-  "apiBaseUrlPreview": "https://meteorvoice-pre.jcmeteor.com"
+  "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com"
 }
 ```
 

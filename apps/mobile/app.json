@@ -20,7 +20,7 @@
         ],
         "NSSpeechRecognitionUsageDescription": "MeteorVoice uses speech recognition to turn your practice speech into text.",
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsArbitraryLoads": false
         }
       }
     },
@@ -60,7 +60,7 @@
     ],
     "extra": {
       "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
-      "apiBaseUrlPreview": "https://meteorvoice-pre.jcmeteor.com",
+      "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com",
       "eas": {
         "projectId": "9590b05e-34a0-4e1c-8c41-3841b1765c77"
       }
