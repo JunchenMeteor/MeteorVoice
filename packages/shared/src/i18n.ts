@@ -2,6 +2,8 @@ import type { Locale } from './locale'
 
 export const t: Record<Locale, Record<string, string>> = {
   en: {
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
     'nav.home': 'Home',
     'nav.practice': 'Practice',
     'nav.history': 'History',
@@ -29,6 +31,8 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.ended': 'Session ended',
     'session.start': 'Start Session',
     'session.end': 'End Session',
+    'session.switch_scenario_title': 'Switch scenario?',
+    'session.switch_scenario_message': 'The current practice session will end before the new scenario starts.',
     'session.continue': 'Continue Speaking',
     'session.tap_mic': 'Tap mic to continue',
     'session.no_speech': "Didn't catch that. Tap mic to try again.",
@@ -263,6 +267,8 @@ export const t: Record<Locale, Record<string, string>> = {
     'login.signup_phone_success': 'Account created. You can sign in with your phone number.',
   },
   zh: {
+    'common.cancel': '取消',
+    'common.confirm': '确认',
     'nav.home': '首页',
     'nav.practice': '练习',
     'nav.history': '历史',
@@ -290,6 +296,8 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.ended': '会话已结束',
     'session.start': '开始练习',
     'session.end': '结束练习',
+    'session.switch_scenario_title': '切换场景？',
+    'session.switch_scenario_message': '当前练习会先结束，然后再进入新的场景。',
     'session.continue': '继续对话',
     'session.tap_mic': '点击麦克风继续',
     'session.no_speech': '没有听到声音，点击麦克风重试。',

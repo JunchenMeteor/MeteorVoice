@@ -310,7 +310,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   }, [player, playerStatus.playing, recorder, stopRecording])
 
   return useMemo(() => ({
+    currentTimeSeconds: playerStatus.currentTime,
     didJustFinish: playerStatus.didJustFinish,
+    playbackDurationSeconds: playerStatus.duration,
     durationMillis: recorderState.durationMillis,
     errorMessage,
     interrupted,
@@ -318,6 +320,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     isRecording,
     lastRecordingUri,
     permission,
+    playbackRemainingMs: playerStatus.playing && playerStatus.duration > 0
+      ? Math.max(0, (playerStatus.duration - playerStatus.currentTime) * 1000)
+      : null,
     phase: displayPhase,
     playReply,
     resumeAfterInterruption,
@@ -332,6 +337,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     lastRecordingUri,
     permission,
     playerStatus.didJustFinish,
+    playerStatus.currentTime,
+    playerStatus.duration,
+    playerStatus.playing,
     displayPhase,
     playReply,
     resumeAfterInterruption,

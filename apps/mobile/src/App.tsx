@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   AppState,
   Pressable,
   SafeAreaView,
@@ -88,6 +89,7 @@ const sessionSttProviderStorageKey = 'session_stt_provider'
 type Tab = 'session' | 'home' | 'history' | 'settings'
 type ApiBaseUrlSource = 'default' | 'user'
 type SessionSttProvider = 'native' | 'xunfei'
+type SessionRoutePresence = 'inSession' | 'outSession'
 type VoiceMetricEntry = {
   ts: number
   stage: string
@@ -105,6 +107,24 @@ type ASREvaluationRun = {
   error?: string
 }
 
+type XunfeiSessionSttState = {
+  socket: WebSocket | null
+  frameSubscription: { remove: () => void } | null
+  stateSubscription: { remove: () => void } | null
+  finalizeTimer: ReturnType<typeof setTimeout> | null
+  hardTimer: ReturnType<typeof setTimeout> | null
+  noFrameTimer: ReturnType<typeof setTimeout> | null
+  stoppedTimer: ReturnType<typeof setTimeout> | null
+  streamId: number
+  generation: number
+  prewarmed: boolean
+  recordingStarted: boolean
+  settled: boolean
+  stopped: Promise<void>
+  resolveStopped: () => void
+  startRecording?: (context: string) => Promise<void>
+}
+
 const TAB_LABELS: Record<Tab, string> = {
   home: 'nav.home',
   session: 'nav.practice',
@@ -112,6 +132,48 @@ const TAB_LABELS: Record<Tab, string> = {
   settings: 'nav.settings',
 }
 
+const STT_STOP_SETTLE_TIMEOUT_MS = 800
+const STT_RESTART_DEBOUNCE_MS = 200
+const STT_PLAYBACK_PREWARM_MIN_DURATION_MS = 1800
+const STT_PLAYBACK_PREWARM_MIN_WINDOW_MS = 320
+const STT_PLAYBACK_PREWARM_MAX_WINDOW_MS = 900
+const STT_PREWARM_STALE_TIMEOUT_MS = 3500
+
+function delay(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+async function settleWithTimeout(promise: Promise<void>, timeoutMs: number) {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  try {
+    await Promise.race([
+      promise,
+      new Promise<void>(resolve => {
+        timeout = setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+function createStoppedSignal() {
+  let resolveStopped: () => void = () => undefined
+  const stopped = new Promise<void>(resolve => {
+    resolveStopped = resolve
+  })
+  return { stopped, resolveStopped }
+}
+
+function getPlaybackPrewarmWindowMs(durationSeconds: number | null | undefined) {
+  if (!durationSeconds || !Number.isFinite(durationSeconds)) return 0
+  const durationMs = durationSeconds * 1000
+  if (durationMs < STT_PLAYBACK_PREWARM_MIN_DURATION_MS) return 0
+  return Math.min(
+    STT_PLAYBACK_PREWARM_MAX_WINDOW_MS,
+    Math.max(STT_PLAYBACK_PREWARM_MIN_WINDOW_MS, Math.round(durationMs * 0.18)),
+  )
+}
 
 function TabIcon({ tab, color }: { tab: Tab; color: string }) {
   if (tab === 'home') return (
@@ -435,22 +497,19 @@ function AppInner() {
   const speechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
   const nativeSpeechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
   const nativeSpeechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
-  const xunfeiSessionSttRef = useRef<{
-    socket: WebSocket | null
-    frameSubscription: { remove: () => void } | null
-    stateSubscription: { remove: () => void } | null
-    finalizeTimer: ReturnType<typeof setTimeout> | null
-    hardTimer: ReturnType<typeof setTimeout> | null
-    noFrameTimer: ReturnType<typeof setTimeout> | null
-    settled: boolean
-  } | null>(null)
+  const xunfeiSessionSttRef = useRef<XunfeiSessionSttState | null>(null)
   const endpointRequestRef = useRef(0)
   const turnRequestRef = useRef(0)
+  const sessionGenerationRef = useRef(0)
+  const sttStreamIdRef = useRef(0)
+  const sttOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
+  const routePresenceRef = useRef<SessionRoutePresence>('inSession')
   const playbackActiveRef = useRef(false)
   const audioPlayingRef = useRef(false)
   const busyRef = useRef(false)
+  const sttPrewarmAudioUrlRef = useRef<string | null>(null)
   const playbackStartedRef = useRef(false)
   const playbackEndedAtMsRef = useRef<number | null>(null)
   const pendingNativeTranscriptRef = useRef('')
@@ -569,6 +628,65 @@ function AppInner() {
     })
   }, [busy, logVoiceMetric, selectedScenarioKey])
 
+  const setRoutePresence = useCallback((next: SessionRoutePresence, reason: string) => {
+    const previous = routePresenceRef.current
+    routePresenceRef.current = next
+    canListenOnRouteRef.current = next === 'inSession'
+    if (previous !== next) {
+      logVoiceMetric('route_presence_changed', {
+        from: previous,
+        to: next,
+        reason,
+        activeTab: activeTabRef.current,
+        sessionActive: sessionActiveRef.current,
+      })
+    }
+  }, [logVoiceMetric])
+
+  const canStartSessionListening = useCallback((context: string, generation = sessionGenerationRef.current) => {
+    const allowed = sessionActiveRef.current &&
+      routePresenceRef.current === 'inSession' &&
+      canListenOnRouteRef.current &&
+      !busyRef.current &&
+      !playbackActiveRef.current &&
+      !audioPlayingRef.current &&
+      generation === sessionGenerationRef.current
+    if (!allowed) {
+      logVoiceMetric('stt_start_aborted', {
+        context,
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        activeTab: activeTabRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+        generation,
+        currentGeneration: sessionGenerationRef.current,
+      })
+    }
+    return allowed
+  }, [logVoiceMetric])
+
+  const enqueueSttOperation = useCallback(<T,>(label: string, operation: () => Promise<T>) => {
+    const startedAt = Date.now()
+    const task = sttOperationQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        logVoiceMetric('stt_operation_start', { label })
+        try {
+          return await operation()
+        } finally {
+          logVoiceMetric('stt_operation_done', {
+            label,
+            elapsedMs: Date.now() - startedAt,
+          })
+        }
+      })
+    sttOperationQueueRef.current = task.then(() => undefined, () => undefined)
+    return task
+  }, [logVoiceMetric])
+
   const runListeningTeardown = useCallback((reason: string, action: () => void | Promise<void>) => {
     const startedAt = Date.now()
     logVoiceMetric('listening_teardown_start', {
@@ -628,8 +746,9 @@ function AppInner() {
     clearResumeListeningTimer()
     resumeListeningTimerRef.current = setTimeout(() => {
       resumeListeningTimerRef.current = null
-      if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current || audioPlayingRef.current) {
+      if (!canStartSessionListening('resume_timer')) {
         logVoiceMetric('resume_listening_skipped', {
+          routePresence: routePresenceRef.current,
           playbackActive: playbackActiveRef.current,
           audioPlaying: audioPlayingRef.current,
         })
@@ -639,7 +758,7 @@ function AppInner() {
       if (updateStatus) setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }, delayMs)
-  }, [clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric])
+  }, [canStartSessionListening, clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric])
 
   useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
 
@@ -736,6 +855,7 @@ function AppInner() {
       sttProvider: listeningProvider,
     })
     endpointRequestRef.current += 1
+    sessionGenerationRef.current += 1
     clearResumeListeningTimer()
     playbackActiveRef.current = false
     playbackStartedRef.current = false
@@ -743,7 +863,7 @@ function AppInner() {
     listeningStartMsRef.current = Date.now()
     pendingNativeTranscriptRef.current = ''
     sessionActiveRef.current = true
-    canListenOnRouteRef.current = true
+    setRoutePresence('inSession', 'session_start')
     const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
     const nextSnapshot = startListeningSession(nextSessionId)
     snapshotRef.current = nextSnapshot
@@ -779,6 +899,7 @@ function AppInner() {
     audioPlayingRef.current = audio.isPlaying
     if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
       playbackStartedRef.current = true
+      sttPrewarmAudioUrlRef.current = null
       logVoiceMetric('playback_started', { audioUrl })
       void cancelListeningForReason('playback_started')
     }
@@ -853,6 +974,7 @@ function AppInner() {
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const submitStartedAt = Date.now()
+    const submitGeneration = sessionGenerationRef.current
     const transcript = sourceTranscript.trim()
     const currentSnapshot = snapshotRef.current
     const currentMessages = messagesRef.current
@@ -884,6 +1006,17 @@ function AppInner() {
     await cancelListeningForReason('submit_turn')
     setBusy(true)
     const turnRequestId = ++turnRequestRef.current
+    let terminalLogged = false
+
+    const logSubmitTerminal = (stage: string, data: Record<string, unknown> = {}) => {
+      terminalLogged = true
+      logVoiceMetric(stage, {
+        turnRequestId,
+        generation: submitGeneration,
+        elapsedMs: Date.now() - submitStartedAt,
+        ...data,
+      })
+    }
 
     try {
       setStatus('session.status.requesting_reply')
@@ -900,8 +1033,8 @@ function AppInner() {
           responseLocale: localeRef.current,
         },
       }), 20_000, 'Coach reply request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
-        logVoiceMetric('coach_reply_ignored', { reason: 'session_inactive' })
+      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current || submitGeneration !== sessionGenerationRef.current) {
+        logSubmitTerminal('submit_turn_ignored_stale', { reason: 'coach_reply_stale' })
         return
       }
       logVoiceMetric('coach_reply_ready', {
@@ -927,11 +1060,12 @@ function AppInner() {
         if (sessionActiveRef.current && canListenOnRouteRef.current) {
           scheduleResumeListening(500)
         }
+        logSubmitTerminal('submit_turn_done', { reason: 'reply_without_text' })
         return
       }
       const voice = await withTimeout(synthesizeCoachSpeech(coachReply.text), 20_000, 'Coach voice request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
-        logVoiceMetric('tts_ignored', { reason: 'session_inactive' })
+      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current || submitGeneration !== sessionGenerationRef.current) {
+        logSubmitTerminal('submit_turn_ignored_stale', { reason: 'tts_stale' })
         return
       }
       logVoiceMetric('tts_ready', {
@@ -962,7 +1096,11 @@ function AppInner() {
       })
       snapshotRef.current = completedTurn.snapshot
       setSnapshot(completedTurn.snapshot)
+      logSubmitTerminal('submit_turn_done', { hasAudio: Boolean(voice.audioUrl) })
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Coach request failed'
+      const timeout = message.toLowerCase().includes('timed out')
+      logSubmitTerminal(timeout ? 'submit_turn_timeout' : 'submit_turn_error', { message })
       const recovery = recoverSessionError({
         snapshot: nextSnapshot,
         reason: 'coach_reply_failed',
@@ -983,6 +1121,13 @@ function AppInner() {
       }
     } finally {
       if (turnRequestRef.current === turnRequestId) setBusy(false)
+      if (!terminalLogged) {
+        logVoiceMetric('submit_turn_finally_without_terminal', {
+          turnRequestId,
+          generation: submitGeneration,
+          elapsedMs: Date.now() - submitStartedAt,
+        })
+      }
     }
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, cancelListeningForReason,
@@ -1112,47 +1257,90 @@ function AppInner() {
   }, [busy, logVoiceMetric, scheduleResumeListening])
 
   const cancelXunfeiSessionListening = useCallback(async (reason = 'cancel') => {
-    const current = xunfeiSessionSttRef.current
-    if (!current || current.settled) return
-    current.settled = true
-    if (current.finalizeTimer) clearTimeout(current.finalizeTimer)
-    if (current.hardTimer) clearTimeout(current.hardTimer)
-    if (current.noFrameTimer) clearTimeout(current.noFrameTimer)
-    current.frameSubscription?.remove()
-    current.stateSubscription?.remove()
-    if (current.socket && current.socket.readyState === WebSocket.OPEN) {
-      current.socket.close()
-    }
-    await stopPcmCapture(`session_${reason}`).catch(() => undefined)
-    xunfeiSessionSttRef.current = null
-    logVoiceMetric('stt_end', { provider: 'xunfei', cancelled: true, reason })
-  }, [logVoiceMetric])
+    await enqueueSttOperation(`stop:${reason}`, async () => {
+      const current = xunfeiSessionSttRef.current
+      if (!current) {
+        logVoiceMetric('stt_stop_noop', { provider: 'xunfei', reason })
+        return
+      }
+      if (current.settled) {
+        await settleWithTimeout(current.stopped, STT_STOP_SETTLE_TIMEOUT_MS)
+        return
+      }
+      current.settled = true
+      if (current.finalizeTimer) clearTimeout(current.finalizeTimer)
+      if (current.hardTimer) clearTimeout(current.hardTimer)
+      if (current.noFrameTimer) clearTimeout(current.noFrameTimer)
+      if (current.stoppedTimer) clearTimeout(current.stoppedTimer)
+      current.frameSubscription?.remove()
+      current.stateSubscription?.remove()
+      if (current.socket && current.socket.readyState === WebSocket.OPEN) {
+        current.socket.close()
+      }
+      await stopPcmCapture(`session_${reason}`).catch(() => undefined)
+      current.resolveStopped()
+      if (xunfeiSessionSttRef.current?.streamId === current.streamId) {
+        xunfeiSessionSttRef.current = null
+      }
+      await settleWithTimeout(current.stopped, STT_STOP_SETTLE_TIMEOUT_MS)
+      logVoiceMetric('stt_end', {
+        provider: 'xunfei',
+        cancelled: true,
+        reason,
+        streamId: current.streamId,
+        generation: current.generation,
+      })
+    })
+  }, [enqueueSttOperation, logVoiceMetric])
 
-  const startXunfeiSessionListening = useCallback(async () => {
-    const canUseXunfeiRoute = (context: string) => {
-      const allowed = sessionActiveRef.current &&
-        canListenOnRouteRef.current &&
-        !busyRef.current &&
-        !playbackActiveRef.current &&
-        !audioPlayingRef.current &&
-        activeTabRef.current === 'session'
+  const startXunfeiSessionListening = useCallback(async (prewarm = false) => {
+    return enqueueSttOperation(prewarm ? 'prewarm:xunfei' : 'start:xunfei', async () => {
+      const generation = sessionGenerationRef.current
+      const streamId = ++sttStreamIdRef.current
+      let recordingStarted = false
+      const canUseXunfeiRoute = (context: string) => {
+        const allowed = prewarm && !recordingStarted
+          ? sessionActiveRef.current &&
+            routePresenceRef.current === 'inSession' &&
+            canListenOnRouteRef.current &&
+            generation === sessionGenerationRef.current &&
+            playbackActiveRef.current &&
+            audioPlayingRef.current
+          : canStartSessionListening(context, generation)
       if (!allowed) {
-        logVoiceMetric('stt_start_aborted', {
+        logVoiceMetric('stt_stream_aborted', {
           provider: 'xunfei',
           context,
-          sessionActive: sessionActiveRef.current,
-          canListenOnRoute: canListenOnRouteRef.current,
-          activeTab: activeTabRef.current,
-          busy: busyRef.current,
-          playbackActive: playbackActiveRef.current,
-          audioPlaying: audioPlayingRef.current,
+          streamId,
+          generation,
+          currentGeneration: sessionGenerationRef.current,
+          routePresence: routePresenceRef.current,
+          prewarm,
         })
       }
       return allowed
     }
 
-    if (!canUseXunfeiRoute('entry')) return false
-    if (xunfeiSessionSttRef.current && !xunfeiSessionSttRef.current.settled) return true
+    if (!prewarm && !canUseXunfeiRoute('entry')) return false
+    if (prewarm && (!sessionActiveRef.current || routePresenceRef.current !== 'inSession' || !playbackActiveRef.current)) {
+      logVoiceMetric('stt_prewarm_skipped', {
+        provider: 'xunfei',
+        reason: 'not_playback_ready',
+        routePresence: routePresenceRef.current,
+        playbackActive: playbackActiveRef.current,
+        sessionActive: sessionActiveRef.current,
+      })
+      return false
+    }
+    const existing = xunfeiSessionSttRef.current
+    if (existing && !existing.settled && !prewarm && existing.prewarmed && !existing.recordingStarted && existing.startRecording) {
+      await existing.startRecording('consume_prewarm')
+      return true
+    }
+    if (existing && !existing.settled) return true
+    if (existing) await settleWithTimeout(existing.stopped, STT_STOP_SETTLE_TIMEOUT_MS)
+    await delay(STT_RESTART_DEBOUNCE_MS)
+    if (!canUseXunfeiRoute('after_restart_debounce')) return false
     if (!availableSessionSttProviders.includes('xunfei') || !isPcmCaptureAvailable()) {
       logVoiceMetric('stt_provider_fallback', {
         requested: 'xunfei',
@@ -1169,6 +1357,8 @@ function AppInner() {
     let finalizeTimer: ReturnType<typeof setTimeout> | null = null
     let hardTimer: ReturnType<typeof setTimeout> | null = null
     let noFrameTimer: ReturnType<typeof setTimeout> | null = null
+    let stoppedTimer: ReturnType<typeof setTimeout> | null = null
+    let prewarmStaleTimer: ReturnType<typeof setTimeout> | null = null
     let settled = false
     let firstFrame = true
     let finalFrameSent = false
@@ -1179,6 +1369,25 @@ function AppInner() {
     let transcript = ''
     let firstPartialAt: number | null = null
     const transcriptSegments: string[] = []
+    const stoppedSignal = createStoppedSignal()
+    let bootstrappedSession: CreateASRSessionResponse | null = null
+    let finishAudio: (() => void) | null = null
+
+    const isCurrentStream = (context: string) => {
+      const current = xunfeiSessionSttRef.current
+      const currentMatch = current?.streamId === streamId && generation === sessionGenerationRef.current
+      if (!currentMatch) {
+        logVoiceMetric('stt_callback_ignored', {
+          provider: 'xunfei',
+          context,
+          streamId,
+          generation,
+          currentStreamId: current?.streamId ?? null,
+          currentGeneration: sessionGenerationRef.current,
+        })
+      }
+      return currentMatch
+    }
 
     const updateCurrent = () => {
       xunfeiSessionSttRef.current = {
@@ -1188,7 +1397,15 @@ function AppInner() {
         finalizeTimer,
         hardTimer,
         noFrameTimer,
+        stoppedTimer,
+        streamId,
+        generation,
+        prewarmed: prewarm,
+        recordingStarted,
         settled,
+        stopped: stoppedSignal.stopped,
+        resolveStopped: stoppedSignal.resolveStopped,
+        startRecording: startStreamingPcm,
       }
     }
 
@@ -1206,14 +1423,22 @@ function AppInner() {
       if (finalizeTimer) clearTimeout(finalizeTimer)
       if (hardTimer) clearTimeout(hardTimer)
       if (noFrameTimer) clearTimeout(noFrameTimer)
+      if (stoppedTimer) clearTimeout(stoppedTimer)
+      if (prewarmStaleTimer) clearTimeout(prewarmStaleTimer)
       frameSubscription?.remove()
-      void stopPcmCapture(`session_${reason}`).catch(() => undefined).finally(() => stateSubscription?.remove())
+      void stopPcmCapture(`session_${reason}`).catch(() => undefined).finally(() => {
+        stateSubscription?.remove()
+        stoppedSignal.resolveStopped()
+      })
       if (socket && socket.readyState === WebSocket.OPEN) socket.close()
-      xunfeiSessionSttRef.current = null
+      stoppedTimer = setTimeout(() => stoppedSignal.resolveStopped(), STT_STOP_SETTLE_TIMEOUT_MS)
+      if (xunfeiSessionSttRef.current?.streamId === streamId) xunfeiSessionSttRef.current = null
       logVoiceMetric('stt_end', {
         provider: 'xunfei',
         cancelled: reason !== 'final',
         reason,
+        streamId,
+        generation,
         hadTranscript: Boolean(transcript.trim()),
         submitted,
         elapsedMs: Date.now() - streamStartedAt,
@@ -1229,6 +1454,71 @@ function AppInner() {
       socket.send(JSON.stringify(createXunfeiASRFrame(session, status, audioBase64, audioSequence)))
     }
 
+    const startStreamingPcm = async (context: string) => {
+      if (recordingStarted || settled) return
+      const activeSession = bootstrappedSession
+      if (!activeSession) {
+        logVoiceMetric('stt_provider_error', { provider: 'xunfei', message: 'Missing bootstrapped ASR session' })
+        settle('missing_session', false)
+        return
+      }
+      if (!isCurrentStream(`start_pcm:${context}`)) return
+      if (!canUseXunfeiRoute(`start_pcm:${context}`)) {
+        settle('route_inactive', false)
+        return
+      }
+      if (prewarmStaleTimer) {
+        clearTimeout(prewarmStaleTimer)
+        prewarmStaleTimer = null
+      }
+      recordingStarted = true
+      updateCurrent()
+      try {
+        const status = await startPcmCapture({
+          sampleRate: activeSession.providerConfig?.sampleRate ?? 16000,
+          frameDurationMs: activeSession.providerConfig?.frameIntervalMs ?? 40,
+        })
+        if (!isCurrentStream(`after_pcm_start:${context}`)) return
+        if (!canUseXunfeiRoute(`after_pcm_start:${context}`)) {
+          void stopPcmCapture('session_route_inactive').catch(() => undefined)
+          settle('route_inactive', false)
+          return
+        }
+        listeningStartMsRef.current = Date.now()
+        logVoiceMetric('stt_start', { provider: 'xunfei', streamId, generation, prewarmed: prewarm })
+        logVoiceMetric('stt_ready', {
+          provider: 'xunfei',
+          elapsedMs: Date.now() - streamStartedAt,
+          sampleRate: status.sampleRate,
+          frameSizeBytes: status.frameSizeBytes,
+          prewarmed: prewarm,
+        })
+        setStatus('session.status.listening')
+        if (!hardTimer && finishAudio) {
+          hardTimer = setTimeout(finishAudio, 15_000)
+        }
+        noFrameTimer = setTimeout(() => {
+          if (settled || frameCount > 0) return
+          logVoiceMetric('stt_pcm_no_frame', {
+            provider: 'xunfei',
+            elapsedMs: Date.now() - streamStartedAt,
+            pcmStatusFrameCount: status.frameCount,
+            pcmStatusTotalBytes: status.totalBytes,
+          })
+          settle('pcm_no_frame', false)
+          handleListeningEndedWithoutTranscript()
+        }, 1800)
+        updateCurrent()
+      } catch (error) {
+        logVoiceMetric('stt_provider_error', {
+          provider: 'xunfei',
+          message: error instanceof Error ? error.message : 'PCM capture failed',
+        })
+        settle('pcm_error', false)
+        handleListeningEndedWithoutTranscript()
+      }
+    }
+
     try {
       const authReady = await auth.refreshSession()
       if (!canUseXunfeiRoute('after_auth_refresh')) return false
@@ -1237,7 +1527,7 @@ function AppInner() {
       const session = await api.createASRSession({
         provider: 'xunfei',
         mode: 'streaming',
-        languageMode: 'mixed_zh_en',
+        languageMode: localeRef.current === 'zh' ? 'mixed_zh_en' : 'english',
         scenarioKey: scenario.key,
         sessionId: snapshotRef.current.sessionId,
         endpointSilenceMs: 900,
@@ -1251,6 +1541,7 @@ function AppInner() {
         logVoiceMetric('stt_provider_fallback', { requested: 'xunfei', reason: 'session_not_ready' })
         return nativeSpeechStartListeningRef.current('en-US')
       }
+      bootstrappedSession = session
 
       logVoiceMetric('stt_bootstrap_start', { provider: 'xunfei' })
       setStatus('session.status.preparing_listening')
@@ -1259,7 +1550,7 @@ function AppInner() {
       socket = new WebSocket(session.endpointUrl)
       updateCurrent()
 
-      const finishAudio = () => {
+      finishAudio = () => {
         if (!canUseXunfeiRoute('finish_audio')) {
           settle('route_inactive', false)
           return
@@ -1271,11 +1562,14 @@ function AppInner() {
 
       const scheduleFinalize = () => {
         if (finalizeTimer) clearTimeout(finalizeTimer)
-        finalizeTimer = setTimeout(finishAudio, session.providerConfig?.eosMs ?? 900)
+        const finishAudioHandler = finishAudio
+        if (!finishAudioHandler) return
+        finalizeTimer = setTimeout(finishAudioHandler, session.providerConfig?.eosMs ?? 900)
         updateCurrent()
       }
 
       stateSubscription = addPcmStateListener(event => {
+        if (!isCurrentStream('pcm_state')) return
         logVoiceMetric('stt_pcm_state', {
           provider: 'xunfei',
           state: event.state,
@@ -1286,6 +1580,7 @@ function AppInner() {
       })
 
       frameSubscription = addPcmFrameListener((event: PcmCaptureFrameEvent) => {
+        if (!isCurrentStream('pcm_frame')) return
         if (!canUseXunfeiRoute('pcm_frame')) {
           settle('route_inactive', false)
           return
@@ -1307,53 +1602,33 @@ function AppInner() {
       })
 
       socket.onopen = () => {
+        if (!isCurrentStream('socket_open')) return
         if (!canUseXunfeiRoute('socket_open')) {
           settle('route_inactive', false)
           return
         }
-        void startPcmCapture({
-          sampleRate: session.providerConfig?.sampleRate ?? 16000,
-          frameDurationMs: session.providerConfig?.frameIntervalMs ?? 40,
-        }).then(status => {
-          if (!canUseXunfeiRoute('after_pcm_start')) {
-            void stopPcmCapture('session_route_inactive').catch(() => undefined)
-            settle('route_inactive', false)
-            return
-          }
-          listeningStartMsRef.current = Date.now()
-          logVoiceMetric('stt_start', { provider: 'xunfei' })
-          logVoiceMetric('stt_ready', {
-            provider: 'xunfei',
-            elapsedMs: Date.now() - streamStartedAt,
-            sampleRate: status.sampleRate,
-            frameSizeBytes: status.frameSizeBytes,
-          })
-          setStatus('session.status.listening')
-          noFrameTimer = setTimeout(() => {
-            if (settled || frameCount > 0) return
-            logVoiceMetric('stt_pcm_no_frame', {
-              provider: 'xunfei',
-              elapsedMs: Date.now() - streamStartedAt,
-              pcmStatusFrameCount: status.frameCount,
-              pcmStatusTotalBytes: status.totalBytes,
-            })
-            settle('pcm_no_frame', false)
-            handleListeningEndedWithoutTranscript()
-          }, 1800)
-          updateCurrent()
-        }).catch(error => {
-          logVoiceMetric('stt_provider_error', {
-            provider: 'xunfei',
-            message: error instanceof Error ? error.message : 'PCM capture failed',
-          })
-          settle('pcm_error', false)
-          handleListeningEndedWithoutTranscript()
+        logVoiceMetric(prewarm ? 'stt_prewarm_ready' : 'stt_socket_ready', {
+          provider: 'xunfei',
+          streamId,
+          generation,
+          elapsedMs: Date.now() - streamStartedAt,
         })
-        hardTimer = setTimeout(finishAudio, 15_000)
+        if (prewarm) {
+          prewarmStaleTimer = setTimeout(() => {
+            if (settled || recordingStarted) return
+            logVoiceMetric('stt_prewarm_expired', { provider: 'xunfei', streamId, generation })
+            settle('prewarm_expired', false)
+          }, STT_PREWARM_STALE_TIMEOUT_MS)
+          updateCurrent()
+          return
+        }
+        void startStreamingPcm('socket_open')
+        if (!hardTimer && finishAudio) hardTimer = setTimeout(finishAudio, 15_000)
         updateCurrent()
       }
 
       socket.onmessage = event => {
+        if (!isCurrentStream('socket_message')) return
         if (!canUseXunfeiRoute('socket_message')) {
           settle('route_inactive', false)
           return
@@ -1427,12 +1702,14 @@ function AppInner() {
       }
 
       socket.onerror = () => {
+        if (!isCurrentStream('socket_error')) return
         logVoiceMetric('stt_provider_error', { provider: 'xunfei', message: 'WebSocket error' })
         settle('socket_error', false)
         handleListeningEndedWithoutTranscript()
       }
 
       socket.onclose = event => {
+        if (!isCurrentStream('socket_close')) return
         logVoiceMetric('stt_socket_close', {
           provider: 'xunfei',
           code: typeof event?.code === 'number' ? event.code : null,
@@ -1459,9 +1736,10 @@ function AppInner() {
       settle('start_error', false)
       return nativeSpeechStartListeningRef.current('en-US')
     }
+    })
   }, [
-    api, auth, availableSessionSttProviders, handleListeningEndedWithoutTranscript,
-    handleNativeFinalTranscript, logVoiceMetric, scenario.key,
+    api, auth, availableSessionSttProviders, canStartSessionListening, enqueueSttOperation,
+    handleListeningEndedWithoutTranscript, handleNativeFinalTranscript, logVoiceMetric, scenario.key,
   ])
 
   const speech = useNativeSpeech({
@@ -1477,7 +1755,7 @@ function AppInner() {
 
   useEffect(() => {
     speechStartListeningRef.current = sessionSttProvider === 'xunfei'
-      ? startXunfeiSessionListening
+      ? () => startXunfeiSessionListening(false)
       : speech.startListening
     speechCancelListeningRef.current = sessionSttProvider === 'xunfei'
       ? cancelXunfeiSessionListening
@@ -1493,13 +1771,44 @@ function AppInner() {
   ])
 
   useEffect(() => {
+    if (!audioUrl) {
+      sttPrewarmAudioUrlRef.current = null
+      return
+    }
+    if (sessionSttProvider !== 'xunfei' || !audio.isPlaying || !playbackActiveRef.current) return
+    if (sttPrewarmAudioUrlRef.current === audioUrl) return
+    const prewarmWindowMs = getPlaybackPrewarmWindowMs(audio.playbackDurationSeconds)
+    if (!prewarmWindowMs || audio.playbackRemainingMs == null) return
+    if (audio.playbackRemainingMs > prewarmWindowMs) return
+
+    sttPrewarmAudioUrlRef.current = audioUrl
+    const remainingMs = Math.round(audio.playbackRemainingMs)
+    const durationMs = Math.round((audio.playbackDurationSeconds ?? 0) * 1000)
+    const timer = setTimeout(() => {
+      logVoiceMetric('stt_prewarm_scheduled', {
+        provider: 'xunfei',
+        remainingMs,
+        windowMs: prewarmWindowMs,
+        durationMs,
+      })
+      void startXunfeiSessionListening(true)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [
+    audio.isPlaying, audio.playbackDurationSeconds, audio.playbackRemainingMs, audioUrl,
+    logVoiceMetric, sessionSttProvider, startXunfeiSessionListening,
+  ])
+
+  useEffect(() => {
     sessionActiveRef.current = isSessionActive
   }, [isSessionActive])
 
   const selectTab = useCallback((tab: Tab) => {
-    logUserAction('tab_tap', { to: tab, from: activeTabRef.current })
+    const previousTab = activeTabRef.current
+    activeTabRef.current = tab
+    logUserAction('tab_tap', { to: tab, from: previousTab })
     logVoiceMetric('tab_change', {
-      from: activeTabRef.current,
+      from: previousTab,
       to: tab,
       sessionActive: sessionActiveRef.current,
       canListenOnRoute: canListenOnRouteRef.current,
@@ -1509,7 +1818,7 @@ function AppInner() {
     })
     setActiveTab(tab)
     if (tab !== 'session') {
-      canListenOnRouteRef.current = false
+      setRoutePresence('outSession', `tab:${tab}`)
       playbackEndedAtMsRef.current = null
       clearResumeListeningTimer()
       endpointRequestRef.current += 1
@@ -1519,13 +1828,16 @@ function AppInner() {
       return
     }
 
-    canListenOnRouteRef.current = true
-    if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
+    setRoutePresence('inSession', 'tab:session')
+    if (canStartSessionListening('tab_session')) {
       listeningStartMsRef.current = Date.now()
       setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }
-  }, [busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, logUserAction, logVoiceMetric])
+  }, [
+    busy, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer,
+    listeningStartupStatus, logUserAction, logVoiceMetric, setRoutePresence,
+  ])
 
   async function endSession() {
     logUserAction('session_stop_tap')
@@ -1540,8 +1852,9 @@ function AppInner() {
 
     // 立即结束 session，不等 API
     turnRequestRef.current += 1
+    sessionGenerationRef.current += 1
     sessionActiveRef.current = false
-    canListenOnRouteRef.current = false
+    setRoutePresence('outSession', 'session_end')
     playbackActiveRef.current = false
     audioPlayingRef.current = false
     playbackStartedRef.current = false
@@ -1581,12 +1894,34 @@ function AppInner() {
     }
   }
 
+  async function confirmScenarioSwitch() {
+    return await new Promise<boolean>(resolve => {
+      Alert.alert(
+        tr('session.switch_scenario_title'),
+        tr('session.switch_scenario_message'),
+        [
+          { text: tr('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: tr('common.confirm'), style: 'destructive', onPress: () => resolve(true) },
+        ],
+      )
+    })
+  }
+
   async function selectScenario(key: string) {
     if (scenarioSwitching) {
       logUserAction('scenario_tap_ignored_switching', { to: key })
-      return
+      return false
     }
     logUserAction('scenario_tap', { to: key, from: selectedScenarioKey })
+    if (key === selectedScenarioKey) {
+      logVoiceMetric('scenario_select_same', { key, sessionActive: sessionActiveRef.current })
+      return true
+    }
+    if (sessionActiveRef.current) {
+      const confirmed = await confirmScenarioSwitch()
+      logVoiceMetric('scenario_switch_confirmed', { from: selectedScenarioKey, to: key, confirmed })
+      if (!confirmed) return false
+    }
     logVoiceMetric('scenario_select_requested', {
       from: selectedScenarioKey,
       to: key,
@@ -1600,8 +1935,9 @@ function AppInner() {
     try {
       turnRequestRef.current += 1
       endpointRequestRef.current += 1
+      sessionGenerationRef.current += 1
       sessionActiveRef.current = false
-      canListenOnRouteRef.current = false
+      setRoutePresence('outSession', 'scenario_change')
       playbackActiveRef.current = false
       audioPlayingRef.current = false
       playbackStartedRef.current = false
@@ -1621,6 +1957,7 @@ function AppInner() {
       setIsSessionActive(false)
       setStatus('session.status.scenario_selected')
       logVoiceMetric('scenario_selected', { key })
+      return true
     } finally {
       setScenarioSwitching(false)
     }
@@ -2094,7 +2431,7 @@ function AppInner() {
           sessionActive: sessionActiveRef.current,
           activeTab: activeTabRef.current,
         })
-        canListenOnRouteRef.current = false
+        setRoutePresence('outSession', `app_state:${nextState}`)
         playbackEndedAtMsRef.current = null
         clearResumeListeningTimer()
         endpointRequestRef.current += 1
@@ -2104,7 +2441,7 @@ function AppInner() {
         return
       }
 
-      canListenOnRouteRef.current = true
+      setRoutePresence(activeTabRef.current === 'session' ? 'inSession' : 'outSession', 'app_state:active')
       logVoiceMetric('app_state_active', {
         sessionActive: sessionActiveRef.current,
         activeTab: activeTabRef.current,
@@ -2116,14 +2453,17 @@ function AppInner() {
         void loadPreferences()
       }
 
-      if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
+      if (canStartSessionListening('app_state_active')) {
         listeningStartMsRef.current = Date.now()
         setStatus(listeningStartupStatus())
         void speechStartListeningRef.current('en-US')
       }
     })
     return () => subscription.remove()
-  }, [auth.state, busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, loadPreferences, logVoiceMetric])
+  }, [
+    auth.state, busy, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer,
+    listeningStartupStatus, loadPreferences, logVoiceMetric, setRoutePresence,
+  ])
 
   function playCorrection(text: string) {
     logUserAction('play_correction_tap', { chars: text.length })

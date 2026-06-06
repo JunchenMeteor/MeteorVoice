@@ -13,7 +13,7 @@ interface Props {
   selectedScenarioKey: string
   isSessionActive: boolean
   scenarioSwitching: boolean
-  onSelectScenario: (key: string) => void | Promise<void>
+  onSelectScenario: (key: string) => boolean | Promise<boolean>
   onGoToSession: () => void
 }
 
@@ -24,8 +24,8 @@ export function HomeScreen({
 }: Props) {
   const { C } = useTheme()
   async function handleScenario(key: string) {
-    await onSelectScenario(key)
-    onGoToSession()
+    const shouldNavigate = await onSelectScenario(key)
+    if (shouldNavigate) onGoToSession()
   }
 
 
