@@ -27,11 +27,11 @@ jobs:
           if [ "${GITHUB_REF_NAME}" = "release" ]; then
             echo "app_dir=/srv/meteorvoice-release" >> "$GITHUB_OUTPUT"
             echo "pm2_name=meteorvoice-release" >> "$GITHUB_OUTPUT"
-            echo "port=3102" >> "$GITHUB_OUTPUT"
+            echo "port=3100" >> "$GITHUB_OUTPUT"
           else
             echo "app_dir=/srv/meteorvoice" >> "$GITHUB_OUTPUT"
             echo "pm2_name=meteorvoice" >> "$GITHUB_OUTPUT"
-            echo "port=3100" >> "$GITHUB_OUTPUT"
+            echo "port=3101" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Deploy
