@@ -427,7 +427,7 @@ function AppInner() {
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueueSnapshot>(() => createPlaybackQueueSnapshot())
-  const [status, setStatus] = useState('session.ready')
+  const [status, setStatusState] = useState('session.ready')
   const [locale, setLocaleState] = useState<Locale>('en')
   useEffect(() => {
     SecureStore.getItemAsync('app_locale').then(v => { if (v === 'zh' || v === 'en') setLocaleState(v) })
@@ -450,7 +450,7 @@ function AppInner() {
   }, [])
   const [summary, setSummary] = useState<string | null>(null)
   const [voiceMetrics, setVoiceMetrics] = useState<VoiceMetricEntry[]>([])
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusyState] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [historySessions, setHistorySessions] = useState<HistorySession[]>([])
@@ -485,7 +485,9 @@ function AppInner() {
   const signOut = auth.signOut
   const snapshotRef = useRef(snapshot)
   const messagesRef = useRef(messages)
+  const statusRef = useRef(status)
   const localeRef = useRef(locale)
+  const selectedScenarioKeyRef = useRef(selectedScenarioKey)
   const sessionSttProviderRef = useRef(sessionSttProvider)
   const sessionSttProviderHydratedRef = useRef(false)
   const sessionSttProvidersLoadedRef = useRef(false)
@@ -503,6 +505,7 @@ function AppInner() {
   const sessionGenerationRef = useRef(0)
   const sttStreamIdRef = useRef(0)
   const sttOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const voiceMetricSeqRef = useRef(0)
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
   const routePresenceRef = useRef<SessionRoutePresence>('inSession')
@@ -551,8 +554,16 @@ function AppInner() {
   }, [messages])
 
   useEffect(() => {
+    statusRef.current = status
+  }, [status])
+
+  useEffect(() => {
     localeRef.current = locale
   }, [locale])
+
+  useEffect(() => {
+    selectedScenarioKeyRef.current = selectedScenarioKey
+  }, [selectedScenarioKey])
 
   useEffect(() => {
     sessionSttProviderRef.current = sessionSttProvider
@@ -601,8 +612,34 @@ function AppInner() {
   }, [])
 
   const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
+    const metricSeq = ++voiceMetricSeqRef.current
+    const snapshot = snapshotRef.current
+    const stream = xunfeiSessionSttRef.current
+    const generation = sessionGenerationRef.current
+    const turnRequestId = turnRequestRef.current
+    const sessionId = snapshot.sessionId
+    const context = {
+      traceId: `${sessionId}:g${generation}:t${turnRequestId}`,
+      metricSeq,
+      sessionId,
+      generation,
+      streamId: stream?.streamId ?? null,
+      turnRequestId,
+      endpointRequestId: endpointRequestRef.current,
+      activeTab: activeTabRef.current,
+      routePresence: routePresenceRef.current,
+      status: statusRef.current,
+      workflowState: snapshot.state,
+      scenario: selectedScenarioKeyRef.current,
+      sessionActive: sessionActiveRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy: busyRef.current,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+      sttProvider: sessionSttProviderRef.current,
+    }
     const sanitizedData = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [
+      Object.entries({ ...context, ...data }).map(([key, value]) => [
         key,
         key.toLowerCase().includes('audiourl') && typeof value === 'string' ? '<audioUrl>' : value,
       ]),
@@ -611,6 +648,30 @@ function AppInner() {
     console.info('[voice-metrics]', JSON.stringify(entry))
     setVoiceMetrics(previous => [...previous.slice(-239), entry])
   }, [])
+
+  const setStatus = useCallback((nextStatus: string) => {
+    const previous = statusRef.current
+    statusRef.current = nextStatus
+    if (previous !== nextStatus) {
+      logVoiceMetric('ui_status_changed', {
+        from: previous,
+        to: nextStatus,
+      })
+    }
+    setStatusState(nextStatus)
+  }, [logVoiceMetric])
+
+  const setBusy = useCallback((nextBusy: boolean) => {
+    const previous = busyRef.current
+    busyRef.current = nextBusy
+    if (previous !== nextBusy) {
+      logVoiceMetric('ui_busy_changed', {
+        from: previous,
+        to: nextBusy,
+      })
+    }
+    setBusyState(nextBusy)
+  }, [logVoiceMetric])
 
   const logUserAction = useCallback((action: string, data: Record<string, unknown> = {}) => {
     logVoiceMetric('user_action', {
@@ -758,7 +819,7 @@ function AppInner() {
       if (updateStatus) setStatus(listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
     }, delayMs)
-  }, [canStartSessionListening, clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric])
+  }, [canStartSessionListening, clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric, setStatus])
 
   useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
 
@@ -969,7 +1030,7 @@ function AppInner() {
     }
   }, [
     audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, cancelListeningForReason,
-    clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening,
+    clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening, setStatus,
   ])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
@@ -1132,7 +1193,7 @@ function AppInner() {
   }, [
     accent.name, accent.region, api, audio.isRecording, busy, cancelListeningForReason,
     clearResumeListeningTimer, isSessionActive, logVoiceMetric, scenario.description, scenario.name,
-    scheduleResumeListening, synthesizeCoachSpeech,
+    scheduleResumeListening, setBusy, setStatus, synthesizeCoachSpeech,
   ])
 
   const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
@@ -1197,25 +1258,49 @@ function AppInner() {
     const baseUrl = apiBaseUrl.trim()
     const endpointRequestId = ++endpointRequestRef.current
     logVoiceMetric('endpoint_start', { chars: endpointTranscript.length })
-    const endpointResult = await judgeEndpoint({
-      transcript: endpointTranscript,
-      listeningDurationMs: Date.now() - listeningStartMsRef.current,
-      messages: currentMessages,
-      scenario: scenario.key,
-      semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
-        const authHeaders = await getAuthHeaders()
-        const res = await fetchWithTimeout(fetch, `${baseUrl}/api/semantic-endpoint`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
-          body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
-        })
-        if (res.status === 401) await handleUnauthorized()
-        if (!res.ok) throw new Error('Semantic check failed')
-        const data = await res.json() as { judgment: 'done' | 'thinking' }
-        return data.judgment
-      } : undefined,
-    })
-    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
+    let endpointResult: Awaited<ReturnType<typeof judgeEndpoint>>
+    try {
+      endpointResult = await judgeEndpoint({
+        transcript: endpointTranscript,
+        listeningDurationMs: Date.now() - listeningStartMsRef.current,
+        messages: currentMessages,
+        scenario: scenario.key,
+        semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
+          const authHeaders = await getAuthHeaders()
+          const res = await fetchWithTimeout(fetch, `${baseUrl}/api/semantic-endpoint`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
+            body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
+          })
+          if (res.status === 401) await handleUnauthorized()
+          if (!res.ok) throw new Error('Semantic check failed')
+          const data = await res.json() as { judgment: 'done' | 'thinking' }
+          return data.judgment
+        } : undefined,
+      })
+    } catch (error) {
+      logVoiceMetric('endpoint_error', {
+        chars: endpointTranscript.length,
+        elapsedMs: Date.now() - finalReceivedAt,
+        message: error instanceof Error ? error.message : 'Endpoint judgment failed',
+      })
+      pendingNativeTranscriptRef.current = endpointTranscript
+      setStatus(listeningStartupStatus())
+      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+        void speechStartListeningRef.current('en-US')
+      }
+      return
+    }
+    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) {
+      logVoiceMetric('endpoint_ignored_stale', {
+        endpointRequestId,
+        currentEndpointRequestId: endpointRequestRef.current,
+        sessionActive: sessionActiveRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        playbackActive: playbackActiveRef.current,
+      })
+      return
+    }
     logVoiceMetric('endpoint_done', {
       judgment: endpointResult.judgment,
       reason: endpointResult.reason,
@@ -1236,7 +1321,7 @@ function AppInner() {
     void submitTurn(endpointTranscript)
   }, [
     apiBaseUrl, audio.isPlaying, auth.state, cancelListeningForReason, getAuthHeaders, handleUnauthorized,
-    listeningStartupStatus, logVoiceMetric, scenario.key, submitTurn,
+    listeningStartupStatus, logVoiceMetric, scenario.key, setStatus, submitTurn,
   ])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
@@ -1739,7 +1824,7 @@ function AppInner() {
     })
   }, [
     api, auth, availableSessionSttProviders, canStartSessionListening, enqueueSttOperation,
-    handleListeningEndedWithoutTranscript, handleNativeFinalTranscript, logVoiceMetric, scenario.key,
+    handleListeningEndedWithoutTranscript, handleNativeFinalTranscript, logVoiceMetric, scenario.key, setStatus,
   ])
 
   const speech = useNativeSpeech({
@@ -1836,7 +1921,7 @@ function AppInner() {
     }
   }, [
     busy, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer,
-    listeningStartupStatus, logUserAction, logVoiceMetric, setRoutePresence,
+    listeningStartupStatus, logUserAction, logVoiceMetric, setRoutePresence, setStatus,
   ])
 
   async function endSession() {
@@ -2462,7 +2547,7 @@ function AppInner() {
     return () => subscription.remove()
   }, [
     auth.state, busy, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer,
-    listeningStartupStatus, loadPreferences, logVoiceMetric, setRoutePresence,
+    listeningStartupStatus, loadPreferences, logVoiceMetric, setRoutePresence, setStatus,
   ])
 
   function playCorrection(text: string) {

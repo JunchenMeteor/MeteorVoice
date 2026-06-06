@@ -155,6 +155,46 @@ All async work must have explicit completion logs:
 
 No async phase may log only `start` without a terminal log.
 
+## Runtime Logging Contract
+
+Every mobile runtime log emitted through `logVoiceMetric` must carry enough context to reconstruct a full session chain from one exported diagnostics file.
+
+Common fields:
+
+```text
+traceId
+metricSeq
+sessionId
+generation
+streamId
+turnRequestId
+endpointRequestId
+activeTab
+routePresence
+status
+workflowState
+scenario
+sessionActive
+canListenOnRoute
+busy
+playbackActive
+audioPlaying
+sttProvider
+```
+
+`traceId` is derived from `sessionId`, `generation`, and `turnRequestId`. `metricSeq` is monotonic in the current app process and should be used with `ts` to order tightly spaced events.
+
+UI state changes are logged as first-class runtime events:
+
+```text
+ui_status_changed
+ui_busy_changed
+tab_change
+route_presence_changed
+```
+
+STT, endpoint, submit, TTS, playback, and route changes should be searchable as one chain by filtering on `traceId`, then sorting by `metricSeq`.
+
 ## Generation And Turn Guards
 
 `generation` is incremented when a session starts, stops, or changes scenario. Async callbacks must capture generation at start and compare at completion.
