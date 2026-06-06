@@ -255,6 +255,18 @@ eas build --platform ios --profile preview
 }
 ```
 
+## 发布管理
+
+生产发布通过 GitHub Actions 的 `Release Manager` workflow 管理：
+
+```text
+GitHub -> Actions -> Release Manager -> Run workflow
+```
+
+选择 `action=full`，输入类似 `1.3.1` 的语义化版本号。workflow 会自动创建 release issue 和 PR，等待检查通过，将 `main` 提升到 `release`，等待腾讯云部署，验证公网 URL，并创建 GitHub Release。
+
+详细操作和中断恢复步骤见 `docs/release-manager.md`。
+
 ## TTS 服务商
 
 国内用户推荐使用以下服务商：

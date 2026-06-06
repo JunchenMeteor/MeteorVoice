@@ -255,6 +255,18 @@ Set the API base URL in `apps/mobile/app.json`:
 }
 ```
 
+## Release Management
+
+Production releases are managed by the GitHub Actions `Release Manager` workflow:
+
+```text
+GitHub -> Actions -> Release Manager -> Run workflow
+```
+
+Use `action=full` with a semantic version such as `1.3.1`. The workflow creates the release issue and PRs, waits for checks, promotes `main` to `release`, waits for Tencent deployment, verifies public URLs, and creates the GitHub Release.
+
+Detailed operation and recovery steps live in `docs/release-manager.md`.
+
 ## TTS Providers
 
 Domestic providers are the recommended real voice path:
