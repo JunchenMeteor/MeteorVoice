@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=nextdotjs" />
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=nextdotjs" />
   <img alt="Expo" src="https://img.shields.io/badge/Expo-55-000020?style=for-the-badge&logo=expo&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" />
   <img alt="AI" src="https://img.shields.io/badge/AI-DeepSeek-4B7BFF?style=for-the-badge" />
@@ -72,8 +72,12 @@ sequenceDiagram
 - 会话级口音适配（美式、英式、印度、澳洲等）
 - 非阻塞纠错面板——纠错建议不打断对话
 - 对话区外支持中英双语 UI
+- AI 回复语言路由和 ASR 识别语言分离，避免中英文设置互相覆盖
 - 基于 CSS 自定义属性的全局主题切换
 - 通过 Supabase 管理登录、历史记录和偏好同步
+- 统一 ASR provider 层，支持讯飞启动会话、iOS 原生 PCM 采集和诊断
+- 统一运行时反馈能力，覆盖加载、阻断操作、网络错误和 401 强制登出
+- 高成本 AI、TTS、ASR、会话接口增加登录态保护
 - 提供 mock AI/STT/TTS，无需 API Key 即可本地开发
 - 基于 Expo React Native 的原生移动端（iOS/Android）
 
@@ -85,16 +89,18 @@ flowchart TB
     Mobile[MeteorVoice Mobile<br/>Expo React Native]
 
     subgraph Platform[后端]
-        API[Next.js API Routes<br/>TTS / Chat / Session / Turns]
+        API[Next.js API Routes<br/>TTS / ASR / Chat / Session / Turns]
         Supabase[Supabase<br/>Auth / DB / 偏好]
         AI[AI Provider<br/>DeepSeek via Vercel AI SDK]
         TTS[TTS 服务商<br/>讯飞 / 火山 / 腾讯 / Azure]
+        ASR[ASR 服务商<br/>Native / 讯飞 / Azure-ready]
     end
 
     subgraph Shared[packages/]
         SharedPkg[shared<br/>类型 / i18n / provider 接口]
         SessionCore[session-core<br/>轮次生命周期 / 工作流]
         APIClient[api-client<br/>类型化 API 调用]
+        Runtime[shared runtime<br/>反馈 / 操作组]
     end
 
     Web --> API
@@ -103,17 +109,26 @@ flowchart TB
     API --> Supabase
     API --> AI
     API --> TTS
+    API --> ASR
     Web --> Shared
     Mobile --> Shared
+    Web --> Runtime
+    Mobile --> Runtime
 ```
 
 职责边界：
 
 - `apps/web`：Next.js 全栈应用——UI、API 路由、服务端 TTS/AI 编排。
-- `apps/mobile`：Expo React Native 原生客户端——语音会话 UI、原生音频、后台保活。
-- `packages/shared`：跨端类型、i18n 文案、provider 接口、TTS 能力表。
+- `apps/mobile`：Expo React Native 原生客户端——语音会话 UI、原生音频、原生 PCM 采集、后台保活。
+- `packages/shared`：跨端类型、i18n 文案、provider 接口、ASR/TTS 能力表、反馈状态和操作组。
 - `packages/session-core`：平台无关的轮次生命周期和工作流状态机。
-- `packages/api-client`：Web 和 Mobile 共用的类型化 API 客户端。
+- `packages/api-client`：Web 和 Mobile 共用的类型化 API 客户端，包含请求超时和统一错误格式化。
+
+设置同步现在区分全量刷新和局部更新：
+
+- 进入页面、登录、前后台恢复和手动刷新使用 grouped operation，多个接口共享一个 loading 状态。
+- 单项设置保存成功后，以 `/api/preferences` 返回结果为准，只应用受影响的设置域。
+- AI 回复语言通过 `responseLocale` 传递；ASR 识别语言单独通过 `languageMode` 配置。
 
 ## 项目结构
 
@@ -171,12 +186,15 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 DEEPSEEK_API_KEY=your-deepseek-api-key        # 可选，不填则使用 mock AI
 ```
 
-TTS 服务商密钥（均可选，不填则使用 mock TTS）：
+ASR/TTS 服务商密钥（均可选，不填则使用 mock/native 兜底）：
 
 ```text
+ASR_PROVIDER=native
+TTS_PROVIDER=mock
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
+XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # 默认兜底 vcn；具体教练声音在设置页选择
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
@@ -202,7 +220,7 @@ npm run dev
 
 打开 `http://127.0.0.1:3001`
 
-不配置任何 API Key 也能以 mock 模式完整运行。真实 AI 回复需要 `DEEPSEEK_API_KEY`，真实语音输出需要至少一个 TTS 服务商密钥。
+不配置任何 API Key 也能以 mock 模式完整运行。真实 AI 回复需要 `DEEPSEEK_API_KEY`，真实语音输出需要至少一个 TTS 服务商密钥。远端 ASR 需要配置服务商密钥和 `ASR_PROVIDER`；否则移动端可以使用原生语音识别。
 
 ## 移动端
 
@@ -253,6 +271,20 @@ eas build --platform ios --profile preview
 
 详见 `docs/tts-integration.md`。
 
+## ASR 服务商
+
+MeteorVoice 现在提供统一 ASR provider 层：
+
+| 服务商 | Key | 状态 |
+|--------|-----|------|
+| 原生移动端语音识别 | `native` | 默认兜底 |
+| 讯飞 `zh_iat` | `xunfei` | 已支持签名 WebSocket 启动和 iOS PCM streaming 路径 |
+| Azure Speech | `azure` | 合约已准备，运行时 adapter 待接入 |
+
+ASR 层和 AI 回复语言路由是分离的：`ASR languageMode` 只控制识别语言，`responseLocale` 控制教练回复语言。
+
+合约、落地路径、诊断和测试说明详见 `docs/asr-provider-layer.md`。
+
 ## 验证
 
 ```bash
@@ -280,6 +312,7 @@ flowchart LR
 | **双端架构** | `apps/web` + `apps/mobile` + `packages/*` monorepo | ✅ 已交付 |
 | **沉浸式 UI** | 语音波形、桌面/移动双布局、实时字幕 | ✅ 已交付 |
 | **产品化** | 历史页详展/分页、Preferences 跨设备同步、CI 并行化、Mobile 音频硬化 | ✅ 已交付 |
-| **三合一层级判停** | L1 本地判断 + L2 LLM 语义判停 + L3 安全网，替代固定静默等待 | 🚧 实现中 |
-| **口音能力专项** | TTS provider voice catalog，多口音发音人（美式/英式/印度/澳式） | 📋 待排期 |
+| **三合一层级判停** | L1 本地判断 + L2 LLM 语义判停 + L3 安全网，替代固定静默等待 | ✅ 已交付 |
+| **ASR provider 层** | 统一 ASR 合约、讯飞启动会话、原生 PCM 诊断、移动端会话接入 | ✅ 已交付 |
+| **口音能力专项** | TTS provider voice catalog，多口音发音人（美式/英式/印度/澳式） | 🚧 实现中 |
 | **分发** | TestFlight 内测、EAS 正式构建 | 📋 待排期 |

@@ -34,9 +34,9 @@ Vercel 环境变量仍配置在项目级，不跟随文件迁移。检查项：
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_BASE_URL`
-- `STT_PROVIDER`
+- `ASR_PROVIDER`
 - `TTS_PROVIDER`
-- TTS provider secrets：Xunfei、Volcengine、Tencent
+- ASR/TTS provider secrets：Xunfei、Volcengine、Tencent、Azure
 
 本地 Web env 示例见 `apps/web/.env.local.example`。
 
