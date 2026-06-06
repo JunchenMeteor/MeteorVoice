@@ -126,14 +126,21 @@ export function shouldConfirmScenarioSwitch(input: {
 
 export function shouldResumeListening(input: {
   sessionActive: boolean
+  routePresence?: SessionRoutePresence
   canListenOnRoute: boolean
+  busy?: boolean
   playbackActive: boolean
   audioPlaying: boolean
+  generation?: number
+  currentGeneration?: number
 }) {
   return input.sessionActive &&
+    (input.routePresence == null || input.routePresence === 'inSession') &&
     input.canListenOnRoute &&
+    !input.busy &&
     !input.playbackActive &&
-    !input.audioPlaying
+    !input.audioPlaying &&
+    (input.generation == null || input.currentGeneration == null || input.generation === input.currentGeneration)
 }
 
 export function getPlaybackTailPrewarmDecision(snapshot: PlaybackTailPrewarmSnapshot) {

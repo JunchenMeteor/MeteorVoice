@@ -719,17 +719,25 @@ function AppInner() {
         playbackEndedAtMsRef.current = Date.now()
         setStatus(shouldResumeListening({
           sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
           canListenOnRoute: canListenOnRouteRef.current,
+          busy: busyRef.current,
           playbackActive: playbackActiveRef.current,
           audioPlaying: audioPlayingRef.current,
+          generation: sessionGenerationRef.current,
+          currentGeneration: sessionGenerationRef.current,
         })
           ? 'session.status.listening'
           : 'session.status.reply_played')
         if (shouldResumeListening({
           sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
           canListenOnRoute: canListenOnRouteRef.current,
+          busy: busyRef.current,
           playbackActive: playbackActiveRef.current,
           audioPlaying: audioPlayingRef.current,
+          generation: sessionGenerationRef.current,
+          currentGeneration: sessionGenerationRef.current,
         })) {
           scheduleResumeListening(900, false)
         }
@@ -765,9 +773,13 @@ function AppInner() {
       setStatus('session.status.reply_played')
       if (shouldResumeListening({
         sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
         canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
         playbackActive: playbackActiveRef.current,
         audioPlaying: audioPlayingRef.current,
+        generation: sessionGenerationRef.current,
+        currentGeneration: sessionGenerationRef.current,
       })) {
         scheduleResumeListening()
       }
@@ -874,7 +886,16 @@ function AppInner() {
       setStatus('session.status.requesting_voice')
       if (!coachReply.text.trim()) {
         setStatus('session.status.reply_without_text')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        if (shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: false,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: submitGeneration,
+          currentGeneration: sessionGenerationRef.current,
+        })) {
           scheduleResumeListening(500)
         }
         logSubmitTerminal('submit_turn_done', { reason: 'reply_without_text' })
@@ -909,7 +930,16 @@ function AppInner() {
       } else {
         playbackActiveRef.current = false
         setStatus('session.status.reply_without_audio')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
+        if (shouldResumeListening({
+          sessionActive: sessionActiveRef.current,
+          routePresence: routePresenceRef.current,
+          canListenOnRoute: canListenOnRouteRef.current,
+          busy: false,
+          playbackActive: playbackActiveRef.current,
+          audioPlaying: audioPlayingRef.current,
+          generation: submitGeneration,
+          currentGeneration: sessionGenerationRef.current,
+        })) {
           scheduleResumeListening(500)
         }
       }
@@ -938,7 +968,16 @@ function AppInner() {
       logVoiceMetric('mobile_session_request_error', requestError.logData)
       displayErrorFeedback(requestError, 'mobile_session_submit')
       setStatus(requestError.displayMessage)
-      if (sessionActiveRef.current && canListenOnRouteRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: false,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+        generation: submitGeneration,
+        currentGeneration: sessionGenerationRef.current,
+      })) {
         scheduleResumeListening(900)
       }
     } finally {
@@ -1010,7 +1049,14 @@ function AppInner() {
       })
       pendingNativeTranscriptRef.current = ''
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
@@ -1047,7 +1093,14 @@ function AppInner() {
       })
       pendingNativeTranscriptRef.current = endpointTranscript
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
@@ -1077,7 +1130,14 @@ function AppInner() {
     if (endpointResult.judgment === 'continue') {
       pendingNativeTranscriptRef.current = endpointTranscript
       setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
+      if (shouldResumeListening({
+        sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
+        canListenOnRoute: canListenOnRouteRef.current,
+        busy: busyRef.current,
+        playbackActive: playbackActiveRef.current,
+        audioPlaying: audioPlayingRef.current,
+      })) {
         void speechStartListeningRef.current('en-US')
       }
       return
@@ -1092,9 +1152,17 @@ function AppInner() {
   ])
 
   const handleListeningEndedWithoutTranscript = useCallback(() => {
-    if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
+    if (!shouldResumeListening({
+      sessionActive: sessionActiveRef.current,
+      routePresence: routePresenceRef.current,
+      canListenOnRoute: canListenOnRouteRef.current,
+      busy,
+      playbackActive: playbackActiveRef.current,
+      audioPlaying: audioPlayingRef.current,
+    })) {
       logVoiceMetric('stt_end_restart_skipped', {
         sessionActive: sessionActiveRef.current,
+        routePresence: routePresenceRef.current,
         canListenOnRoute: canListenOnRouteRef.current,
         activeTab: activeTabRef.current,
         busy,
@@ -1707,7 +1775,7 @@ function AppInner() {
       pendingTeardown: Boolean(listeningTeardownRef.current),
     })
 
-    // 立即结束 session，不等 API
+    // End the local session immediately; summary sync is best-effort.
     turnRequestRef.current += 1
     sessionGenerationRef.current += 1
     sessionActiveRef.current = false
@@ -1747,7 +1815,7 @@ function AppInner() {
         corrections: correctionHistory,
       }).catch(() => undefined)
     } catch {
-      // summary 失败不影响 session 已结束的状态
+      // Summary failure must not undo the local ended state.
     }
   }
 
@@ -1871,7 +1939,7 @@ function AppInner() {
         return undefined
       })
     } catch {
-      // 静默失败
+      // Best-effort deletion; keep optimistic local state.
     }
   }
 

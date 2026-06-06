@@ -105,9 +105,46 @@ describe('mobile session runtime selectors', () => {
   it('describes playback resume gate', () => {
     expect(shouldResumeListening({
       sessionActive: true,
+      routePresence: 'inSession',
       canListenOnRoute: true,
+      busy: false,
       playbackActive: false,
       audioPlaying: false,
+      generation: 3,
+      currentGeneration: 3,
     })).toBe(true)
+
+    expect(shouldResumeListening({
+      sessionActive: true,
+      routePresence: 'outSession',
+      canListenOnRoute: true,
+      busy: false,
+      playbackActive: false,
+      audioPlaying: false,
+      generation: 3,
+      currentGeneration: 3,
+    })).toBe(false)
+
+    expect(shouldResumeListening({
+      sessionActive: true,
+      routePresence: 'inSession',
+      canListenOnRoute: true,
+      busy: true,
+      playbackActive: false,
+      audioPlaying: false,
+      generation: 3,
+      currentGeneration: 3,
+    })).toBe(false)
+
+    expect(shouldResumeListening({
+      sessionActive: true,
+      routePresence: 'inSession',
+      canListenOnRoute: true,
+      busy: false,
+      playbackActive: false,
+      audioPlaying: false,
+      generation: 2,
+      currentGeneration: 3,
+    })).toBe(false)
   })
 })
