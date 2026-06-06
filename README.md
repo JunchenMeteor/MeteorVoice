@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=nextdotjs" />
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=nextdotjs" />
   <img alt="Expo" src="https://img.shields.io/badge/Expo-55-000020?style=for-the-badge&logo=expo&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" />
   <img alt="AI" src="https://img.shields.io/badge/AI-DeepSeek-4B7BFF?style=for-the-badge" />
@@ -75,6 +75,9 @@ sequenceDiagram
 - Response language routing — AI replies and correction explanations follow the selected UI language
 - Theme switching with CSS custom properties
 - Login, session history, and preference sync through Supabase
+- Shared ASR provider layer with Xunfei bootstrap, native iOS PCM capture, and provider diagnostics
+- Unified runtime feedback for loading, blocking operations, network errors, and 401 sign-out
+- Authenticated API guard for high-cost AI, TTS, ASR, and session routes
 - Mock AI/STT/TTS providers for local development without API keys
 - Native mobile client (iOS/Android) via Expo React Native
 
@@ -86,10 +89,11 @@ flowchart TB
     Mobile[MeteorVoice Mobile<br/>Expo React Native]
 
     subgraph Platform[Backend]
-        API[Next.js API Routes<br/>TTS / Chat / Session / Turns]
+        API[Next.js API Routes<br/>TTS / ASR / Chat / Session / Turns]
         Supabase[Supabase<br/>Auth / DB / Preferences]
         AI[AI Provider<br/>DeepSeek via Vercel AI SDK]
         TTS[TTS Providers<br/>Xunfei / Volcengine / Tencent / Azure]
+        ASR[ASR Providers<br/>Native / Xunfei / Azure-ready]
     end
 
     subgraph Shared[packages/]
@@ -105,6 +109,7 @@ flowchart TB
     API --> Supabase
     API --> AI
     API --> TTS
+    API --> ASR
     Web --> Shared
     Mobile --> Shared
     Web --> Runtime
@@ -114,10 +119,10 @@ flowchart TB
 Responsibility boundaries:
 
 - `apps/web`: Next.js full-stack app — UI, API routes, server-side TTS/AI orchestration.
-- `apps/mobile`: Expo React Native native client — voice session UI, native audio, background keep-alive.
-- `packages/shared`: cross-client types, i18n strings, provider interfaces, TTS capabilities, app feedback state, and grouped async operation helpers.
+- `apps/mobile`: Expo React Native native client — voice session UI, native audio, native PCM capture, background keep-alive.
+- `packages/shared`: cross-client types, i18n strings, provider interfaces, ASR/TTS capabilities, app feedback state, and grouped async operation helpers.
 - `packages/session-core`: platform-neutral turn lifecycle and workflow state machine.
-- `packages/api-client`: typed API calls shared by Web and Mobile.
+- `packages/api-client`: typed API calls shared by Web and Mobile, including request timeout and formatted error handling.
 
 Settings synchronization now separates full refresh and targeted updates:
 
@@ -181,12 +186,15 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 DEEPSEEK_API_KEY=your-deepseek-api-key        # optional — mock AI works without it
 ```
 
-TTS provider keys (all optional — mock TTS works without them):
+ASR/TTS provider keys (all optional — mock/native fallback works without them):
 
 ```text
+ASR_PROVIDER=native
+TTS_PROVIDER=mock
 XUNFEI_APP_ID=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
+XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # default fallback vcn; coach voice is selectable in Settings
 VOLCENGINE_ACCESS_KEY=
 VOLCENGINE_SECRET_KEY=
@@ -212,7 +220,7 @@ npm run dev
 
 Open `http://127.0.0.1:3001`
 
-The app runs fully in mock mode without any API keys. Real AI replies require `DEEPSEEK_API_KEY`. Real voice output requires at least one TTS provider key.
+The app runs fully in mock mode without any API keys. Real AI replies require `DEEPSEEK_API_KEY`. Real voice output requires at least one TTS provider key. Remote ASR requires provider credentials and `ASR_PROVIDER`; otherwise mobile can use native speech recognition.
 
 ## Mobile
 
@@ -263,6 +271,20 @@ Each user's selected provider is stored in Supabase. Provider credentials stay i
 
 See `docs/tts-integration.md` for provider setup details.
 
+## ASR Providers
+
+MeteorVoice now exposes a shared ASR provider layer:
+
+| Provider | Key | Status |
+|----------|-----|--------|
+| Native mobile speech | `native` | Default fallback |
+| Xunfei `zh_iat` | `xunfei` | Signed WebSocket bootstrap and iOS PCM streaming path |
+| Azure Speech | `azure` | Contract-ready, pending runtime adapter |
+
+The ASR layer is split from AI response language routing: `ASR languageMode` controls recognition, while `responseLocale` controls how the coach replies.
+
+See `docs/asr-provider-layer.md` for contracts, rollout steps, diagnostics, and test guidance.
+
 ## Validation
 
 ```bash
@@ -290,6 +312,7 @@ flowchart LR
 | **Dual-platform architecture** | `apps/web` + `apps/mobile` + `packages/*` monorepo | ✅ Delivered |
 | **Immersive UI** | Voice waveform, desktop/mobile layouts, real-time subtitles | ✅ Delivered |
 | **Productization** | History with expansion/pagination, cross-device preferences sync, CI parallel jobs, mobile audio hardening | ✅ Delivered |
-| **Semantic endpointing** | L1 local rules + L2 LLM-based end-of-turn detection + L3 safety net, replacing fixed silence timeout | 🚧 In implementation |
-| **Accent capabilities** | TTS provider voice catalog, multi-accent speakers (US/UK/Indian/Australian) | 📋 Planned |
+| **Semantic endpointing** | L1 local rules + L2 LLM-based end-of-turn detection + L3 safety net, replacing fixed silence timeout | ✅ Delivered |
+| **ASR provider layer** | Shared ASR contracts, Xunfei bootstrap, native PCM diagnostics, mobile session integration | ✅ Delivered |
+| **Accent capabilities** | TTS provider voice catalog, multi-accent speakers (US/UK/Indian/Australian) | 🚧 In implementation |
 | **Distribution** | TestFlight beta, EAS production build | 📋 Planned |

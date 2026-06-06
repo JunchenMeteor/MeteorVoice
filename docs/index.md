@@ -18,13 +18,15 @@
    - 共享 ASR provider 层执行规格，修改 ASR provider、远端识别、mobile/web ASR 接入前 MUST 阅读。
 7. `docs/runtime-state-and-feedback.md`
    - 共享反馈层、operation group、Settings 同步策略和会话回复语言路由，修改 loading/error、设置页刷新或 AI 回复语言前 MUST 阅读。
+8. `docs/releases/v1.3.0.md`
+   - v1.3.0 release notes，发布前核对版本、功能范围和验证命令。
 
 ## 当前执行状态
 
 - 当前主线：`main` 已完成 Web 迁入 `apps/web`、Expo native mobile app、`packages/shared`、`packages/api-client`、`packages/session-core` 的双端架构骨架。
 - 当前稳定发布/预发布分支：`release`。
 - 已完成并合入 `main`：沉浸式 UI、移动端 full-screen stage、waveform、AI 回复自然度优化、iOS Web audio unlock、CI 并行化、历史页详展/分页/软删除、Preferences 跨设备同步、Mobile 音频中断硬化。
-- 当前正在推进三合一层级判停（`docs/semantic-endpointing-plan.md`），将固定静默等待升级为 L1 本地判断 + L2 LLM 语义判停 + L3 安全网超时。
+- 已完成三合一层级判停（`docs/semantic-endpointing-plan.md`）：固定静默等待已升级为 L1 本地判断 + L2 LLM 语义判停 + L3 安全网超时。
 - 2026-05-29 已完成一轮 Mobile bug review 和代码修复，记录见 `docs/mobile-bug-review-2026-05-29.md`；Bluetooth/headphone route 和真机前后台 QA 仍需执行。
 - 已完成共享运行时反馈和聚合加载能力：`packages/shared/src/feedback.ts`、`packages/shared/src/operation-group.ts`。Settings 单项保存成功后使用服务端返回值局部应用，页面进入/登录后/前台恢复/手动刷新才做 grouped full refresh。
 - 会话回复语言通过 `ConversationContext.responseLocale` 从 Web/Mobile 传到 `/api/chat`，ASR 识别语言仍独立配置；当前 Xunfei ASR 诊断默认使用 `mixed_zh_en`。
@@ -57,6 +59,8 @@
   - 共享 ASR provider 层落地文档，覆盖 provider 能力、API 契约、服务端 bootstrap、后续远端 ASR 接入和验收路径。
 - `docs/runtime-state-and-feedback.md`
   - 当前共享 App feedback、operation group、Settings 局部同步、全量刷新边界和 response locale 路由规则。
+- `docs/releases/v1.3.0.md`
+  - v1.3.0 release notes，覆盖 ASR provider 层、mobile 语音稳定性、运行时反馈、API 防护和验证命令。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 
