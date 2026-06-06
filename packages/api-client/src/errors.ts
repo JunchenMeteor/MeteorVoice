@@ -1,10 +1,11 @@
-import { MeteorVoiceApiError } from './client'
+import { MeteorVoiceApiError, MeteorVoiceApiTimeoutError } from './client'
 
 export type ApiRequestErrorKind =
   | 'unauthorized'
   | 'forbidden'
   | 'rate_limited'
   | 'server'
+  | 'timeout'
   | 'network'
   | 'unknown'
 
@@ -74,6 +75,25 @@ export function formatApiRequestError(
         context,
         kind,
         status: error.status,
+        message: error.message,
+      },
+    }
+  }
+
+  if (error instanceof MeteorVoiceApiTimeoutError) {
+    return {
+      kind: 'timeout',
+      title: 'Request timed out',
+      displayMessage: 'The request took too long. Try again.',
+      presentation,
+      severity: 'warning',
+      action: 'retry',
+      actionLabel: 'Try again',
+      ...presentationConfig,
+      logData: {
+        context,
+        kind: 'timeout',
+        timeoutMs: error.timeoutMs,
         message: error.message,
       },
     }

@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import {
   createMeteorVoiceApiClient,
+  fetchWithTimeout,
   formatApiRequestError,
   type CreateASRSessionResponse,
   type HistorySession,
@@ -1058,7 +1059,7 @@ function AppInner() {
       scenario: scenario.key,
       semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
         const authHeaders = await getAuthHeaders()
-        const res = await fetch(`${baseUrl}/api/semantic-endpoint`, {
+        const res = await fetchWithTimeout(fetch, `${baseUrl}/api/semantic-endpoint`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
@@ -1664,7 +1665,7 @@ function AppInner() {
     setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
     try {
       const authHeaders = await getAuthHeaders()
-      await fetch(`${apiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
+      await fetchWithTimeout(fetch, `${apiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: authHeaders as Record<string, string>,
       }).then(res => {

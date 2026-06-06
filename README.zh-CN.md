@@ -233,7 +233,7 @@ eas build --platform ios --profile preview
 ```json
 "extra": {
   "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
-  "apiBaseUrlPreview": "https://meteorvoice-pre.jcmeteor.com"
+  "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com"
 }
 ```
 

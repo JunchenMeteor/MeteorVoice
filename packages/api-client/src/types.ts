@@ -22,6 +22,7 @@ export type ApiClientOptions = {
   fetch?: FetchLike
   headers?: ApiHeadersProvider
   onUnauthorized?: ApiUnauthorizedHandler
+  timeoutMs?: number
 }
 
 export type ApiErrorBody = {

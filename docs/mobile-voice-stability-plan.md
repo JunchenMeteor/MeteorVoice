@@ -281,7 +281,7 @@ open ~/Documents/meteorvoice-voice-metrics.log
 
 执行要求：
 
-- Xcode Run 真机调试默认走预发域名 `https://meteorvoice-pre.jcmeteor.com`。
+- Xcode Run 真机调试默认走预发域名 `https://mv-pre.jcmeteor.com`。
 - 只有明确调本地 Web/API 时，才在 Settings 页填 Mac 局域网 IP。
 - 如果真机仍访问本地 IP，先清空 Settings 页 API URL 并重启 App，或重新安装 App 清掉 SecureStore。
 

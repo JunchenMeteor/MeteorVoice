@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { createMeteorVoiceApiClient, formatApiRequestError, MeteorVoiceApiError, readApiJsonResponse } from '@meteorvoice/api-client'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  createMeteorVoiceApiClient,
+  formatApiRequestError,
+  MeteorVoiceApiError,
+  MeteorVoiceApiTimeoutError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
 
 describe('MeteorVoiceApiClient', () => {
   it('joins baseUrl and sends JSON requests', async () => {
@@ -62,6 +68,50 @@ describe('MeteorVoiceApiClient', () => {
         kind: 'unauthorized',
         status: 401,
         message: 'Authentication required',
+      },
+    })
+  })
+
+  it('aborts requests after the configured timeout', async () => {
+    vi.useFakeTimers()
+    const client = createMeteorVoiceApiClient({
+      timeoutMs: 25,
+      fetch: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const error = new Error('Aborted')
+          error.name = 'AbortError'
+          reject(error)
+        })
+      }),
+    })
+
+    const request = client.getPreferences()
+    const expectation = expect(request).rejects.toMatchObject({
+      name: 'MeteorVoiceApiTimeoutError',
+      timeoutMs: 25,
+    } satisfies Partial<MeteorVoiceApiTimeoutError>)
+    await vi.advanceTimersByTimeAsync(25)
+
+    await expectation
+    vi.useRealTimers()
+  })
+
+  it('formats timeout errors as retryable request failures', () => {
+    const result = formatApiRequestError(new MeteorVoiceApiTimeoutError('Network request timed out', 15000), {
+      context: 'mobile_settings_load',
+      presentation: 'blocking',
+    })
+
+    expect(result).toMatchObject({
+      kind: 'timeout',
+      title: 'Request timed out',
+      action: 'retry',
+      shouldDisplay: true,
+      blocksInteraction: true,
+      logData: {
+        context: 'mobile_settings_load',
+        kind: 'timeout',
+        timeoutMs: 15000,
       },
     })
   })

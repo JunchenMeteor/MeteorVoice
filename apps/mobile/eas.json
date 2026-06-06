@@ -7,7 +7,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://meteorvoice-pre.jcmeteor.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://mv-pre.jcmeteor.com"
       },
       "ios": {
         "simulator": true
@@ -16,7 +16,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://meteorvoice-pre.jcmeteor.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://mv-pre.jcmeteor.com"
       },
       "ios": {
         "simulator": false
