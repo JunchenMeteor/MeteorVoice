@@ -51,16 +51,21 @@ export function createMockAI(): AIProvider {
       const lastUserMessage = [...messages].reverse().find(message => message.role === 'user')?.content ?? ''
       const mixedChineseText = lastUserMessage.match(/[\u3400-\u9fff]+/)?.[0]
       if (mixedChineseText) {
+        const text = context.responseLocale === 'zh'
+          ? `“${mixedChineseText}” 可以用英语说成 “book” 或 “reserve”。再告诉我一个细节吧。`
+          : `You can say "book" or "reserve" for "${mixedChineseText}". Now tell me one more detail.`
         return {
-          text: `You can say "book" or "reserve" for "${mixedChineseText}". Now tell me one more detail.`,
+          text,
           corrections: [{
             type: 'vocabulary',
             originalText: mixedChineseText,
             suggestedText: 'book / reserve',
-            explanation: 'Use "book" or "reserve" when you mean arranging something in advance.',
+            explanation: context.responseLocale === 'zh'
+              ? '表达提前安排某件事时，可以用 “book” 或 “reserve”。'
+              : 'Use "book" or "reserve" when you mean arranging something in advance.',
             severity: 'minor',
           }],
-          suggestedReply: `You can say "book" or "reserve" for "${mixedChineseText}".`,
+          suggestedReply: text,
         }
       }
 

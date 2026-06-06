@@ -218,6 +218,18 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     })
   }, [applyPlaybackRate, audioUrl, configurePlayback, player, recorder, recorderState.isRecording, runExclusive])
 
+  const stopPlayback = useCallback(() => {
+    try {
+      player.pause()
+      player.seekTo(0)
+      if (phase === 'playing') setPhase('idle')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Coach voice failed to stop'
+      setErrorMessage(message)
+      setPhase('error')
+    }
+  }, [phase, player])
+
   // 中断后恢复：清除中断标记，允许继续操作
   const resumeAfterInterruption = useCallback(async () => {
     if (!interrupted) return false
@@ -310,6 +322,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     playReply,
     resumeAfterInterruption,
     startRecording,
+    stopPlayback,
     stopRecording,
   }), [
     errorMessage,
@@ -324,6 +337,7 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     resumeAfterInterruption,
     recorderState.durationMillis,
     startRecording,
+    stopPlayback,
     stopRecording,
   ])
 }

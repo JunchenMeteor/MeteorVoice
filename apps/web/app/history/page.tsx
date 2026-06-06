@@ -5,6 +5,8 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 import { flushPendingPreferences } from '@/lib/tts-speed'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
 
 interface HistorySession {
   id: string
@@ -34,6 +36,8 @@ interface TurnData {
 }
 
 const PAGE_SIZE = 20
+const historyFeedbackSource = 'web_history'
+const historyErrorFeedbackSource = 'web_history_error'
 
 export default function HistoryPage() {
   const { locale } = useLocale()
@@ -50,6 +54,7 @@ export default function HistoryPage() {
   const [turnsLoading, setTurnsLoading] = useState(false)
   const [turnsError, setTurnsError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const historyLoadingMessage = t('history.loading')
 
   function statusLabel(status: string) {
     const key = `history.status.${status}`
@@ -78,15 +83,27 @@ export default function HistoryPage() {
     if (scenario) params.set('scenario', scenario)
 
     const res = await fetch(`/api/history?${params.toString()}`)
-    if (!res.ok) throw new Error('Failed to load')
-    return res.json() as Promise<{ sessions: HistorySession[]; hasMore: boolean }>
+    return readApiJsonResponse<{ sessions: HistorySession[]; hasMore: boolean }>(res, 'History request failed')
   }, [])
 
   // 首次加载
   useEffect(() => {
     void flushPendingPreferences()
-    loadSessions(0, filterScenario)
-      .then(data => {
+    async function loadInitialSessions() {
+      setLoading(true)
+      const results = await runAppOperationGroup({
+        source: historyFeedbackSource,
+        feedback: {
+          message: historyLoadingMessage,
+          variant: 'hud',
+          blocksInteraction: true,
+        },
+        tasks: {
+          sessions: () => loadSessions(0, filterScenario),
+        },
+      })
+      if (results.sessions.status === 'fulfilled') {
+        const data = results.sessions.value
         if (data.sessions && data.sessions.length > 0) {
           setSessions(data.sessions)
           setHasMore(data.hasMore)
@@ -94,26 +111,46 @@ export default function HistoryPage() {
         } else {
           setSource('none')
         }
-      })
-      .catch(err => {
-        setError(err instanceof Error ? err.message : t('history.load_error'))
-      })
-      .finally(() => setLoading(false))
-  }, [filterScenario, loadSessions, t])
+      } else {
+        const requestError = formatApiRequestError(results.sessions.reason, {
+          context: 'web_history_list',
+          presentation: 'inline',
+        })
+        setError(requestError.displayMessage)
+      }
+      setLoading(false)
+    }
+    void loadInitialSessions()
+    return () => hideAppFeedback(historyFeedbackSource)
+  }, [filterScenario, historyLoadingMessage, loadSessions])
 
   // 加载更多
   async function handleLoadMore() {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
-    try {
-      const data = await loadSessions(sessions.length, filterScenario)
+    const results = await runAppOperationGroup({
+      source: historyFeedbackSource,
+      feedback: {
+        message: historyLoadingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      },
+      tasks: {
+        sessions: () => loadSessions(sessions.length, filterScenario),
+      },
+    })
+    if (results.sessions.status === 'fulfilled') {
+      const data = results.sessions.value
       setSessions(prev => [...prev, ...(data.sessions ?? [])])
       setHasMore(data.hasMore)
-    } catch {
-      // 静默失败
-    } finally {
-      setLoadingMore(false)
+    } else {
+      const requestError = formatApiRequestError(results.sessions.reason, {
+        context: 'web_history_load_more',
+        presentation: 'banner',
+      })
+      displayErrorFeedback(requestError, historyErrorFeedbackSource)
     }
+    setLoadingMore(false)
   }
 
   // 展开/收起 session turns
@@ -127,32 +164,61 @@ export default function HistoryPage() {
     setTurns([])
     setTurnsError(null)
     setTurnsLoading(true)
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/turns`)
-      if (!res.ok) throw new Error('Failed to load turns')
-      const data = await res.json() as { turns: TurnData[] }
-      setTurns(data.turns ?? [])
-    } catch {
-      setTurnsError(t('history.load_error'))
-    } finally {
-      setTurnsLoading(false)
+    const results = await runAppOperationGroup({
+      source: historyFeedbackSource,
+      feedback: {
+        message: historyLoadingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      },
+      tasks: {
+        turns: async () => {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/turns`)
+          return readApiJsonResponse<{ turns: TurnData[] }>(res, 'History turns request failed')
+        },
+      },
+    })
+    if (results.turns.status === 'fulfilled') {
+      setTurns(results.turns.value.turns ?? [])
+    } else {
+      const requestError = formatApiRequestError(results.turns.reason, {
+        context: 'web_history_turns',
+        presentation: 'inline',
+      })
+      setTurnsError(requestError.displayMessage)
     }
+    setTurnsLoading(false)
   }
 
   // 软删除
   async function handleDelete(id: string) {
     if (!confirm(t('history.delete_confirm'))) return
     setDeletingId(id)
-    try {
-      const res = await fetch(`/api/session?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
-      if (res.ok) {
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
-      }
-    } catch {
-      // 静默失败
-    } finally {
-      setDeletingId(null)
+    const results = await runAppOperationGroup({
+      source: historyFeedbackSource,
+      feedback: {
+        message: historyLoadingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      },
+      tasks: {
+        deleted: async () => {
+          const res = await fetch(`/api/session?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+          if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
+          return true
+        },
+      },
+    })
+    if (results.deleted.status === 'fulfilled') {
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
+    } else {
+      const requestError = formatApiRequestError(results.deleted.reason, {
+        context: 'web_history_delete',
+        presentation: 'banner',
+      })
+      displayErrorFeedback(requestError, historyErrorFeedbackSource)
     }
+    setDeletingId(null)
   }
 
   return (

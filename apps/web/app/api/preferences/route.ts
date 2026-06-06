@@ -1,8 +1,12 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { getPreferences, setPreferences } from '@/lib/server/preferences'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'preferences_get', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     return jsonApiResult(await getPreferences())
   } catch (error) {
     return jsonServerError(error, 'Failed to load preferences')
@@ -11,6 +15,10 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'preferences_patch', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as {
       tts_provider?: string
       locale?: string

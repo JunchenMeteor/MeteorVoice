@@ -2,10 +2,29 @@ import { generateText } from 'ai'
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
 
+function responseLanguageInstruction(context: ConversationContext) {
+  if (context.responseLocale === 'zh') {
+    return [
+      'The UI language preference is Simplified Chinese, but the product goal is English speaking practice.',
+      'Choose the spoken "text" language from the user message and intent:',
+      '- If the user is mostly speaking English, reply in English and briefly explain any Chinese phrase in English.',
+      '- If the user is mostly speaking Chinese, reply in Simplified Chinese unless they are asking how to say something in English.',
+      '- If the user is asking for the English wording, meaning, translation, alternative phrasing, or natural expression for a Chinese or mixed-language phrase, reply in English and give the English expression.',
+      'Keep English examples or replacement phrases in English when teaching vocabulary or grammar.',
+    ].join(' ')
+  }
+  return [
+    'Reply in English for the spoken "text" and correction explanations.',
+    'If the user includes Chinese words, explain the meaning in English and give a natural English replacement.',
+    'Avoid putting Chinese characters in the spoken "text"; put the original Chinese text in corrections instead.',
+  ].join(' ')
+}
+
 const SYSTEM_PROMPT = (context: ConversationContext) =>
 `You are an English conversation coach. The user is practicing: "${context.scenario.name} - ${context.scenario.description}".
 Your accent style is: ${context.accentProfile.name} (${context.accentProfile.region}).
 This is turn #${context.turnNumber} in the session.
+Response language: ${responseLanguageInstruction(context)}
 
 Spoken reply policy:
 1. Keep "text" brief and conversational because it will be spoken aloud.

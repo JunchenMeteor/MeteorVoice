@@ -1,0 +1,72 @@
+name: Deploy Tencent
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - release
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-tencent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Web/API
+    runs-on: [self-hosted, linux, x64, tencent, meteorvoice]
+    environment: tencent
+    steps:
+      - name: Resolve target
+        id: target
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "release" ]; then
+            echo "app_dir=/srv/meteorvoice-release" >> "$GITHUB_OUTPUT"
+            echo "pm2_name=meteorvoice-release" >> "$GITHUB_OUTPUT"
+            echo "port=3100" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_dir=/srv/meteorvoice" >> "$GITHUB_OUTPUT"
+            echo "pm2_name=meteorvoice" >> "$GITHUB_OUTPUT"
+            echo "port=3101" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        shell: bash
+        run: |
+          retry() {
+            local attempts="$1"
+            local delay="$2"
+            shift 2
+
+            local attempt=1
+            until "$@"; do
+              if [ "$attempt" -ge "$attempts" ]; then
+                return 1
+              fi
+
+              echo "Command failed. Retrying in ${delay}s (${attempt}/${attempts})..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+            done
+          }
+
+          cd '${{ steps.target.outputs.app_dir }}'
+          retry 5 15 timeout 180s git fetch origin "$GITHUB_REF_NAME"
+          git checkout "$GITHUB_REF_NAME"
+          git reset --hard "origin/$GITHUB_REF_NAME"
+          retry 3 15 npm ci
+          set -a
+          . /etc/meteorvoice/meteorvoice.env
+          set +a
+          retry 2 15 npm run build
+          unset RUNNER_TRACKING_ID
+          PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
+            pm2 restart '${{ steps.target.outputs.pm2_name }}' --update-env || \
+          PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
+            pm2 start npm --name '${{ steps.target.outputs.pm2_name }}' -- run start --workspace @meteorvoice/web -- --hostname 127.0.0.1 --port '${{ steps.target.outputs.port }}'
+          pm2 save
+          retry 12 5 curl -fsS 'http://127.0.0.1:${{ steps.target.outputs.port }}/' >/dev/null

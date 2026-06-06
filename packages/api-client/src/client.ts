@@ -2,6 +2,9 @@ import type {
   ApiClientOptions,
   ApiErrorBody,
   ApiHeadersProvider,
+  ApiUnauthorizedHandler,
+  CreateASRSessionRequest,
+  CreateASRSessionResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   CreateTurnRequest,
@@ -11,6 +14,7 @@ import type {
   GenerateSummaryRequest,
   GenerateSummaryResponse,
   ListAccentsResponse,
+  ListASRProvidersResponse,
   ListHistoryResponse,
   ListScenariosResponse,
   ListSessionTurnsResponse,
@@ -36,15 +40,31 @@ export class MeteorVoiceApiError extends Error {
   }
 }
 
+export class MeteorVoiceApiTimeoutError extends Error {
+  constructor(
+    message: string,
+    readonly timeoutMs: number,
+  ) {
+    super(message)
+    this.name = 'MeteorVoiceApiTimeoutError'
+  }
+}
+
+const defaultRequestTimeoutMs = 15000
+
 export class MeteorVoiceApiClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof fetch
   private readonly headers?: ApiHeadersProvider
+  private readonly onUnauthorized?: ApiUnauthorizedHandler
+  private readonly timeoutMs: number
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
     this.fetchImpl = options.fetch ?? fetch
     this.headers = options.headers
+    this.onUnauthorized = options.onUnauthorized
+    this.timeoutMs = options.timeoutMs ?? defaultRequestTimeoutMs
   }
 
   getPreferences() {
@@ -80,6 +100,17 @@ export class MeteorVoiceApiClient {
 
   synthesizeSpeech(input: SynthesizeSpeechRequest) {
     return this.request<SynthesizeSpeechResponse>('/api/tts', {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  listASRProviders() {
+    return this.request<ListASRProvidersResponse>('/api/asr/providers')
+  }
+
+  createASRSession(input: CreateASRSessionRequest) {
+    return this.request<CreateASRSessionResponse>('/api/asr/session', {
       method: 'POST',
       body: input,
     })
@@ -130,19 +161,25 @@ export class MeteorVoiceApiClient {
 
   private async request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
     const headers = new Headers(await this.resolveHeaders())
+    if (!headers.has('X-MeteorVoice-Client')) {
+      headers.set('X-MeteorVoice-Client', 'meteorvoice-api-client')
+    }
     if (init.body !== undefined && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
 
-    const response = await this.fetchImpl(this.toUrl(path), {
+    const response = await fetchWithTimeout(this.fetchImpl, this.toUrl(path), {
       method: init.method,
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    })
+    }, this.timeoutMs)
     const body = await readJson(response)
 
     if (!response.ok) {
       const message = isApiErrorBody(body) ? body.error : `Request failed with status ${response.status}`
+      if (response.status === 401) {
+        await this.onUnauthorized?.()
+      }
       throw new MeteorVoiceApiError(message, response.status, body)
     }
 
@@ -163,6 +200,35 @@ export function createMeteorVoiceApiClient(options?: ApiClientOptions) {
   return new MeteorVoiceApiClient(options)
 }
 
+export async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = defaultRequestTimeoutMs,
+) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || typeof AbortController === 'undefined') {
+    return fetchImpl(input, init)
+  }
+
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (timedOut || isAbortError(error)) {
+      throw new MeteorVoiceApiTimeoutError('Network request timed out', timeoutMs)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function readJson(response: Response) {
   const text = await response.text()
   if (!text) return null
@@ -181,4 +247,8 @@ function isApiErrorBody(value: unknown): value is ApiErrorBody {
     'error' in value &&
     typeof (value as ApiErrorBody).error === 'string',
   )
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === 'AbortError'
 }

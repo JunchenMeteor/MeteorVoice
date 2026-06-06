@@ -46,6 +46,8 @@ All spec, plan, and implementation handoff files live in `docs/`:
 
 ## Environment
 
-- `.env.local` — local dev credentials (never committed)
-- `.env.local.example` — template
-- Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`
+- `apps/web/.env.local` — Web/API local development credentials (never committed)
+- `apps/web/.env.local.example` — Web/API template
+- `apps/mobile/.env` — mobile build-time public variables only, such as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `/etc/meteorvoice/meteorvoice.env` — Tencent/server runtime environment for the deployed Web/API process
+- Vercel env vars mirror the Web/API server environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`

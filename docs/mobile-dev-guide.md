@@ -44,14 +44,14 @@ Set the API base URL in `apps/mobile/app.json`:
 ```json
 "extra": {
   "apiBaseUrl": "https://meteorvoice.jcmeteor.com",
-  "apiBaseUrlPreview": "https://meteorvoice-pre.jcmeteor.com"
+  "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com"
 }
 ```
 
 API base URL resolution:
 
 1. EAS build profiles set `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/eas.json`.
-   - `development` and `preview` use `https://meteorvoice-pre.jcmeteor.com`.
+   - `development` and `preview` use `https://mv-pre.jcmeteor.com`.
    - `production` uses `https://meteorvoice.jcmeteor.com`.
 2. `EXPO_PUBLIC_API_BASE_URL` wins when set manually.
 3. If no env is set, development builds default to `apiBaseUrlPreview`, and release builds default to `apiBaseUrl`.

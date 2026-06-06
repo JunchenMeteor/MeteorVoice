@@ -10,6 +10,7 @@ import { createAICoach } from '@/lib/providers/ai-provider'
 export async function generateCoachReply(messages: ConversationMessage[], context: ConversationContext) {
   const ai = createAICoach()
   const lastUserMsg = [...messages].reverse().find(message => message.role === 'user')
+  const responseLocale = context.responseLocale === 'zh' ? 'zh' : 'en'
   const retrievalContext = lastUserMsg
     ? retrieveRelevantContext(lastUserMsg.content, context.scenario.name)
     : []
@@ -28,10 +29,10 @@ export async function generateCoachReply(messages: ConversationMessage[], contex
     ragMessages.unshift({ role: 'system', content: contextParts.join('\n') })
   }
 
-  const response = await ai.generateReply(ragMessages, context)
+  const response = await ai.generateReply(ragMessages, { ...context, responseLocale })
   if (!lastUserMsg) return response
 
-  const requiredCorrections = findCommonCorrections(lastUserMsg.content)
+  const requiredCorrections = findCommonCorrections(lastUserMsg.content, responseLocale)
   const mergedCorrections = [...response.corrections]
   for (const correction of requiredCorrections) {
     const duplicate = mergedCorrections.some(existing =>
@@ -41,7 +42,7 @@ export async function generateCoachReply(messages: ConversationMessage[], contex
     if (!duplicate) mergedCorrections.push(correction)
   }
 
-  const mixedChineseHint = buildMixedChineseSpokenHint(lastUserMsg.content)
+  const mixedChineseHint = buildMixedChineseSpokenHint(lastUserMsg.content, responseLocale)
   const text = mixedChineseHint && !response.text.includes(mixedChineseHint)
     ? `${mixedChineseHint} ${response.text}`.trim()
     : response.text

@@ -1,5 +1,9 @@
 import type {
   AccentProfile,
+  ASRProviderDescriptor,
+  ASRProviderKey,
+  ASRSessionBootstrapRequest,
+  ASRSessionBootstrapResponse,
   ConversationContext,
   ConversationMessage,
   ConversationResponse,
@@ -11,11 +15,14 @@ import type {
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 export type ApiHeadersProvider = HeadersInit | (() => HeadersInit | Promise<HeadersInit>)
+export type ApiUnauthorizedHandler = () => void | Promise<void>
 
 export type ApiClientOptions = {
   baseUrl?: string
   fetch?: FetchLike
   headers?: ApiHeadersProvider
+  onUnauthorized?: ApiUnauthorizedHandler
+  timeoutMs?: number
 }
 
 export type ApiErrorBody = {
@@ -83,6 +90,15 @@ export type SynthesizeSpeechRequest = {
 }
 
 export type SynthesizeSpeechResponse = TTSResult
+
+export type ListASRProvidersResponse = {
+  providers: ASRProviderDescriptor[]
+  default_provider: ASRProviderKey
+}
+
+export type CreateASRSessionRequest = ASRSessionBootstrapRequest
+
+export type CreateASRSessionResponse = ASRSessionBootstrapResponse
 
 export type SyncSessionRequest = {
   session_id: string

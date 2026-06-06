@@ -27,13 +27,14 @@ import {
   updateVoiceActivitySnapshot,
   type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
+import { displayErrorFeedback, getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
 import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { useT } from '@/components/LanguageProvider'
+import { useLocale, useT } from '@/components/LanguageProvider'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 
 const mockTTS = createMockTTS()
 const activeSessionStorageKey = 'meteorvoice-active-session'
@@ -104,11 +105,27 @@ interface PersistedVoiceSessionState {
   summary: string | null
 }
 
+function createClientSessionId() {
+  const browserCrypto = globalThis.crypto
+  if (typeof browserCrypto?.randomUUID === 'function') return browserCrypto.randomUUID()
+
+  if (typeof browserCrypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16)
+    browserCrypto.getRandomValues(bytes)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  }
+
+  throw new Error('Web Crypto is required to create a voice session id')
+}
+
 function createDefaultPersistedState(): PersistedVoiceSessionState {
   return {
     scenarioKey: 'small-talk',
     accentKey: 'american',
-    snapshot: createInitialSnapshot(crypto.randomUUID()),
+    snapshot: createInitialSnapshot(createClientSessionId()),
     statusText: '',
     isSessionActive: false,
     isRoutePaused: false,
@@ -514,6 +531,7 @@ export function useVoiceSession() {
 export default function VoiceSessionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const tr = useT()
+  const { locale } = useLocale()
   const [initialState] = useState(readPersistedSessionState)
   const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
   const [accent, setAccent] = useState<AccentProfile>(() =>
@@ -626,7 +644,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
   useEffect(() => {
     void flushPendingPreferences()
-    fetch('/api/preferences')
+    fetch('/api/preferences', {
+      headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+    })
       .then(res => res.json())
       .then((data: { tts_provider?: string; tts_speed?: number; tts_voice_id?: string | null }) => {
         if (data.tts_provider) setTtsProvider(data.tts_provider)
@@ -892,11 +912,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         const speedRouting = getTTSSpeedRouting(provider, speed)
         const res = await fetch('/api/tts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
         })
-        const result = await res.json() as { audioUrl?: string; error?: string }
-        if (!res.ok) throw new Error(result.error || `TTS request failed: ${res.status}`)
+        const result = await readApiJsonResponse<{ audioUrl?: string }>(res, 'TTS request failed')
         if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
 
         try {
@@ -973,7 +992,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       return
     }
 
-    const nextSnapshot = createInitialSnapshot(crypto.randomUUID())
+    const nextSnapshot = createInitialSnapshot(createClientSessionId())
     snapshotRef.current = nextSnapshot
     setSnapshot(nextSnapshot)
     activeSessionRef.current = true
@@ -1156,11 +1175,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       semanticCheck: async (t, ctx) => {
         const res = await fetch('/api/semantic-endpoint', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
           body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
         })
-        if (!res.ok) throw new Error('Semantic check failed')
-        const data = await res.json() as { judgment: 'done' | 'thinking' }
+        const data = await readApiJsonResponse<{ judgment: 'done' | 'thinking' }>(res, 'Semantic check failed')
         return data.judgment
       },
     })
@@ -1199,7 +1217,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
         body: JSON.stringify({
           messages: acceptedTurn.messages,
           context: {
@@ -1207,14 +1225,19 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
             accentProfile: { name: newAccent.name, region: newAccent.region },
             sessionId: currentSnapshot.sessionId,
             turnNumber: currentSnapshot.turnNumber + 1,
+            responseLocale: locale,
           },
         }),
       })
-      if (!res.ok) throw new Error(`Chat request failed: ${res.status}`)
-      response = await res.json() as ConversationResponse
-    } catch {
+      response = await readApiJsonResponse<ConversationResponse>(res, 'Chat request failed')
+    } catch (error) {
       if (!isCurrentTurn()) return
-      setStatusText(canListenOnRouteRef.current ? tr('session.tap_mic') : tr('session.paused'))
+      const requestError = formatApiRequestError(error, {
+        context: 'web_session_chat',
+        presentation: 'banner',
+      })
+      displayErrorFeedback(requestError, 'web_session_chat')
+      setStatusText(canListenOnRouteRef.current ? requestError.displayMessage : tr('session.paused'))
       updateSnapshot(current => recoverSessionError({
         snapshot: current,
         reason: 'coach_reply_failed',

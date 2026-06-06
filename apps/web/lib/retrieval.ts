@@ -111,7 +111,7 @@ export function findCommonErrors(text: string): string[] {
     .map(e => e.tip)
 }
 
-export function findCommonCorrections(text: string): CorrectionItem[] {
+export function findCommonCorrections(text: string, locale: 'en' | 'zh' = 'en'): CorrectionItem[] {
   const corrections: CorrectionItem[] = []
   const trimmed = text.trim()
   const lower = trimmed.toLowerCase()
@@ -122,7 +122,9 @@ export function findCommonCorrections(text: string): CorrectionItem[] {
       type: 'vocabulary',
       originalText: mixedChineseText,
       suggestedText: mixedChineseVocabulary[mixedChineseText] ?? 'say this part in English',
-      explanation: 'When practicing English, replace the Chinese word or phrase with a natural English expression.',
+      explanation: locale === 'zh'
+        ? '练习英语时，可以把这段中文换成更自然的英文表达。'
+        : 'When practicing English, replace the Chinese word or phrase with a natural English expression.',
       severity: 'minor',
     })
   }
@@ -183,9 +185,10 @@ export function findCommonCorrections(text: string): CorrectionItem[] {
   return corrections
 }
 
-export function buildMixedChineseSpokenHint(text: string) {
+export function buildMixedChineseSpokenHint(text: string, locale: 'en' | 'zh' = 'en') {
   const mixedChineseText = text.match(/[\u3400-\u9fff]+/)?.[0]
   if (!mixedChineseText) return null
   const suggestion = mixedChineseVocabulary[mixedChineseText] ?? 'say that part in English'
-  return `You can say "${suggestion}" for "${mixedChineseText}".`
+  if (locale === 'zh') return `“${mixedChineseText}” 可以用英语说成 “${suggestion}”。`
+  return `You can say "${suggestion}" for that phrase.`
 }

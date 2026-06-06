@@ -5,6 +5,7 @@ import ThemeProvider from '@/components/ThemeProvider'
 import LanguageProvider from '@/components/LanguageProvider'
 import VoiceSessionProvider from '@/components/VoiceSessionProvider'
 import ActiveSessionBar from '@/components/ActiveSessionBar'
+import AppFeedbackPresenter from '@/components/AppFeedbackPresenter'
 
 export const metadata: Metadata = {
   title: 'MeteorVoice',
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <ActiveSessionBar />
                   {children}
                 </main>
+                <AppFeedbackPresenter />
               </div>
             </VoiceSessionProvider>
           </LanguageProvider>

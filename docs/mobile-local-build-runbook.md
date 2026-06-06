@@ -14,10 +14,11 @@
 
 Mobile 默认 API URL 规则：
 
-- EAS `development` 和 `preview` profile 在 `apps/mobile/eas.json` 中设置 `EXPO_PUBLIC_API_BASE_URL=https://meteorvoice-pre.jcmeteor.com`。
+- EAS `development` 和 `preview` profile 在 `apps/mobile/eas.json` 中设置 `EXPO_PUBLIC_API_BASE_URL=https://mv-pre.jcmeteor.com`。
 - EAS `production` profile 设置 `EXPO_PUBLIC_API_BASE_URL=https://meteorvoice.jcmeteor.com`。
 - 本地显式设置 `EXPO_PUBLIC_API_BASE_URL` 时，始终使用这个 URL。
 - 未设置时，development bundle 默认使用 `apps/mobile/app.json` 的 `extra.apiBaseUrlPreview`。
+- iOS 默认不允许 HTTP API 请求；真机局域网调试本地 HTTP 服务时，需要临时开启 ATS 或使用 HTTPS 代理。
 - 未设置时，release bundle 默认使用 `apps/mobile/app.json` 的 `extra.apiBaseUrl`。
 
 本地调试 Web/API 时，在启动 mobile 前设置：
@@ -136,7 +137,7 @@ npx expo start --dev-client --host lan
 API URL 和 Metro 是两条不同链路：
 
 - Metro: Debug JS bundle 加载，通常是 `:8081`。
-- API: MeteorVoice 后端，Debug 默认 `https://meteorvoice-pre.jcmeteor.com`，Release 默认 `https://meteorvoice.jcmeteor.com`，除非 Settings 页保存过自定义 URL。
+- API: MeteorVoice 后端，Debug 默认 `https://mv-pre.jcmeteor.com`，Release 默认 `https://meteorvoice.jcmeteor.com`，除非 Settings 页保存过自定义 URL。
 
 ### 真机测试包版本规则
 

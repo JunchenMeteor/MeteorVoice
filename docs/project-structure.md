@@ -35,6 +35,9 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
   - `packages/api-client/*`
   - `packages/session-core/*`
   - `apps/web/lib/auth/*`
+- Shared runtime primitives:
+  - `packages/shared/src/feedback.ts` owns platform-neutral app feedback state, source registry, severity, presentation, and displayable error bridging.
+  - `packages/shared/src/operation-group.ts` owns grouped async task execution for page-level refreshes that need one loading surface across multiple API calls.
 
 ## Keep It Looking Split
 
@@ -66,6 +69,9 @@ Highest-priority improvements:
 - **Session orchestration**: `packages/session-core` owns platform-neutral turn rules and effect decisions: transcript acceptance, request/receive coach reply, playback completion, playback queue advancement, pause/resume, error recovery, and end-session transitions. Web and Mobile should translate platform events into these helpers, then execute returned effects in their own adapters. Do not put Browser Speech, Web Audio, Expo Audio, native permissions, fetch calls, DOM storage, or UI state in `packages/session-core`.
 - **Background audio keep-alive**: iOS `AVAudioSession` management and Android `ForegroundService` are platform-specific and MUST live in `apps/mobile` only. Do not add background lifecycle logic to `packages/session-core` — that package stays platform-neutral.
 - **i18n**: All UI string translations live in `packages/shared/src/i18n.ts` and are shared by Web and Mobile. Do not add translation strings directly in `apps/web` or `apps/mobile`.
+- **App feedback and loading**: Shared feedback state lives in `packages/shared/src/feedback.ts`. Web renders it through `apps/web/components/AppFeedbackPresenter.tsx`; Mobile renders it through `apps/mobile/src/components/AppFeedbackOverlay.tsx`. Page-level multi-request loading should use `runAppOperationGroup()` from `packages/shared/src/operation-group.ts` instead of local overlapping loading overlays.
+- **Settings synchronization**: Settings page entry, login, foreground resume, and manual reload MAY use grouped full refresh. A single preference save MUST use the PATCH response from `/api/preferences` and apply only affected fields. Do not follow a successful single setting PATCH with a full `GET /api/preferences` unless the server contract changed and the entire settings cache must be rebuilt.
+- **Response language routing**: Web and Mobile pass `responseLocale` in `ConversationContext` to `/api/chat`; server-side AI reply and correction generation honor that locale. ASR language mode remains a separate speech-recognition concern and MUST NOT be used as a substitute for response language.
 
 ## What Not to Do
 

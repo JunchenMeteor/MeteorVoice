@@ -2,11 +2,12 @@
 
 import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
-import { persistPreference, persistTTSSpeedPreference, readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import type { Locale, VoiceProfile } from '@meteorvoice/shared'
+import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup, type Locale, type VoiceProfile } from '@meteorvoice/shared'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
@@ -39,6 +40,19 @@ function getVoiceProfileName(profile: VoiceProfile, locale: Locale) {
   return locale === 'zh' ? profile.displayNameZh ?? profile.displayName : profile.displayName
 }
 
+type PreferencesPayload = {
+  tts_provider?: string
+  available_providers?: string[]
+  locale?: Locale
+  tts_speed?: number
+  tts_voice_id?: string | null
+  voice_profiles?: VoiceProfile[]
+  selected_voice_profile_id?: string | null
+}
+
+const settingsFeedbackSource = 'web_settings'
+const settingsErrorFeedbackSource = 'web_settings_error'
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const { locale, setLocale } = useLocale()
@@ -49,66 +63,150 @@ export default function SettingsPage() {
   const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
   const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const settingsSyncingMessage = t('settings.syncing')
 
-  useEffect(() => {
-    async function loadTtsProvider() {
-      try {
-        const res = await fetch('/api/preferences')
-        const data = await res.json() as {
-          tts_provider?: string
-          available_providers?: string[]
-          tts_speed?: number
-          tts_voice_id?: string | null
-          voice_profiles?: VoiceProfile[]
-          selected_voice_profile_id?: string | null
-        }
-        if (data.tts_provider) setTtsProvider(data.tts_provider)
-        if (data.available_providers) setAvailableProviders(data.available_providers)
-        if (data.voice_profiles) setVoiceProfiles(data.voice_profiles)
-        if ('selected_voice_profile_id' in data) setSelectedVoiceProfileId(data.selected_voice_profile_id ?? null)
-        if ('tts_voice_id' in data) {
-          setTtsVoiceId(data.tts_voice_id ?? null)
-          writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
-        }
-        if (typeof data.tts_speed === 'number') {
-          const serverSpeed = data.tts_speed
-          const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
-            Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
-          ttsSpeedOptions[2])
-          setTtsSpeed(nextSpeed)
-          writeTTSSpeedPreference(nextSpeed)
-        }
-      } catch {}
+  const applyPreferences = useCallback((data: PreferencesPayload) => {
+    setSettingsError(null)
+    if (data.locale) setLocale(data.locale)
+    if (data.tts_provider) setTtsProvider(data.tts_provider)
+    if (data.available_providers) setAvailableProviders(data.available_providers)
+    if (data.voice_profiles) setVoiceProfiles(data.voice_profiles)
+    if ('selected_voice_profile_id' in data) setSelectedVoiceProfileId(data.selected_voice_profile_id ?? null)
+    if ('tts_voice_id' in data) {
+      setTtsVoiceId(data.tts_voice_id ?? null)
+      writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
     }
+    if (typeof data.tts_speed === 'number') {
+      const serverSpeed = data.tts_speed
+      const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
+        Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
+      ttsSpeedOptions[2])
+      setTtsSpeed(nextSpeed)
+      writeTTSSpeedPreference(nextSpeed)
+    }
+  }, [setLocale])
 
-    void loadTtsProvider()
+  const applyPreferenceUpdate = useCallback((data: PreferencesPayload, body: Record<string, unknown>) => {
+    setSettingsError(null)
+    if ('locale' in body && data.locale) setLocale(data.locale)
+    if ('tts_provider' in body && data.tts_provider) setTtsProvider(data.tts_provider)
+    if ('tts_speed' in body && typeof data.tts_speed === 'number') {
+      const serverSpeed = data.tts_speed
+      const nextSpeed = ttsSpeedOptions.reduce((best, option) =>
+        Math.abs(option - serverSpeed) < Math.abs(best - serverSpeed) ? option : best,
+      ttsSpeedOptions[2])
+      setTtsSpeed(nextSpeed)
+      writeTTSSpeedPreference(nextSpeed)
+    }
+    if ('selected_voice_profile_id' in body || 'tts_provider' in body) {
+      if ('selected_voice_profile_id' in data) setSelectedVoiceProfileId(data.selected_voice_profile_id ?? null)
+      if ('tts_voice_id' in data) {
+        setTtsVoiceId(data.tts_voice_id ?? null)
+        writeTTSVoiceIdPreference(data.tts_voice_id ?? null)
+      }
+      const profile = voiceProfiles.find(item => item.id === data.selected_voice_profile_id)
+      if (profile?.provider) setTtsProvider(profile.provider)
+    }
+  }, [setLocale, voiceProfiles])
+
+  const fetchPreferences = useCallback(async () => {
+    const res = await fetch('/api/preferences', {
+      headers: { 'X-MeteorVoice-Client': 'meteorvoice-web' },
+    })
+    return readApiJsonResponse<PreferencesPayload>(res, 'Preferences request failed')
   }, [])
 
-  function handleTtsProviderChange(key: string) {
-    setTtsProvider(key)
-    const nextProfile = voiceProfiles.find(profile => profile.provider === key && profile.status === 'active')
-    if (nextProfile) {
-      setSelectedVoiceProfileId(nextProfile.id)
-      setTtsVoiceId(nextProfile.providerVoiceId)
-      writeTTSVoiceIdPreference(nextProfile.providerVoiceId)
+  useEffect(() => {
+    async function loadInitialPreferences() {
+      const results = await runAppOperationGroup({
+        source: settingsFeedbackSource,
+        tasks: {
+          preferences: fetchPreferences,
+        },
+      })
+      if (results.preferences.status === 'fulfilled') {
+        applyPreferences(results.preferences.value)
+        return
+      }
+      const requestError = formatApiRequestError(results.preferences.reason, {
+        context: 'web_settings_preferences_load',
+        presentation: 'inline',
+      })
+      setSettingsError(requestError.displayMessage)
     }
-    void persistPreference('tts_provider', key)
-    if (nextProfile) void persistPreference('selected_voice_profile_id', nextProfile.id)
+
+    void loadInitialPreferences()
+  }, [applyPreferences, fetchPreferences])
+
+  useEffect(() => () => {
+    hideAppFeedback(settingsFeedbackSource)
+  }, [])
+
+  async function savePreferences(body: Record<string, unknown>, context: string) {
+    if (settingsLoading) return
+    setSettingsLoading(true)
+    setSettingsError(null)
+    const results = await runAppOperationGroup({
+      source: settingsFeedbackSource,
+      feedback: {
+        message: settingsSyncingMessage,
+        variant: 'hud',
+        blocksInteraction: true,
+      },
+      tasks: {
+        preferences: async () => {
+          const res = await fetch('/api/preferences', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
+            body: JSON.stringify(body),
+          })
+          return readApiJsonResponse<PreferencesPayload>(res, 'Preferences update failed')
+        },
+      },
+    })
+    if (results.preferences.status === 'fulfilled') {
+      applyPreferenceUpdate(results.preferences.value, body)
+      setSettingsLoading(false)
+      return
+    }
+    try {
+      throw results.preferences.reason
+    } catch (error) {
+      const requestError = formatApiRequestError(error, {
+        context,
+        presentation: 'banner',
+      })
+      setSettingsError(requestError.displayMessage)
+      displayErrorFeedback(requestError, settingsErrorFeedbackSource)
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  function handleTtsProviderChange(key: string) {
+    const nextProfile = voiceProfiles.find(profile => profile.provider === key && profile.status === 'active')
+    void savePreferences({
+      tts_provider: key,
+      ...(nextProfile ? { selected_voice_profile_id: nextProfile.id } : {}),
+    }, 'web_settings_tts_provider_save')
   }
 
   function handleTtsSpeedChange(index: number) {
     const next = ttsSpeedOptions[index] ?? 1
-    setTtsSpeed(next)
-    void persistTTSSpeedPreference(next)
+    void savePreferences({ tts_speed: next }, 'web_settings_tts_speed_save')
   }
 
   function handleVoiceProfileChange(profile: VoiceProfile) {
     if (profile.status !== 'active') return
-    setSelectedVoiceProfileId(profile.id)
-    setTtsProvider(profile.provider)
-    setTtsVoiceId(profile.providerVoiceId)
-    writeTTSVoiceIdPreference(profile.providerVoiceId)
-    void persistPreference('selected_voice_profile_id', profile.id)
+    void savePreferences({ selected_voice_profile_id: profile.id }, 'web_settings_voice_profile_save')
+  }
+
+  function handleLocaleChange(nextLocale: Locale) {
+    if (nextLocale === locale) return
+    setLocale(nextLocale)
+    void savePreferences({ locale: nextLocale }, 'web_settings_locale_save')
   }
 
   const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
@@ -124,6 +222,11 @@ export default function SettingsPage() {
           {t('settings.subtitle')}
         </p>
       </div>
+      {settingsError && (
+        <div className="rounded-md border border-[var(--theme-danger)] bg-[var(--theme-surface-muted)] px-3 py-2 text-sm text-[var(--theme-danger)]">
+          {settingsError}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -137,6 +240,7 @@ export default function SettingsPage() {
                 key={th.key}
                 type="button"
                 onClick={() => setTheme(th.key)}
+                disabled={settingsLoading}
                 className={`chip-action ${th.key === theme ? 'is-active' : ''}`}
               >
                 {t(th.labelKey)}
@@ -160,7 +264,8 @@ export default function SettingsPage() {
               <button
                 key={l.key}
                 type="button"
-                onClick={() => setLocale(l.key)}
+                onClick={() => handleLocaleChange(l.key)}
+                disabled={settingsLoading}
                 className={`chip-action ${l.key === locale ? 'is-active' : ''}`}
               >
                 {l.label}
@@ -202,7 +307,7 @@ export default function SettingsPage() {
                 key={provider.key}
                 type="button"
                 onClick={() => isAvailable && handleTtsProviderChange(provider.key)}
-                disabled={!isAvailable}
+                disabled={settingsLoading || !isAvailable}
                 title={isAvailable ? undefined : t('settings.tts_not_configured')}
                 className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''} ${!isAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
@@ -249,7 +354,7 @@ export default function SettingsPage() {
                       <button
                         key={profile.id}
                         type="button"
-                        disabled={unavailable}
+                        disabled={settingsLoading || unavailable}
                         onClick={() => handleVoiceProfileChange(profile)}
                         className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${selectedVoiceProfile?.id === profile.id ? 'is-active' : ''} ${unavailable ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
@@ -286,6 +391,7 @@ export default function SettingsPage() {
               step={1}
               value={ttsSpeedOptions.indexOf(ttsSpeed)}
               onChange={event => handleTtsSpeedChange(Number(event.target.value))}
+              disabled={settingsLoading}
               className="w-full accent-[var(--theme-accent)]"
               aria-label={t('settings.tts_speed')}
             />
