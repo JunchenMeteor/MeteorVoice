@@ -83,7 +83,7 @@ describe('ASR server registry', () => {
       transport: 'websocket',
       providerConfig: {
         appId: 'app-id',
-        domain: 'slm',
+        domain: 'iat',
         language: 'zh_cn',
         accent: 'mandarin',
         eosMs: 1200,

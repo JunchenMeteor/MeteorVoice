@@ -60,6 +60,7 @@ export type PlaybackTailPrewarmSnapshot = {
 }
 
 export const STT_STOP_SETTLE_TIMEOUT_MS = 800
+export const STT_MAX_CONSECUTIVE_RESTARTS = 5
 export const STT_RESTART_DEBOUNCE_MS = 200
 export const STT_PLAYBACK_PREWARM_MIN_DURATION_MS = 1800
 export const STT_PLAYBACK_PREWARM_MIN_WINDOW_MS = 320
