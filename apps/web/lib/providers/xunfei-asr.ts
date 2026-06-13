@@ -3,8 +3,13 @@ import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice
 
 const zhIatHost = 'iat.xf-yun.com'
 const zhIatPath = '/v1'
-const signedUrlTtlMs = 4 * 60 * 1000
-const signedUrlRefreshSkewMs = 30 * 1000
+// Cache for burst protection during prewarm (WebSocket opens ~1s before actual
+// capture start). 2 minutes is shorter than the 4-minute original — still long
+// enough for prewarm reuse, but reduces the window where Xunfei may link multiple
+// restarts to the same credentials. If Xunfei returns an auth expiry error, the
+// client will retry with backoff and eventually get a fresh URL after cache expiry.
+const signedUrlTtlMs = 2 * 60 * 1000
+const signedUrlRefreshSkewMs = 20 * 1000
 
 type CachedSignedUrl = {
   endpointUrl: string
@@ -34,9 +39,17 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
 
 function getCachedAuthUrl(apiKey: string, apiSecret: string, now: number) {
   if (cachedSignedUrl && cachedSignedUrl.expiresAtMs - signedUrlRefreshSkewMs > now) {
+    console.log('[xunfei-asr] url_cache_hit', {
+      cacheAgeMs: now - (cachedSignedUrl.expiresAtMs - signedUrlTtlMs),
+      ttlRemainingMs: cachedSignedUrl.expiresAtMs - now,
+    })
     return cachedSignedUrl
   }
 
+  console.log('[xunfei-asr] url_cache_miss', {
+    hadCachedUrl: cachedSignedUrl !== null,
+    urlDate: new Date().toISOString(),
+  })
   cachedSignedUrl = {
     endpointUrl: createAuthUrl(apiKey, apiSecret),
     expiresAtMs: now + signedUrlTtlMs,
@@ -68,7 +81,7 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
     expiresAt: new Date(signedUrl.expiresAtMs).toISOString(),
     providerConfig: {
       appId,
-      domain: 'slm',
+      domain: 'iat',
       language: 'zh_cn',
       accent: 'mandarin',
       eosMs,

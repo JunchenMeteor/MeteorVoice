@@ -26,7 +26,7 @@ export function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 
     header,
     parameter: {
       iat: {
-        domain: providerConfig?.domain ?? 'slm',
+        domain: providerConfig?.domain ?? 'iat',
         language: providerConfig?.language ?? 'zh_cn',
         accent: providerConfig?.accent ?? 'mandarin',
         eos: providerConfig?.eosMs ?? 900,

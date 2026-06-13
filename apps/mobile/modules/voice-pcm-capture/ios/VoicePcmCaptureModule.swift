@@ -41,6 +41,13 @@ public class VoicePcmCaptureModule: Module {
       return currentStatus()
     }
 
+    // Defensive: clean up any stale engine reference from a previous incomplete stop
+    if engine != nil {
+      engine?.inputNode.removeTap(onBus: 0)
+      engine?.stop()
+      engine = nil
+    }
+
     sampleRate = options["sampleRate"] as? Double ?? 16000.0
     frameDurationMs = options["frameDurationMs"] as? Int ?? 40
     frameSizeBytes = Int(sampleRate * Double(frameDurationMs) / 1000.0) * 2
@@ -106,6 +113,13 @@ public class VoicePcmCaptureModule: Module {
     targetFormat = nil
     pendingPcm.removeAll(keepingCapacity: false)
     removeAudioSessionObservers()
+
+    // Deactivate audio session so other audio sources can claim hardware
+    do {
+      try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    } catch {
+      // Best effort — audio session may already be deactivated
+    }
 
     let status = currentStatus(reason: reason)
     sendState("stopped", message: reason)

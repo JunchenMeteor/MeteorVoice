@@ -21,7 +21,10 @@
     "mobile:config": "npm --workspace @meteorvoice/mobile exec expo config -- --type public",
     "mobile:typecheck": "npm --workspace @meteorvoice/mobile run typecheck",
     "packages:test": "vitest run tests/api-client.test.ts tests/session-core.test.ts",
-    "test": "vitest run && npm run web:build"
+    "test": "vitest run && npm run web:build",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "test:e2e": "npm test && npm run e2e"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
@@ -52,6 +55,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

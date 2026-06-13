@@ -82,6 +82,7 @@ import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
 import {
+  STT_MAX_CONSECUTIVE_RESTARTS,
   STT_PREWARM_STALE_TIMEOUT_MS,
   STT_RESTART_DEBOUNCE_MS,
   STT_STOP_SETTLE_TIMEOUT_MS,
@@ -251,6 +252,8 @@ function AppInner() {
   const turnRequestRef = useRef(0)
   const sessionGenerationRef = useRef(0)
   const sttStreamIdRef = useRef(0)
+  const sttRestartCountRef = useRef(0)
+  const sttRestartStartMsRef = useRef(0)
   const sttOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const voiceMetricSeqRef = useRef(0)
   const sessionActiveRef = useRef(false)
@@ -652,6 +655,8 @@ function AppInner() {
     })
     endpointRequestRef.current += 1
     sessionGenerationRef.current += 1
+    sttRestartCountRef.current = 0
+    sttRestartStartMsRef.current = 0
     clearResumeListeningTimer()
     playbackActiveRef.current = false
     playbackStartedRef.current = false
@@ -1172,8 +1177,38 @@ function AppInner() {
       })
       return
     }
-    logVoiceMetric('stt_end_restart_scheduled')
-    scheduleResumeListening(250, false)
+
+    // Circuit breaker: after N consecutive restarts, fallback to native STT
+    sttRestartCountRef.current += 1
+    const consecutive = sttRestartCountRef.current
+    if (consecutive > STT_MAX_CONSECUTIVE_RESTARTS) {
+      const totalElapsed = sttRestartStartMsRef.current
+        ? Date.now() - sttRestartStartMsRef.current
+        : 0
+      logVoiceMetric('stt_restart_circuit_open', {
+        restartCount: consecutive,
+        totalElapsedMs: totalElapsed,
+        provider: sessionSttProviderRef.current,
+      })
+      // Fallback to native STT to break the loop
+      sttRestartCountRef.current = 0
+      sttRestartStartMsRef.current = 0
+      void nativeSpeechStartListeningRef.current('en-US')
+      return
+    }
+
+    // Track when the restart sequence started for telemetry
+    if (consecutive === 1) {
+      sttRestartStartMsRef.current = Date.now()
+    }
+
+    // Exponential backoff: 250ms, 500ms, 1s, 2s, 4s, 8s (capped)
+    const backoffMs = Math.min(250 * Math.pow(2, consecutive - 1), 8000)
+    logVoiceMetric('stt_end_restart_scheduled', {
+      restartCount: consecutive,
+      backoffMs,
+    })
+    scheduleResumeListening(backoffMs, false)
   }, [busy, logVoiceMetric, scheduleResumeListening])
 
   const cancelXunfeiSessionListening = useCallback(async (reason = 'cancel') => {
@@ -1279,6 +1314,8 @@ function AppInner() {
     let noFrameTimer: ReturnType<typeof setTimeout> | null = null
     let stoppedTimer: ReturnType<typeof setTimeout> | null = null
     let prewarmStaleTimer: ReturnType<typeof setTimeout> | null = null
+    let bootstrapTimer: ReturnType<typeof setTimeout> | null = null
+    let bootstrapTimedOut = false
     let settled = false
     let firstFrame = true
     let finalFrameSent = false
@@ -1340,6 +1377,7 @@ function AppInner() {
       if (settled) return
       settled = true
       updateCurrent()
+      if (bootstrapTimer !== null) { clearTimeout(bootstrapTimer); bootstrapTimer = null }
       if (finalizeTimer) clearTimeout(finalizeTimer)
       if (hardTimer) clearTimeout(hardTimer)
       if (noFrameTimer) clearTimeout(noFrameTimer)
@@ -1406,6 +1444,7 @@ function AppInner() {
         }
         listeningStartMsRef.current = Date.now()
         logVoiceMetric('stt_start', { provider: 'xunfei', streamId, generation, prewarmed: prewarm })
+        if (bootstrapTimer !== null) { clearTimeout(bootstrapTimer); bootstrapTimer = null }
         logVoiceMetric('stt_ready', {
           provider: 'xunfei',
           elapsedMs: Date.now() - streamStartedAt,
@@ -1453,6 +1492,15 @@ function AppInner() {
         endpointSilenceMs: 900,
         clientTraceId: `mobile-session-${Date.now()}`,
       })
+      logVoiceMetric('stt_bootstrap_response', {
+        provider: 'xunfei',
+        domain: session.providerConfig?.domain,
+        language: session.providerConfig?.language,
+        accent: session.providerConfig?.accent,
+        eosMs: session.providerConfig?.eosMs,
+        sessionId: session.sessionId,
+        endpointHost: session.endpointUrl ? new URL(session.endpointUrl).host : null,
+      })
       if (!canUseXunfeiRoute('after_session_create')) {
         logVoiceMetric('stt_start_stale_after_bootstrap', { provider: 'xunfei' })
         return false
@@ -1466,6 +1514,21 @@ function AppInner() {
       logVoiceMetric('stt_bootstrap_start', { provider: 'xunfei' })
       setStatus('session.status.preparing_listening')
       await nativeSpeechCancelListeningRef.current()
+
+      // Bootstrap timeout: if Xunfei doesn't become ready within 10s, fallback to native
+      const BOOTSTRAP_TIMEOUT_MS = 10_000
+      bootstrapTimer = setTimeout(() => {
+        bootstrapTimedOut = true
+        logVoiceMetric('stt_bootstrap_timeout', {
+          provider: 'xunfei',
+          elapsedMs: Date.now() - streamStartedAt,
+        })
+        if (!settled) {
+          settle('bootstrap_timeout', false)
+        }
+        // Fallback to native STT
+        void nativeSpeechStartListeningRef.current('en-US')
+      }, BOOTSTRAP_TIMEOUT_MS)
 
       socket = new WebSocket(session.endpointUrl)
       updateCurrent()
@@ -1560,6 +1623,19 @@ function AppInner() {
           : typeof payload?.code === 'number'
             ? payload.code
             : 0
+        // Diagnostic: log raw Xunfei response to identify silent throttling
+        if (code !== 0 || (payload && typeof payload === 'object')) {
+          const data = getObject(payload?.data)
+          const dataResult = data ? getObject(data.result) : null
+          logVoiceMetric('stt_xunfei_result_raw', {
+            code,
+            status: typeof header?.status === 'number' ? header.status : null,
+            message: typeof header?.message === 'string' ? header.message.slice(0, 100) : null,
+            dataStatus: typeof data?.status === 'number' ? data.status : null,
+            hasResult: dataResult !== null,
+            streamId,
+          })
+        }
         if (code !== 0) {
           const message = typeof header?.message === 'string'
             ? header.message
@@ -1606,6 +1682,9 @@ function AppInner() {
           finalReceived = true
           const normalized = transcript.trim()
           if (normalized) {
+            // Successful transcription — reset restart counter
+            sttRestartCountRef.current = 0
+            sttRestartStartMsRef.current = 0
             logVoiceMetric('stt_submit', {
               provider: 'xunfei',
               source: 'xunfei_final',
@@ -1778,6 +1857,8 @@ function AppInner() {
     // End the local session immediately; summary sync is best-effort.
     turnRequestRef.current += 1
     sessionGenerationRef.current += 1
+    sttRestartCountRef.current = 0
+    sttRestartStartMsRef.current = 0
     sessionActiveRef.current = false
     setRoutePresence('outSession', 'session_end')
     playbackActiveRef.current = false
@@ -1865,6 +1946,8 @@ function AppInner() {
       turnRequestRef.current += 1
       endpointRequestRef.current += 1
       sessionGenerationRef.current += 1
+      sttRestartCountRef.current = 0
+      sttRestartStartMsRef.current = 0
       sessionActiveRef.current = false
       setRoutePresence('outSession', 'scenario_change')
       playbackActiveRef.current = false
