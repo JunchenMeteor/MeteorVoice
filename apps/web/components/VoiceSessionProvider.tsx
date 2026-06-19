@@ -13,7 +13,6 @@ import { createInitialSnapshot, transition, type WorkflowSnapshot, type Workflow
 import {
   acceptTranscriptTurn,
   canContinueListening as canContinueCurrentTurn,
-  canSamplePlaybackLevel,
   completeCoachPlayback,
   createVoiceActivitySnapshot,
   judgeEndpoint,
@@ -25,18 +24,13 @@ import {
   shouldResumeListeningOnRoute,
   type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { displayErrorFeedback, getTTSSpeedRouting } from '@meteorvoice/shared'
+import { displayErrorFeedback } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
-import { createMockTTS } from '@/lib/providers/mock-tts'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
 import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
 import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
-import {
-  PlaybackBlockedError,
-  playAudioToEnd,
-} from '@/lib/audio-engine'
 import {
   type PersistedVoiceSessionState,
   createClientSessionId,
@@ -47,8 +41,8 @@ import {
 import { getSessionStatusKey, isKnownLocalizedSessionStatus } from '@/lib/session-status'
 import { usePlaybackEngine } from '@/lib/hooks/use-playback-engine'
 import { useListeningEngine } from '@/lib/hooks/use-listening-engine'
+import { useTTSEngine } from '@/lib/hooks/use-tts-engine'
 
-const mockTTS = createMockTTS()
 /** 教练语音播放完毕后、自动进入下一轮 listening 之前的静默间隔（毫秒） */
 const postPlaybackListenDelayMs = 900
 
@@ -143,6 +137,21 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     canListenOnRouteRef,
     snapshotRef,
     voiceActivityRef,
+  })
+
+  // TTS 引擎：文本合成、播放、错误恢复、mock 降级
+  const tts = useTTSEngine({
+    playback,
+    setVoiceLevel: listening.setVoiceLevel,
+    ttsProviderRef,
+    ttsSpeedRef,
+    ttsVoiceIdRef,
+    activeSessionRef,
+    activeTurnRef,
+    canListenOnRouteRef,
+    snapshotRef,
+    setStatusText,
+    tr,
   })
 
   useEffect(() => {
@@ -317,63 +326,6 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     return next
   }, [])
 
-  const speakText = useCallback(async (text: string, accentName: string) => {
-    const updatePlaybackLevel = (level: number | null) => {
-      if (canSamplePlaybackLevel({
-        activeSession: activeSessionRef.current,
-        activeTurnId: activeTurnRef.current,
-        currentTurnId: activeTurnRef.current,
-        canListenOnRoute: canListenOnRouteRef.current,
-        workflowState: snapshotRef.current.state,
-      })) {
-        listening.setVoiceLevel(level)
-      }
-    }
-
-    try {
-      const provider = ttsProviderRef.current
-      const speed = ttsSpeedRef.current
-      if (provider === 'mock') {
-        listening.setVoiceLevel(null)
-        await mockTTS.synthesize(text, { accent: accentName, speed })
-        return
-      }
-      const playTTS = async (speechText: string) => {
-        const speedRouting = getTTSSpeedRouting(provider, speed)
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
-        })
-        const result = await readApiJsonResponse<{ audioUrl?: string }>(res, 'TTS request failed')
-        if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
-
-        try {
-          await playAudioToEnd(result.audioUrl, {
-            audio: playback.getSessionAudio(),
-            playbackNodesRef: playback.playbackNodesRef,
-            onLevel: updatePlaybackLevel,
-            speed: speedRouting.playbackRate,
-          })
-        } catch (error) {
-          if (error instanceof PlaybackBlockedError) {
-            setStatusText(tr('session.playback_blocked'))
-            await playback.waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speedRouting.playbackRate)
-            return
-          }
-          throw error
-        }
-      }
-
-      await playTTS(text)
-    } catch {
-      listening.setVoiceLevel(null)
-      await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
-    } finally {
-      listening.setVoiceLevel(null)
-    }
-  }, [playback.getSessionAudio, playback.waitForBlockedPlayback, tr])
-
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
     const nextTurnId = activeTurnRef.current + 1
@@ -517,9 +469,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     startNextTurn()
   }, [playback.unlockSessionAudio, startNextTurn, tr])
 
+  /** 用 TTS 引擎朗读纠错文本 */
   const playCorrection = useCallback((text: string) => {
-    void speakText(text, accentRef.current.name)
-  }, [speakText])
+    void tts.speakText(text, accentRef.current.name)
+  }, [tts])
 
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
@@ -689,7 +642,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     snapshotRef.current = coachTurn.snapshot
     setSnapshot(coachTurn.snapshot)
     listening.setVoiceLevel(null)
-    await speakText(response.text, newAccent.name)
+    await tts.speakText(response.text, newAccent.name)
     await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
 
