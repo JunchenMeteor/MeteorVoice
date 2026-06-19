@@ -8,6 +8,7 @@ import {
   updateVoiceActivitySnapshot,
   type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
+import type { WorkflowSnapshot } from '@/lib/conversation-workflow'
 
 /** 传入 hook 的共享上下文：这些 ref 由 Provider 持有，hook 需要读取来做 turn 守卫 */
 interface ListeningContext {
@@ -17,8 +18,6 @@ interface ListeningContext {
   snapshotRef: React.RefObject<WorkflowSnapshot>
   voiceActivityRef: React.RefObject<VoiceActivitySnapshot>
 }
-
-import type { WorkflowSnapshot } from '@/lib/conversation-workflow'
 
 export interface ListeningEngine {
   voiceLevel: number | null
@@ -35,6 +34,9 @@ export interface ListeningEngine {
  * 不负责 endpointing 判断（那是 simulateTurn 的职责）。
  */
 export function useListeningEngine(ctx: ListeningContext): ListeningEngine {
+  // 解构到局部变量，避免 react-hooks/immutability lint 报错
+  const { activeSessionRef, activeTurnRef, canListenOnRouteRef, snapshotRef, voiceActivityRef } = ctx
+
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
   const voiceLevelRequestRef = useRef(0)
   const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
@@ -43,9 +45,9 @@ export function useListeningEngine(ctx: ListeningContext): ListeningEngine {
     voiceLevelRequestRef.current += 1
     stopVoiceLevelRef.current?.()
     stopVoiceLevelRef.current = null
-    ctx.voiceActivityRef.current = createVoiceActivitySnapshot()
+    voiceActivityRef.current = createVoiceActivitySnapshot()
     setVoiceLevel(null)
-  }, [ctx.voiceActivityRef])
+  }, [voiceActivityRef])
 
   const startListeningLevelSampling = useCallback((turnId: number) => {
     stopVoiceLevelSampling()
@@ -53,14 +55,14 @@ export function useListeningEngine(ctx: ListeningContext): ListeningEngine {
     void createMicLevelSampler(level => {
       if (
         canSampleListeningLevel({
-          activeSession: ctx.activeSessionRef.current as boolean,
-          activeTurnId: ctx.activeTurnRef.current,
+          activeSession: activeSessionRef.current as boolean,
+          activeTurnId: activeTurnRef.current,
           currentTurnId: turnId,
-          canListenOnRoute: ctx.canListenOnRouteRef.current as boolean,
-          workflowState: ctx.snapshotRef.current.state,
+          canListenOnRoute: canListenOnRouteRef.current as boolean,
+          workflowState: snapshotRef.current.state,
         })
       ) {
-        ctx.voiceActivityRef.current = updateVoiceActivitySnapshot(ctx.voiceActivityRef.current, { level })
+        voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level })
         setVoiceLevel(level)
       }
     }).then(stop => {
@@ -68,11 +70,11 @@ export function useListeningEngine(ctx: ListeningContext): ListeningEngine {
       if (
         voiceLevelRequestRef.current !== requestId ||
         !canSampleListeningLevel({
-          activeSession: ctx.activeSessionRef.current as boolean,
-          activeTurnId: ctx.activeTurnRef.current,
+          activeSession: activeSessionRef.current as boolean,
+          activeTurnId: activeTurnRef.current,
           currentTurnId: turnId,
-          canListenOnRoute: ctx.canListenOnRouteRef.current as boolean,
-          workflowState: ctx.snapshotRef.current.state,
+          canListenOnRoute: canListenOnRouteRef.current as boolean,
+          workflowState: snapshotRef.current.state,
         })
       ) {
         stop()
@@ -80,7 +82,7 @@ export function useListeningEngine(ctx: ListeningContext): ListeningEngine {
       }
       stopVoiceLevelRef.current = stop
     })
-  }, [ctx, stopVoiceLevelSampling])
+  }, [activeSessionRef, activeTurnRef, canListenOnRouteRef, snapshotRef, stopVoiceLevelSampling, voiceActivityRef])
 
   return {
     voiceLevel,
