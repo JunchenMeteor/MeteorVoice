@@ -37,12 +37,9 @@ import { useLocale, useT } from '@/components/LanguageProvider'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 import {
   type AudioLevelStop,
-  type PlaybackAudioNodes,
   PlaybackBlockedError,
   createMicLevelSampler,
-  getPlaybackLevelSource,
   playAudioToEnd,
-  silentAudioUrl,
 } from '@/lib/audio-engine'
 import {
   type PersistedVoiceSessionState,
@@ -52,16 +49,11 @@ import {
   voiceSessionStateStorageKey,
 } from '@/lib/session-persistence'
 import { getSessionStatusKey, isKnownLocalizedSessionStatus } from '@/lib/session-status'
+import { usePlaybackEngine } from '@/lib/hooks/use-playback-engine'
 
 const mockTTS = createMockTTS()
+/** 教练语音播放完毕后、自动进入下一轮 listening 之前的静默间隔（毫秒） */
 const postPlaybackListenDelayMs = 900
-
-type PendingPlayback = {
-  audioUrl: string
-  onLevel?: (level: number | null) => void
-  speed?: number
-  resolve: () => void
-}
 
 function wait(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
@@ -120,7 +112,6 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
   const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
-  const [playbackBlocked, setPlaybackBlocked] = useState(false)
 
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
@@ -147,10 +138,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const voiceLevelRequestRef = useRef(0)
   const listeningStartMsRef = useRef(0)
   const pendingEndpointTranscriptRef = useRef('')
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
-  const audioUnlockedRef = useRef(false)
-  const pendingPlaybackRef = useRef<PendingPlayback | null>(null)
+
+  // 播放引擎：audioRef、playbackNodesRef、unlock、blocked playback 等
+  const playback = usePlaybackEngine()
 
   useEffect(() => {
     snapshotRef.current = snapshot
@@ -303,88 +293,6 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setVoiceLevel(null)
   }, [])
 
-  const getSessionAudio = useCallback(() => {
-    if (!audioRef.current) {
-      const audio = new Audio()
-      audio.crossOrigin = 'anonymous'
-      audio.preload = 'auto'
-      audio.setAttribute('playsinline', 'true')
-      audioRef.current = audio
-    }
-    return audioRef.current
-  }, [])
-
-  const unlockSessionAudio = useCallback(() => {
-    if (audioUnlockedRef.current) return
-    const audio = getSessionAudio()
-    audio.muted = true
-    audio.src = silentAudioUrl
-    audio.load()
-    const levelSource = getPlaybackLevelSource(audio, playbackNodesRef, () => {})
-    if (levelSource) {
-      void levelSource.audioContext.resume().catch(() => {})
-    }
-    void audio.play()
-      .then(() => {
-        audio.pause()
-        audio.currentTime = 0
-        audio.muted = false
-        audioUnlockedRef.current = true
-        if (playbackNodesRef.current) {
-          void playbackNodesRef.current.audioContext.resume().catch(() => {})
-        }
-      })
-      .catch(() => {
-        audio.muted = false
-        audioUnlockedRef.current = false
-      })
-  }, [getSessionAudio])
-
-  const resolvePendingPlayback = useCallback(() => {
-    pendingPlaybackRef.current?.resolve()
-    pendingPlaybackRef.current = null
-    setPlaybackBlocked(false)
-  }, [])
-
-  const closePlaybackAudioContext = useCallback(() => {
-    const playbackNodes = playbackNodesRef.current
-    playbackNodesRef.current = null
-    if (playbackNodes) {
-      void playbackNodes.audioContext.close().catch(() => {})
-    }
-  }, [])
-
-  const waitForBlockedPlayback = useCallback((
-    audioUrl: string,
-    onLevel?: (level: number | null) => void,
-    speed?: number,
-  ) => {
-    setPlaybackBlocked(true)
-    return new Promise<void>(resolve => {
-      pendingPlaybackRef.current = { audioUrl, onLevel, speed, resolve }
-    })
-  }, [])
-
-  const playBlockedReply = useCallback(() => {
-    const pending = pendingPlaybackRef.current
-    if (!pending) return
-    setPlaybackBlocked(false)
-    void playAudioToEnd(pending.audioUrl, {
-      audio: getSessionAudio(),
-      playbackNodesRef,
-      onLevel: pending.onLevel,
-      speed: pending.speed,
-    })
-      .then(resolvePendingPlayback)
-      .catch(error => {
-        if (error instanceof PlaybackBlockedError) {
-          setPlaybackBlocked(true)
-          return
-        }
-        resolvePendingPlayback()
-      })
-  }, [getSessionAudio, resolvePendingPlayback])
-
   const startListeningLevelSampling = useCallback((turnId: number) => {
     stopVoiceLevelSampling()
     const requestId = voiceLevelRequestRef.current
@@ -423,19 +331,16 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   useEffect(() => {
     return () => {
       stopVoiceLevelSampling()
-      resolvePendingPlayback()
-      audioRef.current?.pause()
-      closePlaybackAudioContext()
     }
-  }, [closePlaybackAudioContext, resolvePendingPlayback, stopVoiceLevelSampling])
+  }, [stopVoiceLevelSampling])
 
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
     abortListeningRef.current = null
     activeTurnRef.current += 1
     stopVoiceLevelSampling()
-    resolvePendingPlayback()
-  }, [resolvePendingPlayback, stopVoiceLevelSampling])
+    playback.resolvePendingPlayback()
+  }, [playback.resolvePendingPlayback, stopVoiceLevelSampling])
 
   const pauseListeningForNavigation = useCallback(() => {
     if (!activeSessionRef.current) return
@@ -490,15 +395,15 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
 
         try {
           await playAudioToEnd(result.audioUrl, {
-            audio: getSessionAudio(),
-            playbackNodesRef,
+            audio: playback.getSessionAudio(),
+            playbackNodesRef: playback.playbackNodesRef,
             onLevel: updatePlaybackLevel,
             speed: speedRouting.playbackRate,
           })
         } catch (error) {
           if (error instanceof PlaybackBlockedError) {
             setStatusText(tr('session.playback_blocked'))
-            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speedRouting.playbackRate)
+            await playback.waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speedRouting.playbackRate)
             return
           }
           throw error
@@ -512,7 +417,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     } finally {
       setVoiceLevel(null)
     }
-  }, [getSessionAudio, tr, waitForBlockedPlayback])
+  }, [playback.getSessionAudio, playback.waitForBlockedPlayback, tr])
 
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
@@ -552,7 +457,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [])
 
   const startSession = useCallback(() => {
-    unlockSessionAudio()
+    playback.unlockSessionAudio()
     if (!ttsPreferenceLoaded) {
       setStatusText(tr('session.loading_voice'))
       return
@@ -576,7 +481,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     listeningStartMsRef.current = 0
     pendingEndpointTranscriptRef.current = ''
     startNextTurn()
-  }, [startNextTurn, tr, ttsPreferenceLoaded, unlockSessionAudio])
+  }, [playback.unlockSessionAudio, startNextTurn, tr, ttsPreferenceLoaded])
 
   const endSession = useCallback(async () => {
     activeSessionRef.current = false
@@ -646,7 +551,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
 
   const continueSpeaking = useCallback(() => {
-    unlockSessionAudio()
+    playback.unlockSessionAudio()
     activeSessionRef.current = true
     if (!canListenOnRouteRef.current) {
       setStatusText(tr('session.paused'))
@@ -655,7 +560,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     listeningStartMsRef.current = 0
     pendingEndpointTranscriptRef.current = ''
     startNextTurn()
-  }, [startNextTurn, tr, unlockSessionAudio])
+  }, [playback.unlockSessionAudio, startNextTurn, tr])
 
   const playCorrection = useCallback((text: string) => {
     void speakText(text, accentRef.current.name)
@@ -874,12 +779,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     accentBanner,
     ttsPreferenceLoaded,
     voiceLevel,
-    playbackBlocked,
+    playbackBlocked: playback.playbackBlocked,
     configureSession,
     startSession,
     endSession,
     continueSpeaking,
-    playBlockedReply,
+    playBlockedReply: playback.playBlockedReply,
     playCorrection,
   }), [
     accent,
@@ -892,8 +797,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     isRoutePaused,
     isSessionActive,
     messages,
-    playbackBlocked,
-    playBlockedReply,
+    playback.playbackBlocked,
+    playback.playBlockedReply,
     playCorrection,
     scenario,
     snapshot,
