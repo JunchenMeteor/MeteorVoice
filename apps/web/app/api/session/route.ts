@@ -1,8 +1,16 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { createSession, deleteSession, updateSessionStatus } from '@/lib/server/session'
+
+async function guardSessionRequest(request: Request) {
+  const guard = guardApiRequest(request, { name: 'session', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+  if (guard) return guard
+  return requireApiUser()
+}
 
 export async function POST(request: Request) {
   try {
+    const auth = await guardSessionRequest(request)
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as {
       scenario_id?: string
       accent_profile_id?: string
@@ -17,6 +25,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await guardSessionRequest(request)
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as { id: string; status: string }
     const result = await updateSessionStatus(body)
     return jsonApiResult(result)
@@ -27,6 +37,8 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const auth = await guardSessionRequest(request)
+    if (auth) return jsonApiResult(auth)
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     if (!id) return jsonApiResult({ error: 'Missing session id' })

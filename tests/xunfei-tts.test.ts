@@ -47,7 +47,7 @@ describe('Xunfei TTS voice config', () => {
   it('rejects configured trial voices after their expiry', () => {
     expect(() => resolveXunfeiVoiceForAccent('American English', {
       XUNFEI_TTS_VOICE: XUNFEI_TRIAL_VOICE_CATHERINE,
-    }, afterTrialExpiry, XUNFEI_TRIAL_VOICE_RYAN)).toThrow('expired at 2026-06-09 00:00 Asia/Shanghai')
+    }, afterTrialExpiry, XUNFEI_TRIAL_VOICE_RYAN)).toThrow(/expired at/)
   })
 
   it('allows non-trial V3 voices after trial expiry', () => {

@@ -9,6 +9,7 @@
     "./locale": "./src/locale.ts",
     "./scenarios": "./src/scenarios.ts",
     "./speech": "./src/speech.ts",
-    "./asr": "./src/asr.ts"
+    "./asr": "./src/asr.ts",
+    "./utils": "./src/utils.ts"
   }
 }

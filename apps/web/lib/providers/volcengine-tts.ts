@@ -1,11 +1,6 @@
 import crypto from 'crypto'
 import type { TTSProvider, TTSResult } from './types'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Volcengine TTS`)
-  return value
-}
+import { requireEnv } from '@/lib/server/env'
 
 function voiceForAccent(accent?: string) {
   const normalized = accent?.toLowerCase() ?? ''
@@ -15,8 +10,8 @@ function voiceForAccent(accent?: string) {
 }
 
 export function createVolcengineTTS(): TTSProvider {
-  const appId = requireEnv('VOLCENGINE_TTS_APP_ID')
-  const token = requireEnv('VOLCENGINE_TTS_ACCESS_TOKEN')
+  const appId = requireEnv('VOLCENGINE_TTS_APP_ID', 'Volcengine TTS')
+  const token = requireEnv('VOLCENGINE_TTS_ACCESS_TOKEN', 'Volcengine TTS')
   const cluster = process.env.VOLCENGINE_TTS_CLUSTER?.trim() || 'volcano_tts'
   const endpoint = process.env.VOLCENGINE_TTS_ENDPOINT?.trim() || 'https://openspeech.bytedance.com/api/v1/tts'
 

@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getConfiguredXunfeiVoices, getDefaultXunfeiVoiceId, getSelectableXunfeiVoices, hasXunfeiVoiceConfig, type XunfeiConfiguredVoiceInfo, type XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
 import { getAzureVoiceProfiles } from '@/lib/providers/azure-voices'
-import { scenarios, type Locale, type VoiceProfile } from '@meteorvoice/shared'
+import { normalizeLocale, scenarios, type Locale, type VoiceProfile } from '@meteorvoice/shared'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent' | 'azure'
 export type ProductizedPreferences = {
@@ -84,10 +84,6 @@ export function getAvailableProviders(): TTSProviderPreference[] {
     providers.push('azure')
   }
   return providers
-}
-
-function normalizeLocale(value?: string | null): Locale {
-  return value === 'zh' ? 'zh' : 'en'
 }
 
 function normalizeScenarioKey(value?: string | null) {

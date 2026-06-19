@@ -1,11 +1,6 @@
 import type { TTSProvider, TTSResult } from './types'
 import { getAzureVoiceIdForAccent, isAzureVoiceId } from './azure-voices'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Azure TTS`)
-  return value
-}
+import { requireEnv } from '@/lib/server/env'
 
 function resolveAzureVoice(accent?: string, voiceId?: string) {
   if (voiceId?.trim()) {
@@ -25,8 +20,8 @@ function speedToRate(speed?: number): string {
 }
 
 export function createAzureTTS(): TTSProvider {
-  const key = requireEnv('AZURE_SPEECH_KEY')
-  const region = requireEnv('AZURE_SPEECH_REGION')
+  const key = requireEnv('AZURE_SPEECH_KEY', 'Azure TTS')
+  const region = requireEnv('AZURE_SPEECH_REGION', 'Azure TTS')
   const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`
 
   return {

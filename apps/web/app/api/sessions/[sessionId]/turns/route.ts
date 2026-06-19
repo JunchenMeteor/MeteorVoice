@@ -1,11 +1,15 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { listSessionTurns } from '@/lib/server/session'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ sessionId: string }> },
 ) {
   try {
+    const guard = guardApiRequest(request, { name: 'session-turns', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const { sessionId } = await context.params
     return jsonApiResult(await listSessionTurns(sessionId))
   } catch (error) {

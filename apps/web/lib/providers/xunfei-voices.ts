@@ -1,4 +1,4 @@
-export const XUNFEI_TRIAL_VOICE_EXPIRES_AT = '2026-06-08T16:00:00.000Z'
+export const XUNFEI_TRIAL_VOICE_EXPIRES_AT = process.env.XUNFEI_TRIAL_VOICE_EXPIRES_AT?.trim() || '2026-06-08T16:00:00.000Z'
 export const XUNFEI_TRIAL_VOICE_CATHERINE = 'x4_enus_catherine_profnews'
 export const XUNFEI_TRIAL_VOICE_RYAN = 'x4_enus_ryan_assist'
 export const XUNFEI_TRIAL_VOICE_LINGXIAOLU = 'x4_lingxiaolu_en'
@@ -149,7 +149,7 @@ export function resolveXunfeiVoiceForAccent(
   if (voiceId?.trim()) {
     const voice = voiceId.trim()
     if (isExpiredTrialVoice(voice, nowMs)) {
-      throw new Error(`Xunfei trial voice "${voice}" expired at 2026-06-09 00:00 Asia/Shanghai. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
+      throw new Error(`Xunfei trial voice "${voice}" expired at ${XUNFEI_TRIAL_VOICE_EXPIRES_AT}. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
     }
     return voice
   }
@@ -162,7 +162,7 @@ export function resolveXunfeiVoiceForAccent(
   }
 
   if (isExpiredTrialVoice(voice, nowMs)) {
-    throw new Error(`Xunfei trial voice "${voice}" expired at 2026-06-09 00:00 Asia/Shanghai. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
+    throw new Error(`Xunfei trial voice "${voice}" expired at ${XUNFEI_TRIAL_VOICE_EXPIRES_AT}. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
   }
 
   return voice
@@ -186,7 +186,7 @@ export function resolveXunfeiVoiceForText(
   const selectedVoice = voiceId?.trim()
   if (selectedVoice) {
     if (isExpiredTrialVoice(selectedVoice, nowMs)) {
-      throw new Error(`Xunfei trial voice "${selectedVoice}" expired at 2026-06-09 00:00 Asia/Shanghai. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
+      throw new Error(`Xunfei trial voice "${selectedVoice}" expired at ${XUNFEI_TRIAL_VOICE_EXPIRES_AT}. Configure a purchased V3-compatible vcn before using Xunfei TTS.`)
     }
     const info = xunfeiVoiceById.get(selectedVoice)
     if (info?.language === 'zh') return selectedVoice

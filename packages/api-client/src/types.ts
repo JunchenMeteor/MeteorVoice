@@ -23,6 +23,8 @@ export type ApiClientOptions = {
   headers?: ApiHeadersProvider
   onUnauthorized?: ApiUnauthorizedHandler
   timeoutMs?: number
+  maxRetries?: number
+  retryBaseDelayMs?: number
 }
 
 export type ApiErrorBody = {

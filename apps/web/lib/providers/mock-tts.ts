@@ -1,3 +1,4 @@
+import { sleep } from '@meteorvoice/shared/utils'
 import type { TTSProvider, TTSResult } from './types'
 
 export function createMockTTS(): TTSProvider {
@@ -41,6 +42,3 @@ function speakWithBrowserTTS(text: string, speed: number) {
   })
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}

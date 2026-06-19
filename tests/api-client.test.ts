@@ -76,6 +76,7 @@ describe('MeteorVoiceApiClient', () => {
     vi.useFakeTimers()
     const client = createMeteorVoiceApiClient({
       timeoutMs: 25,
+      maxRetries: 0,
       fetch: async (_input, init) => new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => {
           const error = new Error('Aborted')
@@ -94,6 +95,47 @@ describe('MeteorVoiceApiClient', () => {
 
     await expectation
     vi.useRealTimers()
+  })
+
+  it('retries on 503 and succeeds on second attempt', async () => {
+    let callCount = 0
+    const client = createMeteorVoiceApiClient({
+      retryBaseDelayMs: 1,
+      fetch: async () => {
+        callCount++
+        if (callCount === 1) {
+          return new Response(JSON.stringify({ error: 'Service unavailable' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        return new Response(JSON.stringify({ locale: 'en', tts_provider: 'mock' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      },
+    })
+
+    const result = await client.getPreferences()
+    expect(result.locale).toBe('en')
+    expect(callCount).toBe(2)
+  })
+
+  it('does not retry on 4xx client errors', async () => {
+    let callCount = 0
+    const client = createMeteorVoiceApiClient({
+      retryBaseDelayMs: 1,
+      fetch: async () => {
+        callCount++
+        return new Response(JSON.stringify({ error: 'Bad request' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      },
+    })
+
+    await expect(client.getPreferences()).rejects.toThrow()
+    expect(callCount).toBe(1)
   })
 
   it('formats timeout errors as retryable request failures', () => {

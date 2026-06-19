@@ -2,15 +2,10 @@ import crypto from 'crypto'
 import WebSocket from 'ws'
 import type { TTSProvider, TTSResult } from './types'
 import { resolveXunfeiVoiceForText } from './xunfei-voices'
+import { requireEnv } from '@/lib/server/env'
 
 const host = 'tts-api.xfyun.cn'
 const path = '/v2/tts'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Xunfei TTS`)
-  return value
-}
 
 function createAuthUrl(apiKey: string, apiSecret: string) {
   const date = new Date().toUTCString()
@@ -26,9 +21,9 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
 }
 
 export function createXunfeiTTS(): TTSProvider {
-  const appId = requireEnv('XUNFEI_APP_ID')
-  const apiKey = requireEnv('XUNFEI_API_KEY')
-  const apiSecret = requireEnv('XUNFEI_API_SECRET')
+  const appId = requireEnv('XUNFEI_APP_ID', 'Xunfei TTS')
+  const apiKey = requireEnv('XUNFEI_API_KEY', 'Xunfei TTS')
+  const apiSecret = requireEnv('XUNFEI_API_SECRET', 'Xunfei TTS')
 
   return {
     synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult> {
