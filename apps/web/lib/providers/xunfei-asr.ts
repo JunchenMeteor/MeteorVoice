@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice/shared'
+import { requireEnv } from '@/lib/server/env'
 
 const zhIatHost = 'iat.xf-yun.com'
 const zhIatPath = '/v1'
@@ -17,12 +18,6 @@ type CachedSignedUrl = {
 }
 
 let cachedSignedUrl: CachedSignedUrl | null = null
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Xunfei ASR`)
-  return value
-}
 
 function createAuthUrl(apiKey: string, apiSecret: string) {
   const date = new Date().toUTCString()

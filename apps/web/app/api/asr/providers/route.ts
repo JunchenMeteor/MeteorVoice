@@ -1,10 +1,12 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
 import { getASRProviders, getDefaultASRProvider } from '@/lib/server/asr'
 
 export const runtime = 'nodejs'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'asr-providers', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
     return jsonApiResult({
       providers: getASRProviders(),
       default_provider: getDefaultASRProvider(),

@@ -1,17 +1,12 @@
 import crypto from 'crypto'
 import type { TTSProvider, TTSResult } from './types'
+import { requireEnv } from '@/lib/server/env'
 
 const service = 'tts'
 const host = 'tts.tencentcloudapi.com'
 const endpoint = `https://${host}`
 const version = '2019-08-23'
 const action = 'TextToVoice'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Tencent TTS`)
-  return value
-}
 
 function sha256(value: string) {
   return crypto.createHash('sha256').update(value).digest('hex')

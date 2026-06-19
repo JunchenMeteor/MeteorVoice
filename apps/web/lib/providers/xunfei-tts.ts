@@ -2,15 +2,10 @@ import crypto from 'crypto'
 import WebSocket from 'ws'
 import type { TTSProvider, TTSResult } from './types'
 import { resolveXunfeiVoiceForText } from './xunfei-voices'
+import { requireEnv } from '@/lib/server/env'
 
 const host = 'tts-api.xfyun.cn'
 const path = '/v2/tts'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Xunfei TTS`)
-  return value
-}
 
 function createAuthUrl(apiKey: string, apiSecret: string) {
   const date = new Date().toUTCString()

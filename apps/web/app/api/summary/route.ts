@@ -1,8 +1,12 @@
-import { jsonApiResult } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, requireApiUser } from '@/lib/server/http'
 import { FALLBACK_SESSION_SUMMARY, generateSessionSummary } from '@/lib/server/summary'
 
 export async function POST(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'summary', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as {
       sessionId: string
       scenario: string

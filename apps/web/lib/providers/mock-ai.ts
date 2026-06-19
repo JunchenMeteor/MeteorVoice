@@ -1,3 +1,4 @@
+import { sleep } from '@meteorvoice/shared'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
 
 const coachReplies: Record<string, string[]> = {
@@ -85,6 +86,3 @@ export function createMockAI(): AIProvider {
   }
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}

@@ -1,11 +1,6 @@
 import type { TTSProvider, TTSResult } from './types'
 import { getAzureVoiceIdForAccent, isAzureVoiceId } from './azure-voices'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Azure TTS`)
-  return value
-}
+import { requireEnv } from '@/lib/server/env'
 
 function resolveAzureVoice(accent?: string, voiceId?: string) {
   if (voiceId?.trim()) {

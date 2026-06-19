@@ -1,11 +1,6 @@
 import crypto from 'crypto'
 import type { TTSProvider, TTSResult } from './types'
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Volcengine TTS`)
-  return value
-}
+import { requireEnv } from '@/lib/server/env'
 
 function voiceForAccent(accent?: string) {
   const normalized = accent?.toLowerCase() ?? ''

@@ -1,8 +1,12 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { finalizeSession } from '@/lib/server/turns'
 
 export async function POST(request: Request) {
   try {
+    const guard = guardApiRequest(request, { name: 'session-sync', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
     const body = await request.json() as {
       session_id: string
       scenario: string
