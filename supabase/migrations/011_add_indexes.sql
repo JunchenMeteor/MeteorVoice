@@ -17,5 +17,5 @@ create index if not exists idx_correction_items_turn_id
 create index if not exists idx_learning_history_user_id_created_at
   on learning_history (user_id, created_at desc);
 
-create index if not exists idx_audio_clips_turn_id
-  on audio_clips (turn_id);
+create index if not exists idx_audio_clips_owner
+  on audio_clips (owner_type, owner_id);
