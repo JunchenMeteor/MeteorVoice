@@ -51,8 +51,8 @@ function voiceForAccent(accent?: string) {
 }
 
 export function createTencentTTS(): TTSProvider {
-  const secretId = requireEnv('TENCENT_SECRET_ID')
-  const secretKey = requireEnv('TENCENT_SECRET_KEY')
+  const secretId = requireEnv('TENCENT_SECRET_ID', 'Tencent TTS')
+  const secretKey = requireEnv('TENCENT_SECRET_KEY', 'Tencent TTS')
   const region = process.env.TENCENT_TTS_REGION?.trim() || 'ap-guangzhou'
 
   return {

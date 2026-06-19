@@ -1,4 +1,4 @@
-import { sleep } from '@meteorvoice/shared'
+import { sleep } from '@meteorvoice/shared/utils'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
 
 const coachReplies: Record<string, string[]> = {

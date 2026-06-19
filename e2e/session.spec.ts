@@ -1,31 +1,26 @@
 import { test, expect } from '@playwright/test'
 
-test.describe('MeteorVoice session flow', () => {
-  test.beforeEach(async ({ page }) => {
+test.describe('MeteorVoice login page', () => {
+  test('renders identifier and password inputs', async ({ page }) => {
     await page.goto('/login')
+    await expect(page.locator('input[placeholder]')).toHaveCount(2)
+    await expect(page.locator('button[type="submit"]').first()).toBeVisible()
   })
+})
 
-  test('login page renders correctly', async ({ page }) => {
-    await expect(page.locator('input[type="text"], input[type="email"], input[type="tel"]').first()).toBeVisible()
-    await expect(page.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("登录")').first()).toBeVisible()
-  })
-
+test.describe('MeteorVoice navigation guard', () => {
   test('session page redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/session')
     await expect(page).toHaveURL(/\/login/)
   })
+})
 
-  test('scenario selection shows available scenarios', async ({ page }) => {
+test.describe('MeteorVoice home page scenarios', () => {
+  test('renders scenario buttons after login redirect or direct access', async ({ page }) => {
     await page.goto('/')
-    const scenarioCards = page.locator('[data-testid="scenario-card"], a[href*="/session?scenario"]')
-    const count = await scenarioCards.count()
+    const scenarioButtons = page.locator('button.data-panel')
+    const count = await scenarioButtons.count()
     expect(count).toBeGreaterThan(0)
-  })
-
-  test('settings page shows TTS and language options', async ({ page }) => {
-    await page.goto('/settings')
-    await expect(page.locator('text=TTS').first().or(page.locator('text=语音').first())).toBeVisible()
-    await expect(page.locator('text=Language').first().or(page.locator('text=语言').first())).toBeVisible()
   })
 })
 

@@ -97,15 +97,15 @@ describe('MeteorVoiceApiClient', () => {
     vi.useRealTimers()
   })
 
-  it('retries on 5xx and succeeds on second attempt', async () => {
+  it('retries on 503 and succeeds on second attempt', async () => {
     let callCount = 0
     const client = createMeteorVoiceApiClient({
       retryBaseDelayMs: 1,
       fetch: async () => {
         callCount++
         if (callCount === 1) {
-          return new Response(JSON.stringify({ error: 'Server error' }), {
-            status: 500,
+          return new Response(JSON.stringify({ error: 'Service unavailable' }), {
+            status: 503,
             headers: { 'Content-Type': 'application/json' },
           })
         }

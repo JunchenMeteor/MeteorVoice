@@ -53,9 +53,9 @@ function getCachedAuthUrl(apiKey: string, apiSecret: string, now: number) {
 }
 
 export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<ASRSessionBootstrapResponse> {
-  const appId = requireEnv('XUNFEI_ASR_APP_ID')
-  const apiKey = requireEnv('XUNFEI_ASR_API_KEY')
-  const apiSecret = requireEnv('XUNFEI_ASR_API_SECRET')
+  const appId = requireEnv('XUNFEI_ASR_APP_ID', 'Xunfei ASR')
+  const apiKey = requireEnv('XUNFEI_ASR_API_KEY', 'Xunfei ASR')
+  const apiSecret = requireEnv('XUNFEI_ASR_API_SECRET', 'Xunfei ASR')
   const product = process.env.XUNFEI_ASR_PRODUCT?.trim() || 'zh_iat'
 
   if (product !== 'zh_iat') {

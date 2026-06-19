@@ -1,4 +1,4 @@
-import { sleep } from '@meteorvoice/shared'
+import { sleep } from '@meteorvoice/shared/utils'
 import type { TTSProvider, TTSResult } from './types'
 
 export function createMockTTS(): TTSProvider {

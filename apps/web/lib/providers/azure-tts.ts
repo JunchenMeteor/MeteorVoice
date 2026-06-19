@@ -20,8 +20,8 @@ function speedToRate(speed?: number): string {
 }
 
 export function createAzureTTS(): TTSProvider {
-  const key = requireEnv('AZURE_SPEECH_KEY')
-  const region = requireEnv('AZURE_SPEECH_REGION')
+  const key = requireEnv('AZURE_SPEECH_KEY', 'Azure TTS')
+  const region = requireEnv('AZURE_SPEECH_REGION', 'Azure TTS')
   const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`
 
   return {

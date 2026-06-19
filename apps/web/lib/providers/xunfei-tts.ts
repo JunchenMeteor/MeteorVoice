@@ -21,9 +21,9 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
 }
 
 export function createXunfeiTTS(): TTSProvider {
-  const appId = requireEnv('XUNFEI_APP_ID')
-  const apiKey = requireEnv('XUNFEI_API_KEY')
-  const apiSecret = requireEnv('XUNFEI_API_SECRET')
+  const appId = requireEnv('XUNFEI_APP_ID', 'Xunfei TTS')
+  const apiKey = requireEnv('XUNFEI_API_KEY', 'Xunfei TTS')
+  const apiSecret = requireEnv('XUNFEI_API_SECRET', 'Xunfei TTS')
 
   return {
     synthesize(text: string, options?: { accent?: string; speed?: number; voiceId?: string }): Promise<TTSResult> {

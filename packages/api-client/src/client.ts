@@ -281,7 +281,7 @@ function isAbortError(error: unknown) {
 }
 
 function isRetryableStatus(status: number) {
-  return status === 429 || status >= 500
+  return status === 429 || status === 502 || status === 503 || status === 504
 }
 
 function isRetryableError(error: unknown) {
