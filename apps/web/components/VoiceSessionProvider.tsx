@@ -85,6 +85,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const pathname = usePathname()
   const tr = useT()
   const { locale } = useLocale()
+
+  // ─── 会话状态 ───
   const [initialState] = useState(readPersistedSessionState)
   const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
   const [accent, setAccent] = useState<AccentProfile>(() =>
@@ -103,6 +105,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
 
+  // ─── 派生值 ───
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
     [scenarioKey],
@@ -110,6 +113,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const messages = snapshot.messages
   const isSessionRoute = pathname.startsWith('/session')
 
+  // ─── Refs：非响应式实时访问（不触发 re-render）───
   const snapshotRef = useRef(snapshot)
   const scenarioRef = useRef(scenario)
   const accentRef = useRef(accent)
@@ -127,6 +131,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const listeningStartMsRef = useRef(0)
   const pendingEndpointTranscriptRef = useRef('')
 
+  // ─── 引擎 Hooks ───
   // 播放引擎：audioRef、playbackNodesRef、unlock、blocked playback 等
   const playback = usePlaybackEngine()
 
@@ -154,6 +159,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     tr,
   })
 
+  // ─── Ref 同步：state → ref，供 callback 读取最新值 ───
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
@@ -178,6 +184,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     ttsVoiceIdRef.current = ttsVoiceId
   }, [ttsVoiceId])
 
+  // ─── TTS 偏好同步 ───
   useEffect(() => {
     const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
 
@@ -240,6 +247,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       .finally(() => setTtsPreferenceLoaded(true))
   }, [])
 
+  // ─── 会话生命周期副作用 ───
   useEffect(() => {
     publishActiveSession(isSessionActive)
     return () => publishActiveSession(false)
@@ -264,6 +272,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     })
   }, [tr])
 
+  // ─── 会话状态持久化到 sessionStorage ───
   useEffect(() => {
     correctionHistoryRef.current = corrections
   }, [corrections])
@@ -287,6 +296,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     sessionStorage.setItem(voiceSessionStateStorageKey, JSON.stringify(state))
   }, [accent.key, corrections, isRoutePaused, isSessionActive, scenario.key, snapshot, statusText, summary])
 
+  // ─── 工作流辅助：状态转换 ───
   const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
     const next = updater(snapshotRef.current)
     snapshotRef.current = next
@@ -297,6 +307,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     updateSnapshot(prev => transition(prev, to, { ...patch }))
   }, [updateSnapshot])
 
+  // ─── Turn 控制：中止、暂停、恢复 ───
   /** 中止当前 turn：abort STT、递增 turnId、停止音量采样、释放播放锁 */
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
@@ -326,6 +337,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     return next
   }, [])
 
+  // ─── 会话管理：开始、结束、配置、继续 ───
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
     const nextTurnId = activeTurnRef.current + 1
@@ -474,6 +486,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     void tts.speakText(text, accentRef.current.name)
   }, [tts])
 
+  // ─── Turn 编排：一个完整的对话周期 listening → endpoint → thinking → speaking → correcting ───
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
     const canContinueListening = () => canContinueCurrentTurn({
