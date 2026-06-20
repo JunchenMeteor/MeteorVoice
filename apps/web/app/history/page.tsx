@@ -1,12 +1,19 @@
+/**
+ * Session history page (web).
+ * 会话历史页面（Web 端）。
+ */
+
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
+
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 import { flushPendingPreferences } from '@/lib/tts-speed'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
 
 interface HistorySession {
   id: string

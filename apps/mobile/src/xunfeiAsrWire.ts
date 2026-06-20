@@ -1,3 +1,8 @@
+/**
+ * Xunfei ASR WebSocket frame parsing.
+ * 讯飞 ASR WebSocket 帧解析。
+ */
+
 import type { CreateASRSessionResponse } from '@meteorvoice/api-client'
 
 export function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string, sequence: number) {

@@ -1,3 +1,7 @@
+/**
+ * API client type definitions.
+ * API 客户端类型定义。
+ */
 import type {
   AccentProfile,
   ASRProviderDescriptor,

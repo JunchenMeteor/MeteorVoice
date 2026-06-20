@@ -1,13 +1,20 @@
 'use client'
 
+/**
+ * Listening engine hook (microphone sampling, VAD).
+ * 监听引擎 Hook。
+ */
+
 import { useCallback, useRef, useState } from 'react'
-import { type AudioLevelStop, createMicLevelSampler } from '@/lib/audio-engine'
+import { createMicLevelSampler } from '@/lib/audio-engine'
+import type { AudioLevelStop } from '@/lib/audio-engine'
+
 import {
   canSampleListeningLevel,
   createVoiceActivitySnapshot,
   updateVoiceActivitySnapshot,
-  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
+import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
 import type { WorkflowSnapshot } from '@/lib/conversation-workflow'
 
 /** 传入 hook 的共享上下文：这些 ref 由 Provider 持有，hook 需要读取来做 turn 守卫 */

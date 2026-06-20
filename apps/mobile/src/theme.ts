@@ -1,3 +1,8 @@
+/**
+ * Theme configuration and types.
+ * 主题配置与类型。
+ */
+
 export type ThemeKey = 'forest' | 'night' | 'conversation' | 'learning'
 
 export type ThemeColors = {

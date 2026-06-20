@@ -1,3 +1,8 @@
+/**
+ * Mock AI provider (fallback).
+ * Mock AI 提供者（降级方案）。
+ */
+
 import { sleep } from '@meteorvoice/shared/utils'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
 
@@ -43,6 +48,10 @@ const mockCorrections: ConversationResponse['corrections'] = [
 
 let globalTurnCount = 0
 
+/**
+ * Create a mock AI conversation coach for development and fallback scenarios, with scenario-aware replies.
+ * 创建用于开发和回退场景的模拟 AI 对话教练，支持场景感知回复。
+ */
 export function createMockAI(): AIProvider {
   return {
     async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {

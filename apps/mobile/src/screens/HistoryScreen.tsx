@@ -1,9 +1,30 @@
+/**
+ * Session history and review screen.
+ * 会话历史记录界面。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { useTheme } from '../ThemeProvider'
-import { formatApiRequestError, fetchWithTimeout, type MeteorVoiceApiClient, type HistorySession, type SessionTurnDto } from '@meteorvoice/api-client'
-import { scenarios, accentProfiles, getScenarioLabel, getAccentLabel } from '@meteorvoice/shared'
+
+import {
+  fetchWithTimeout,
+  formatApiRequestError,
+} from '@meteorvoice/api-client'
+import type {
+  HistorySession,
+  MeteorVoiceApiClient,
+  SessionTurnDto,
+} from '@meteorvoice/api-client'
+
+import {
+  accentProfiles,
+  getAccentLabel,
+  getScenarioLabel,
+  scenarios,
+} from '@meteorvoice/shared'
 import type { Locale } from '@meteorvoice/shared'
+
+import { useTheme } from '../ThemeProvider'
 
 interface Props {
   tr: (key: string) => string
@@ -29,7 +50,7 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
   const [expandedId, setExpandedId] = useState<string | number | null>(null)
   const [filterScenario, setFilterScenario] = useState<string | null>(null)
 
-  // Own state (was in AppInner)
+  // ─── State / 状态 ───
   const [sessions, setSessions] = useState<HistorySession[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -37,6 +58,7 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
   const [selectedTurns, setSelectedTurns] = useState<SessionTurnDto[]>([])
   const autoLoadRef = useRef(false)
 
+  // ─── Data Operations / 数据操作 ───
   const loadHistory = useCallback(async () => {
     if (loading) return
     setLoading(true); setError(null)
@@ -96,6 +118,7 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
     : sessions
 
 
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     header: {
@@ -159,6 +182,8 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
     correctionSuggested: { color: C.success },
     correctionExplanation: { color: C.textMuted, fontSize: 11, lineHeight: 16 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <View style={styles.shell}>
       <View style={styles.header}>

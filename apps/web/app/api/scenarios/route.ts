@@ -1,3 +1,6 @@
+/**
+ * Practice scenario listing. / 练习场景列表。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
 import {
   getScenarioDescription,

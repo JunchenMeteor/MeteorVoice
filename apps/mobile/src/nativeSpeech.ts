@@ -1,3 +1,8 @@
+/**
+ * Native speech recognition hook.
+ * 原生语音识别 Hook。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createVoiceActivitySnapshot,

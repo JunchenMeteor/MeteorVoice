@@ -1,4 +1,8 @@
-import { createInitialSnapshot, type WorkflowSnapshot } from '@/lib/conversation-workflow'
+/**
+ * Session state persistence (sessionStorage). / 会话状态持久化。
+ */
+import { createInitialSnapshot } from '@/lib/conversation-workflow'
+import type { WorkflowSnapshot } from '@/lib/conversation-workflow'
 import type { ConversationResponse } from '@/lib/providers/types'
 
 export const activeSessionStorageKey = 'meteorvoice-active-session'

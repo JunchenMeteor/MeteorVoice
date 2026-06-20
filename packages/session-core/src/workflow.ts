@@ -1,3 +1,7 @@
+/**
+ * Session workflow state machine — 7 states with explicit transition matrix.
+ * 会话工作流状态机 — 7 状态 + 显式转换矩阵。
+ */
 import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
 
 export type WorkflowState =
@@ -62,6 +66,8 @@ export interface SessionOrchestrationResult {
   effects: SessionEffect[]
 }
 
+// ─── Types & Constants / 类型与常量 ───
+
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   idle: ['listening', 'session_ended'],
   listening: ['transcribing', 'idle', 'session_ended'],
@@ -71,6 +77,8 @@ export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   correcting: ['listening', 'session_ended'],
   session_ended: [],
 }
+
+// ─── Core State Machine / 核心状态机 ───
 
 export function createInitialSnapshot(sessionId: string): WorkflowSnapshot {
   return {
@@ -106,6 +114,8 @@ export function transition(
     turnNumber: to === 'listening' ? from.turnNumber + 1 : from.turnNumber,
   }
 }
+
+// ─── Turn Orchestration / 轮次编排 ───
 
 export function acceptTranscriptTurn(input: {
   snapshot: WorkflowSnapshot
@@ -178,6 +188,8 @@ export function completeCoachPlayback(input: {
   }
 }
 
+// ─── Session Management & Recovery / 会话管理与错误恢复 ───
+
 export function recoverSessionError(input: {
   snapshot: WorkflowSnapshot
   reason: SessionErrorReason
@@ -239,6 +251,8 @@ export function snapshotSummary(snapshot: WorkflowSnapshot) {
   }
 }
 
+// ─── Playback Queue / 播放队列 ───
+
 export function createPlaybackQueueSnapshot(): PlaybackQueueSnapshot {
   return {
     currentAudioUrl: null,
@@ -292,6 +306,8 @@ export function getPlaybackCompletionEffects(queue: PlaybackQueueSnapshot): Sess
   if (queue.status === 'finished') return ['show_corrections']
   return []
 }
+
+// ─── Routing & Guards / 路由与守卫 ───
 
 export function pauseSessionForRoute(snapshot: WorkflowSnapshot): {
   snapshot: WorkflowSnapshot
@@ -431,6 +447,8 @@ export function shouldRestoreListeningAfterPlayback(input: {
 }) {
   return input.activeSession && input.canListenOnRoute && input.workflowState === 'speaking'
 }
+
+// ─── Voice Activity & Speech Analysis / 语音活动与语音分析 ───
 
 export const DEFAULT_SILENCE_FINALIZE_MS = 1700
 export const FINAL_RESULT_SILENCE_FINALIZE_MS = 950

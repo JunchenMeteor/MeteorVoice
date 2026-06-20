@@ -1,3 +1,8 @@
+/**
+ * Turn runtime utilities (staleness, terminal classification).
+ * 轮次运行时工具。
+ */
+
 export type TurnRuntimeGuardSnapshot = {
   turnRequestId: number
   currentTurnRequestId: number

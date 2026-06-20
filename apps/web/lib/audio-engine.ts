@@ -1,3 +1,6 @@
+/**
+ * Web Audio API engine for playback and recording. / Web Audio API 播放和录音引擎。
+ */
 export type AudioLevelStop = () => void
 
 export type AudioLevelSource = {

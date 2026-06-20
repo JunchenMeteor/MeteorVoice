@@ -1,3 +1,6 @@
+/**
+ * ASR session management. / 语音识别会话管理。
+ */
 import nodeCrypto from 'crypto'
 import {
   asrProviderKeys,

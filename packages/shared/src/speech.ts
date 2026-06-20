@@ -1,3 +1,7 @@
+/**
+ * STT/TTS provider interfaces, TTS speed routing, capability types.
+ * STT/TTS 提供者接口、语速路由、能力类型。
+ */
 export interface STTResult {
   transcript: string
   confidence: number
@@ -61,6 +65,10 @@ export interface SpokenSegmentOptions {
   maxCharsPerSegment?: number
 }
 
+/**
+ * Splits spoken text into segments suitable for TTS playback, respecting sentence boundaries and length limits.
+ * 将口播文本按句子边界和长度限制分割为适合 TTS 播放的片段。
+ */
 export function splitSpokenText(text: string, options: SpokenSegmentOptions = {}): string[] {
   const normalized = text.replace(whitespacePattern, ' ').trim()
   if (!normalized) return []
@@ -117,6 +125,10 @@ function splitSentences(text: string): string[] {
   return sentences.length ? sentences : [text]
 }
 
+/**
+ * Declares the accent and speed-control capabilities of each TTS provider.
+ * 声明每个 TTS 提供商支持的口音和语速控制能力。
+ */
 export const ttsProviderCapabilities = {
   mock: {
     accents: ['british', 'american', 'indian', 'australian', 'singapore', 'african'],
@@ -163,12 +175,20 @@ function mapXunfeiSpeed(speed: number) {
   return Math.round(xunfeiNormalSpeed + ((xunfeiMaxSpeed - xunfeiNormalSpeed) * progress))
 }
 
+/**
+ * Checks whether a TTS provider supports a given accent.
+ * 检查某个 TTS 提供商是否支持指定的口音。
+ */
 export function supportsAccent(provider: string, accent: string): boolean {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
   if (!capabilities) return false
   return (capabilities.accents as readonly string[]).includes(accent)
 }
 
+/**
+ * Computes server speed and client playback rate for a TTS provider based on the desired speed multiplier.
+ * 根据所需语速倍率，计算 TTS 提供商的服务端语速和客户端播放速率。
+ */
 export function getTTSSpeedRouting(provider: string, speed = 1): { serverSpeed: number; playbackRate: number } {
   const capabilities = ttsProviderCapabilities[provider as TTSProviderKey]
   const normalizedSpeed = normalizeSpeedMultiplier(speed)

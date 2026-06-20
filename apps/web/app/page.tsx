@@ -1,7 +1,13 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+/**
+ * Landing page.
+ * 首页。
+ */
+
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+
 import { getDifficultyLabel, getScenarioDescription, getScenarioLabel, scenarios, pickRandomAccent } from '@/lib/scenarios'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { useVoiceSession } from '@/components/VoiceSessionProvider'

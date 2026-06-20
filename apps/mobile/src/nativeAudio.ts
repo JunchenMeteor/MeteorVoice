@@ -1,5 +1,11 @@
+/**
+ * Native audio playback and recording hook.
+ * 原生音频播放与录音 Hook。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState, type AppStateStatus } from 'react-native'
+import { AppState } from 'react-native'
+import type { AppStateStatus } from 'react-native'
 import {
   getRecordingPermissionsAsync,
   RecordingPresets,

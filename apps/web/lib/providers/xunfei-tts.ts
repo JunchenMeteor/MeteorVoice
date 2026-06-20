@@ -1,3 +1,8 @@
+/**
+ * Xunfei TTS provider.
+ * 讯飞语音合成提供者。
+ */
+
 import crypto from 'crypto'
 import WebSocket from 'ws'
 import type { TTSProvider, TTSResult } from './types'
@@ -20,6 +25,10 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
   return `wss://${host}${path}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${host}`
 }
 
+/**
+ * Create a Xunfei (iFlytek) Text-to-Speech provider using the WebSocket streaming TTS API v2.
+ * 创建讯飞（科大讯飞）文本转语音提供者，使用 WebSocket 流式 TTS API v2。
+ */
 export function createXunfeiTTS(): TTSProvider {
   const appId = requireEnv('XUNFEI_APP_ID', 'Xunfei TTS')
   const apiKey = requireEnv('XUNFEI_API_KEY', 'Xunfei TTS')

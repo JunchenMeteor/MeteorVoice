@@ -1,11 +1,22 @@
+/**
+ * Session tab — voice practice screen.
+ * 会话标签页 — 语音练习界面。
+ */
+
 import { useMemo } from 'react'
-import { useSession } from '../../src/SessionContext'
-import { SessionScreen } from '../../src/screens/SessionScreen'
+
 import {
-  accentProfiles, getAccentLabel, getAccentRegion,
-  getDifficultyLabel, getScenarioDescription, getScenarioLabel,
+  accentProfiles,
+  getAccentLabel,
+  getAccentRegion,
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
   scenarios,
 } from '@meteorvoice/shared'
+
+import { SessionScreen } from '../../src/screens/SessionScreen'
+import { useSession } from '../../src/SessionContext'
 
 export default function SessionTab() {
   const { tr, locale, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion } = useSession()

@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * TTS engine hook (text synthesis, playback).
+ * TTS 引擎 Hook。
+ */
+
 import { useCallback } from 'react'
 import { PlaybackBlockedError, playAudioToEnd } from '@/lib/audio-engine'
 import { getTTSSpeedRouting } from '@meteorvoice/shared'

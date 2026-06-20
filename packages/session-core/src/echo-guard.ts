@@ -1,3 +1,7 @@
+/**
+ * Echo guard — character-level recall filter for playback echo rejection.
+ * 回声守卫 — 字符级召回过滤，防止播放回声误识别。
+ */
 export const DEFAULT_ECHO_WINDOW_MS = 3500
 export const DEFAULT_ECHO_MIN_NORMALIZED_LENGTH = 8
 export const DEFAULT_ECHO_CONTAINMENT_MIN_LENGTH = 8
@@ -31,6 +35,10 @@ export interface PlaybackEchoGuardResult {
   overlapRatio: number
 }
 
+/**
+ * Normalizes text for echo detection: NFKC normalization, lowercasing, and stripping non-alphanumeric characters.
+ * 对文本进行回声检测规范化：NFKC 规范化、小写化、去除所有非字母数字字符。
+ */
 export function normalizeEchoText(value?: string | null): string {
   return value
     ?.normalize('NFKC')
@@ -57,6 +65,10 @@ function getCharacterRecall(candidate: string, source: string): number {
   return matches / Array.from(candidate).length
 }
 
+/**
+ * Determines whether a transcript is likely a playback echo that should be ignored, using containment and overlap heuristics.
+ * 使用包含和重叠启发式算法，判断转写文本是否可能是应忽略的播放回声。
+ */
 export function shouldIgnoreLikelyPlaybackEcho(input: PlaybackEchoGuardInput): PlaybackEchoGuardResult {
   const normalizedTranscript = normalizeEchoText(input.transcript)
   const normalizedAssistantResponse = normalizeEchoText(input.lastAssistantResponse)

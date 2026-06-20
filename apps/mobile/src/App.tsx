@@ -1,3 +1,8 @@
+/**
+ * App entry point — ThemeProvider, LogProvider, SessionContext orchestration.
+ * 应用入口 — 主题、日志、会话编排。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
@@ -7,13 +12,15 @@ import {
   StyleSheet,
   Text,
   View,
-  type AppStateStatus,
 } from 'react-native'
+import type { AppStateStatus } from 'react-native'
+
 import {
   createMeteorVoiceApiClient,
   fetchWithTimeout,
   formatApiRequestError,
 } from '@meteorvoice/api-client'
+
 import {
   acceptTranscriptTurn,
   canAcceptUserTranscript,
@@ -21,6 +28,7 @@ import {
   completeCoachPlayback,
   createInitialSnapshot,
   createPlaybackQueueSnapshot,
+  DEFAULT_PLAYBACK_COOLDOWN_MS,
   endActiveSession,
   gateUserTranscript,
   judgeEndpoint,
@@ -30,10 +38,12 @@ import {
   shouldIgnoreLikelyPlaybackEcho,
   startListeningSession,
   startPlaybackQueue,
-  DEFAULT_PLAYBACK_COOLDOWN_MS,
-  type PlaybackQueueSnapshot,
-  type WorkflowSnapshot,
 } from '@meteorvoice/session-core'
+import type {
+  PlaybackQueueSnapshot,
+  WorkflowSnapshot,
+} from '@meteorvoice/session-core'
+
 import {
   accentProfiles,
   appFeedback,
@@ -45,41 +55,47 @@ import {
   getScenarioLabel,
   getTTSSpeedRouting,
   scenarios,
-   
   t,
-  type AppFeedbackState,
-  type ConversationMessage,
-  type ConversationResponse,
-  type Locale,
+} from '@meteorvoice/shared'
+import type {
+  AppFeedbackState,
+  ConversationMessage,
+  ConversationResponse,
+  Locale,
 } from '@meteorvoice/shared'
 
 import * as SecureStore from 'expo-secure-store'
+
+import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
+import { useXunfeiStt } from './hooks/useXunfeiStt'
+import { LogProvider, useLog } from './LogContext'
+import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
-import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
-import { ThemeProvider, useTheme } from './ThemeProvider'
-import { SessionScreen } from './screens/SessionScreen'
-import { HomeScreen } from './screens/HomeScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
+import { HomeScreen } from './screens/HomeScreen'
+import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
-import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
+import { SessionContext } from './SessionContext'
+import type { SessionContextValue } from './SessionContext'
 import {
   canStartListening,
   enqueueRuntimeOperation,
   getPlaybackTailPrewarmDecision,
   routePresenceForTab,
   shouldResumeListening,
-  withTimeout,
   STT_MAX_CONSECUTIVE_RESTARTS,
-  type SessionRoutePresence,
-  type SessionSttProvider,
-  type Tab,
+  withTimeout,
 } from './sessionRuntime'
-import { LogProvider, useLog } from './LogContext'
-import { SessionContext, type SessionContextValue } from './SessionContext'
-import { useXunfeiStt } from './hooks/useXunfeiStt'
+import type {
+  SessionRoutePresence,
+  SessionSttProvider,
+  Tab,
+} from './sessionRuntime'
 import { canApplyEndpointResult, classifyRequestTerminalStage, isTurnStale } from './sessionTurnRuntime'
+import { ThemeProvider, useTheme } from './ThemeProvider'
+import { createHandlerBridge } from './utils/handlerBridge'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
@@ -122,9 +138,7 @@ function TabIcon({ tab, color }: { tab: Tab; color: string }) {
   )
 }
 
-// ────────────────────────────────────────────────
-// Main entry
-// ────────────────────────────────────────────────
+// ─── Main Entry / 入口 ───
 
 export default function App({ children }: { children?: React.ReactNode }) {
   return (
@@ -136,19 +150,17 @@ export default function App({ children }: { children?: React.ReactNode }) {
   )
 }
 
-// ────────────────────────────────────────────────
-// AppInner — 编排层
-// ────────────────────────────────────────────────
+// ─── AppInner / 编排层 ───
 
 function AppInner() {
   /* eslint-disable react-hooks/exhaustive-deps */
   const { C } = useTheme()
   const { logMetric, logUserAction, setEnrichment } = useLog()
 
-  // ── 导航 ──
+  // ─── Navigation / 导航 ───
   const [activeTab, setActiveTab] = useState<Tab>('session')
 
-  // ── 会话状态 ──
+  // ─── Session State / 会话状态 ───
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -159,13 +171,13 @@ function AppInner() {
   const [summary, setSummary] = useState<string | null>(null)
   const [busy, setBusyState] = useState(false)
 
-  // ── 场景 / 口音 ──
+  // ─── Scenario & Accent / 场景与口音 ───
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
   const [scenarioSwitching, setScenarioSwitching] = useState(false)
   const [apiSessionId] = useState<string | null>(null)
 
-  // ── 语言 ──
+  // ─── Language / 语言 ───
   const [locale, setLocaleState] = useState<Locale>('en')
   useEffect(() => {
     SecureStore.getItemAsync('app_locale').then(v => { if (v === 'zh' || v === 'en') setLocaleState(v) })
@@ -175,14 +187,14 @@ function AppInner() {
     void SecureStore.setItemAsync('app_locale', l)
   }, [])
 
-  // ── Provider 状态 ──
+  // ─── Provider State / 提供者状态 ───
   const [ttsProvider, setTtsProvider] = useState('mock')
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [sessionSttProvider, setSessionSttProviderState] = useState<SessionSttProvider>('native')
   const [activeFeedback, setActiveFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())
 
-  // ── TTS / Audio ──
+  // ─── TTS & Audio / 语音合成与音频 ───
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
@@ -202,7 +214,7 @@ function AppInner() {
     onUnauthorized: handleUnauthorized,
   }), [getAuthHeaders, handleUnauthorized])
 
-  // ── 派生值 ──
+  // ─── Derived Values / 派生值 ───
   const scenario = useMemo(() => scenarios.find(s => s.key === selectedScenarioKey) ?? scenarios[0], [selectedScenarioKey])
   const accent = useMemo(() => accentProfiles.find(a => a.key === selectedAccentKey) ?? accentProfiles[0], [selectedAccentKey])
 
@@ -210,7 +222,7 @@ function AppInner() {
   const voiceProfileAccentLabel = null  // TODO: wire from SettingsScreen voice profile selection
   const voiceProfileAccentRegion = null
 
-  // ── Refs（非响应式，供 callback 读取最新值） ──
+  // ─── Refs / 可变引用 ───
   const snapshotRef = useRef(snapshot)
   const messagesRef = useRef(messages)
   const statusRef = useRef(status)
@@ -253,14 +265,14 @@ function AppInner() {
   useEffect(() => { busyRef.current = busy }, [busy])
   useEffect(() => { sessionActiveRef.current = isSessionActive }, [isSessionActive])
 
-  // ── STT Provider 管理 ──
+  // ─── STT Provider / 语音识别提供者 ───
   const setSessionSttProvider = useCallback((provider: SessionSttProvider) => {
     sessionSttProviderRef.current = provider
     setSessionSttProviderState(provider)
     void SecureStore.setItemAsync(sessionSttProviderStorageKey, provider)
   }, [])
 
-  // ── Voice Metrics（编排专用） ──
+  // ─── Voice Metrics / 语音指标 ───
   const setStatus = useCallback((nextStatus: string) => {
     const previous = statusRef.current
     statusRef.current = nextStatus
@@ -336,15 +348,15 @@ function AppInner() {
     return task
   }, [logMetric])
 
-  // ── Native Speech ──
-  const nativeFinalTranscriptHandlerRef = useRef<(t: string) => Promise<void>>(() => Promise.resolve())
-  const nativeEndedWithoutTranscriptHandlerRef = useRef<() => void>(() => {})
-  const xunfeiFinalTranscriptHandlerRef = useRef<(t: string) => Promise<void>>(() => Promise.resolve())
-  const xunfeiEndedWithoutTranscriptHandlerRef = useRef<() => void>(() => {})
+  // ─── Native Speech / 原生语音 ───
+  const nativeFinalTranscriptRef = createHandlerBridge<(t: string) => Promise<void>>()
+  const nativeEndedWithoutTranscriptRef = createHandlerBridge<() => void>()
+  const xunfeiFinalTranscriptRef = createHandlerBridge<(t: string) => Promise<void>>()
+  const xunfeiEndedWithoutTranscriptRef = createHandlerBridge<() => void>()
 
   const speech = useNativeSpeech({
-    onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptHandlerRef.current(t) }, []),
-    onListeningEndedWithoutTranscript: useCallback(() => { nativeEndedWithoutTranscriptHandlerRef.current() }, []),
+    onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptRef.current(t) }, []),
+    onListeningEndedWithoutTranscript: useCallback(() => { nativeEndedWithoutTranscriptRef.current() }, []),
     onMetric: useCallback((stage: string, data?: Record<string, unknown>) => { logMetric(stage, data) }, [logMetric]),
   })
 
@@ -353,24 +365,34 @@ function AppInner() {
     nativeSpeechCancelListeningRef.current = speech.cancelListening
   }, [speech.cancelListening, speech.startListening])
 
-  // ── Xunfei STT Engine ──
+  // ─── Xunfei STT Engine / 讯飞语音识别引擎 ───
   const xunfeiStt = useXunfeiStt({
-    api, auth, logMetric, setStatus, enqueueSttOperation, canStartSessionListening,
-    locale, selectedScenarioKey, snapshotRef,
-    sessionGenerationRef, sttStreamIdRef, sttRestartCountRef, sttRestartStartMsRef,
-    listeningStartMsRef,
-    sessionActiveRef, routePresenceRef, canListenOnRouteRef,
-    playbackActiveRef, audioPlayingRef,
-    nativeSpeechStartListeningRef, nativeSpeechCancelListeningRef,
-    finalTranscriptHandlerRef: xunfeiFinalTranscriptHandlerRef,
-    endedWithoutTranscriptHandlerRef: xunfeiEndedWithoutTranscriptHandlerRef,
+    network: { api, auth },
+    context: { locale, selectedScenarioKey },
+    refs: {
+      snapshot: snapshotRef, sessionGeneration: sessionGenerationRef,
+      sttStreamId: sttStreamIdRef, sttRestartCount: sttRestartCountRef,
+      sttRestartStartMs: sttRestartStartMsRef, listeningStartMs: listeningStartMsRef,
+    },
+    session: {
+      sessionActive: sessionActiveRef, routePresence: routePresenceRef,
+      canListenOnRoute: canListenOnRouteRef, playbackActive: playbackActiveRef,
+      audioPlaying: audioPlayingRef,
+    },
+    callbacks: { logMetric, setStatus, enqueueSttOperation, canStartSessionListening },
+    bridge: {
+      nativeSpeechStart: nativeSpeechStartListeningRef,
+      nativeSpeechCancel: nativeSpeechCancelListeningRef,
+      finalTranscript: xunfeiFinalTranscriptRef,
+      endedWithoutTranscript: xunfeiEndedWithoutTranscriptRef,
+    },
   })
   const { startXunfeiSessionListening, cancelXunfeiSessionListening } = xunfeiStt
   // Synced from hook — used by prewarm/ref wiring effects
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const xunfeiSessionSttRef = xunfeiStt.xunfeiSessionSttRef
 
-  // ── STT Ref Wiring ──
+  // ─── STT Ref Wiring / 语音识别引用接线 ───
   useEffect(() => {
     speechStartListeningRef.current = sessionSttProvider === 'xunfei'
       ? () => startXunfeiSessionListening(false).then(() => true)
@@ -382,7 +404,7 @@ function AppInner() {
       provider === 'xunfei' ? startXunfeiSessionListening().then(() => true) : speech.startListening(lang)
   }, [sessionSttProvider, speech, startXunfeiSessionListening, cancelXunfeiSessionListening])
 
-  // ── Prewarm ──
+  // ─── Prewarm / 预热 ───
   useEffect(() => {
     if (!audioUrl || sessionSttProvider !== 'xunfei') { sttPrewarmAudioUrlRef.current = null; return }
     const decision = getPlaybackTailPrewarmDecision({
@@ -396,9 +418,7 @@ function AppInner() {
     return () => clearTimeout(timer)
   }, [audio.isPlaying, audio.playbackDurationSeconds, audio.playbackRemainingMs, audioUrl, sessionSttProvider, startXunfeiSessionListening])
 
-  // ────────────────────────────────────────────
-  // 编排函数（Inlined — 闭包自动捕获所有变量）
-  // ────────────────────────────────────────────
+  // ─── Orchestration / 编排函数 ───
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
     return api.synthesizeSpeech({ text, accent: accent.name, provider: ttsProvider, speed: ttsSpeedRouting.serverSpeed, voiceId: ttsVoiceId ?? undefined })
@@ -660,15 +680,15 @@ function AppInner() {
     }).catch(() => {})
   }, [logUserAction, clearResumeListeningTimer, cancelListeningForReason, synthesizeCoachSpeech, setStatus])
 
-  // ── Wiring: ref bridges → orchestration handlers ──
+  // ─── Handler Wiring / 回调接线 ───
   useEffect(() => {
-    nativeFinalTranscriptHandlerRef.current = handleNativeFinalTranscript
-    nativeEndedWithoutTranscriptHandlerRef.current = handleListeningEndedWithoutTranscript
-    xunfeiFinalTranscriptHandlerRef.current = handleNativeFinalTranscript
-    xunfeiEndedWithoutTranscriptHandlerRef.current = handleListeningEndedWithoutTranscript
+    nativeFinalTranscriptRef.current = handleNativeFinalTranscript
+    nativeEndedWithoutTranscriptRef.current = handleListeningEndedWithoutTranscript
+    xunfeiFinalTranscriptRef.current = handleNativeFinalTranscript
+    xunfeiEndedWithoutTranscriptRef.current = handleListeningEndedWithoutTranscript
   })
 
-  // ── Playback Effects ──
+  // ─── Playback Effects / 播放效果 ───
   useEffect(() => {
     audioPlayingRef.current = audio.isPlaying
     if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
@@ -700,7 +720,7 @@ function AppInner() {
     return () => { cancelled = true; clearTimeout(t) }
   }, [audio.didJustFinish, audio.isPlaying, audioUrl, cancelListeningForReason, clearResumeListeningTimer, scheduleResumeListening, setStatus])
 
-  // ── AppState Listener ──
+  // ─── AppState Listener / 应用状态监听 ───
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState !== 'active') {
@@ -722,7 +742,7 @@ function AppInner() {
     return () => sub.remove()
   }, [activeTab, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer, setRoutePresence, setStatus])
 
-  // ── Log enrichment — inject session context into every log entry ──
+  // ─── Log Enrichment / 日志上下文注入 ───
   useEffect(() => {
     setEnrichment({
       activeTab, scenarioKey: selectedScenarioKey, sessionActive: isSessionActive,
@@ -730,7 +750,7 @@ function AppInner() {
     })
   }, [activeTab, selectedScenarioKey, isSessionActive, busy, ttsProvider, sessionSttProvider, setEnrichment])
 
-  // ── Cleanup ──
+  // ─── Cleanup / 清理 ───
   useEffect(() => () => clearResumeListeningTimer(), [clearResumeListeningTimer])
   useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
 
@@ -745,7 +765,7 @@ function AppInner() {
     }
   }, [scenarioSwitching, tr])
 
-  // ── STT Provider 预检（on mount + auth ready） ──
+  // ─── STT Provider Preflight / 语音识别提供者预检 ───
   useEffect(() => {
     SecureStore.getItemAsync(sessionSttProviderStorageKey).then(value => {
       if (value === 'xunfei' || value === 'native') { setSessionSttProvider(value); sessionSttProviderRef.current = value }
@@ -766,9 +786,7 @@ function AppInner() {
     }).catch(() => { /* silent — provider list is best-effort */ })
   }, [auth.state, api, setSessionSttProvider])
 
-  // ────────────────────────────────────────────
-  // SessionContext Value
-  // ────────────────────────────────────────────
+  // ─── SessionContext Value / 会话上下文值 ───
   const sessionContext = useMemo<SessionContextValue>(() => ({
     snapshot, messages, corrections: correctionHistory, summary,
     isSessionActive, status, busy, scenarioSwitching,
@@ -781,7 +799,7 @@ function AppInner() {
     clearAudio: () => { setAudioUrl(null); playbackEndedAtMsRef.current = null },
   }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
 
-  // ── Tab Selection ──
+  // ─── Tab Selection / 标签选择 ───
   const selectTab = useCallback((tab: Tab) => {
     logUserAction('tab_tap', { to: tab })
     setActiveTab(tab)
@@ -802,7 +820,7 @@ function AppInner() {
     }
   }, [logUserAction, clearResumeListeningTimer, cancelListeningForReason, setRoutePresence, setStatus, canStartSessionListening])
 
-  // ── Render ──
+  // ─── Render / 渲染 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     content: { flex: 1 },
@@ -821,7 +839,7 @@ function AppInner() {
     <SafeAreaView style={styles.shell}>
       <View style={styles.content}>
         <SessionContext.Provider value={sessionContext}>
-          {activeTab === 'home'    && <HomeScreen tr={tr} locale={locale} scenarios={scenarios} appVersion={appVersion} defaultApiBaseUrl={defaultApiBaseUrl} onGoToSession={() => setActiveTab('session')} />}
+          {activeTab === 'home'    && <HomeScreen tr={tr} locale={locale} scenarios={scenarios} onGoToSession={() => setActiveTab('session')} />}
           {activeTab === 'session' && <SessionScreen tr={tr} accentName={accentName} accentRegion={accentRegion} scenarioName={getScenarioLabel(scenario, locale)} scenarioIcon={scenario.icon} scenarioDifficulty={getDifficultyLabel(scenario.difficulty, locale)} scenarioDescription={getScenarioDescription(scenario, locale)} />}
           {activeTab === 'history' && <HistoryScreen tr={tr} locale={locale} api={api} getAuthHeaders={getAuthHeaders} handleUnauthorized={handleUnauthorized} defaultApiBaseUrl={defaultApiBaseUrl} />}
           {activeTab === 'settings' && <SettingsScreen tr={tr} locale={locale} appVersion={appVersion} defaultApiBaseUrl={defaultApiBaseUrl} auth={auth} signOut={signOut} handleUnauthorized={handleUnauthorized} getAuthHeaders={getAuthHeaders} onLocaleChange={setLocale} />}

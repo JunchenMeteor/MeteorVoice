@@ -1,56 +1,51 @@
+/**
+ * SessionContext — session state and operations shared across screens.
+ * 会话上下文 — 跨 Screen 共享的会话状态和操作。
+ *
+ * AppInner acts as the provider, populating all fields from orchestration state.
+ * Screen components consume via useSession() instead of prop drilling.
+ * Only data keys (not display labels) live here — consumers compute their own labels.
+ * AppInner 作为 provider，编排状态填充所有字段。Screen 组件通过 useSession() 消费，
+ * 无需 prop drilling。Context 只放数据 key，显示标签由消费者自己计算。
+ */
 import { createContext, useContext } from 'react'
 import type { ConversationMessage, ConversationResponse, Locale } from '@meteorvoice/shared'
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
 import type { MeteorVoiceApiClient } from '@meteorvoice/api-client'
 
 export interface SessionContextValue {
-  // 会话数据
-  snapshot: WorkflowSnapshot
-  messages: ConversationMessage[]
-  corrections: ConversationResponse['corrections']
-  summary: string | null
-
-  // 会话状态
-  isSessionActive: boolean
-  status: string
+  api: MeteorVoiceApiClient
+  audioUrl: string | null
   busy: boolean
-  scenarioSwitching: boolean
-
-  // 显示/i18n
+  clearAudio: () => void
+  corrections: ConversationResponse['corrections']
+  endSession: () => Promise<void>
+  isSessionActive: boolean
   locale: Locale
+  messages: ConversationMessage[]
+  playCorrection: (text: string) => void
+  scenarioSwitching: boolean
+  selectScenario: (key: string) => Promise<boolean>
+  selectedAccentKey: string
+  selectedScenarioKey: string
+  setLocale: (l: Locale) => void
+  snapshot: WorkflowSnapshot
+  startSession: () => Promise<void>
+  status: string
+  submitText: (text: string) => void
+  summary: string | null
   tr: (key: string) => string
-
-  // 场景/口音/Provider
   ttsProvider: string
   ttsVoiceId: string | null
-  selectedScenarioKey: string
-  selectedAccentKey: string
   voiceProfileAccentLabel: string | null
   voiceProfileAccentRegion: string | null
-
-  // 音频
-  audioUrl: string | null
-
-  // 网络/鉴权
-  api: MeteorVoiceApiClient
-
-  // 操作
-  startSession: () => Promise<void>
-  endSession: () => Promise<void>
-  submitText: (text: string) => void
-  playCorrection: (text: string) => void
-  selectScenario: (key: string) => Promise<boolean>
-  setLocale: (l: Locale) => void
-  clearAudio: () => void
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 
 export function useSession(): SessionContextValue {
   const ctx = useContext(SessionContext)
-  if (!ctx) {
-    throw new Error('useSession must be used within AppInner (SessionContext.Provider)')
-  }
+  if (!ctx) throw new Error('useSession must be used within AppInner (SessionContext.Provider)')
   return ctx
 }
 

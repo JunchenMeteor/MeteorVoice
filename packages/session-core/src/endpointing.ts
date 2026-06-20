@@ -1,3 +1,7 @@
+/**
+ * Endpoint detection — semantic (LLM) and rule-based stop judgment.
+ * 判停检测 — 语义（LLM）和规则停判断。
+ */
 import type { ConversationMessage } from '@meteorvoice/shared'
 import {
   type VoiceActivitySnapshot,
@@ -246,6 +250,10 @@ export function isTurnDefinitelyComplete(transcript: string): boolean {
   return false
 }
 
+/**
+ * Legacy compatibility alias that judges a turn as complete or uncertain using the L1 fast-path heuristic.
+ * 向后兼容别名，使用 L1 快通道启发式算法将轮次判断为 complete 或 uncertain。
+ */
 // 向后兼容别名
 export function judgeTurnLocally(transcript: string): 'complete' | 'incomplete' | 'uncertain' {
   if (isTurnDefinitelyComplete(transcript)) return 'complete'

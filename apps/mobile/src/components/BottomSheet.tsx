@@ -1,3 +1,8 @@
+/**
+ * Bottom sheet with tabs for corrections and transcript.
+ * 底部弹窗（纠错/转录标签页）。
+ */
+
 import { useMemo } from 'react'
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'

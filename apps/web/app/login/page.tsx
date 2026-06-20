@@ -1,7 +1,13 @@
+/**
+ * Login and sign-up page.
+ * 登录与注册页面。
+ */
+
 'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+
 import { createClient } from '@/lib/supabase/client'
 import { parseLoginIdentifier } from '@/lib/auth/identifier'
 import { useT } from '@/components/LanguageProvider'

@@ -1,3 +1,6 @@
+/**
+ * Session finalization and data sync. / 会话结束和数据同步。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { finalizeSession } from '@/lib/server/turns'
 

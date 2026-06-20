@@ -1,3 +1,8 @@
+/**
+ * Root layout with ThemeProvider and LanguageProvider.
+ * 根布局。
+ */
+
 import type { Metadata } from 'next'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'

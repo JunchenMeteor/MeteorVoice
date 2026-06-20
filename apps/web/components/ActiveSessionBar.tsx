@@ -1,3 +1,8 @@
+/**
+ * Active session indicator bar.
+ * 活跃会话指示条。
+ */
+
 'use client'
 
 import Link from 'next/link'

@@ -1,13 +1,18 @@
 'use client'
 
+/**
+ * Playback engine hook (audio node management).
+ * 播放引擎 Hook。
+ */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  type PlaybackAudioNodes,
   PlaybackBlockedError,
   getPlaybackLevelSource,
   playAudioToEnd,
   silentAudioUrl,
 } from '@/lib/audio-engine'
+import type { PlaybackAudioNodes } from '@/lib/audio-engine'
 import type { PendingPlayback } from '@/lib/voice-session-types'
 
 export interface PlaybackEngine {

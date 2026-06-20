@@ -1,3 +1,6 @@
+/**
+ * Semantic endpoint health check. / 语义端点健康检查。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { createSemanticEndpointCheck } from '@/lib/server/semantic-endpoint'
 

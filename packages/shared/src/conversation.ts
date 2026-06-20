@@ -1,3 +1,7 @@
+/**
+ * Conversation message and response types.
+ * 对话消息和响应类型。
+ */
 export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system'
   content: string

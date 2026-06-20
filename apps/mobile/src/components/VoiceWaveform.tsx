@@ -1,3 +1,8 @@
+/**
+ * Animated voice waveform visualization.
+ * 语音波形动画组件。
+ */
+
 import { useEffect, useMemo } from 'react'
 import { Animated, StyleSheet, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'

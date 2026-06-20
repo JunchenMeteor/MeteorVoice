@@ -1,3 +1,6 @@
+/**
+ * Session CRUD operations. / 会话增删改查。
+ */
 import { createClient } from '@/lib/supabase/server'
 
 export async function createSession(input: { scenario_id?: string; accent_profile_id?: string }) {

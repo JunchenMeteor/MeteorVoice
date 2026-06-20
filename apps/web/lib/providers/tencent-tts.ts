@@ -1,3 +1,8 @@
+/**
+ * Tencent TTS provider.
+ * 腾讯云语音合成提供者。
+ */
+
 import crypto from 'crypto'
 import type { TTSProvider, TTSResult } from './types'
 import { requireEnv } from '@/lib/server/env'
@@ -50,6 +55,10 @@ function voiceForAccent(accent?: string) {
   return Number(process.env.TENCENT_TTS_VOICE || 101001)
 }
 
+/**
+ * Create a Tencent Cloud Text-to-Speech provider using TC3-HMAC-SHA256 signing.
+ * 创建使用 TC3-HMAC-SHA256 签名的腾讯云文本转语音提供者。
+ */
 export function createTencentTTS(): TTSProvider {
   const secretId = requireEnv('TENCENT_SECRET_ID', 'Tencent TTS')
   const secretKey = requireEnv('TENCENT_SECRET_KEY', 'Tencent TTS')

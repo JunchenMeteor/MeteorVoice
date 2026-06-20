@@ -1,3 +1,6 @@
+/**
+ * Session history listing. / 会话历史列表。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { listSessions } from '@/lib/server/session'
 

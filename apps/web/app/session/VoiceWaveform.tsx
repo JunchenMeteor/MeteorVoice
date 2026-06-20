@@ -1,5 +1,10 @@
 'use client'
 
+/**
+ * Voice waveform visualization component.
+ * 语音波形可视化组件。
+ */
+
 import type { CSSProperties, JSX } from 'react'
 
 export type VoiceWaveformMode =

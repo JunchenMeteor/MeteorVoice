@@ -1,3 +1,8 @@
+/**
+ * Azure TTS voice catalog.
+ * Azure TTS 音色目录。
+ */
+
 import type { VoiceProfile } from '@meteorvoice/shared'
 
 type AzureVoice = {
@@ -17,6 +22,10 @@ const azureVoiceDefaults: AzureVoice[] = [
   { accentKey: 'african', displayName: 'Leah', gender: 'female', envKey: 'AZURE_TTS_VOICE_AFRICAN', fallbackVoiceId: 'en-ZA-LeahNeural' },
 ]
 
+/**
+ * Resolve an Azure voice ID for the given accent, falling back to defaults when no env override is set.
+ * 根据口音解析对应的 Azure 语音 ID，未配置环境变量时回退到默认值。
+ */
 export function getAzureVoiceIdForAccent(accent?: string, env: Record<string, string | undefined> = process.env) {
   const normalized = accent?.toLowerCase() ?? ''
   const match = azureVoiceDefaults.find(voice => normalized.includes(voice.accentKey))
@@ -24,6 +33,10 @@ export function getAzureVoiceIdForAccent(accent?: string, env: Record<string, st
   return env[match.envKey]?.trim() || match.fallbackVoiceId
 }
 
+/**
+ * Build a list of Azure voice profiles for the voice picker, scoped by availability.
+ * 构建用于语音选择器的 Azure 语音配置文件列表，按可用性过滤。
+ */
 export function getAzureVoiceProfiles(
   available: boolean,
   env: Record<string, string | undefined> = process.env,
@@ -44,6 +57,10 @@ export function getAzureVoiceProfiles(
   })
 }
 
+/**
+ * Check whether the given value matches a known Azure voice ID.
+ * 检查给定值是否匹配已知的 Azure 语音 ID。
+ */
 export function isAzureVoiceId(value: string | null | undefined) {
   if (!value) return false
   return getAzureVoiceProfiles(true).some(profile => profile.providerVoiceId === value)

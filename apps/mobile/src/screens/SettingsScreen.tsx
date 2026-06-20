@@ -1,14 +1,40 @@
+/**
+ * App settings and preferences screen.
+ * 应用设置与偏好界面。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
+
+import { createMeteorVoiceApiClient, formatApiRequestError } from '@meteorvoice/api-client'
+import type { PreferencesResponse } from '@meteorvoice/api-client'
+
+import {
+  appFeedback,
+  displayErrorFeedback,
+  runAppOperationGroup,
+} from '@meteorvoice/shared'
+import type { Locale, VoiceProfile } from '@meteorvoice/shared'
+
 import * as SecureStore from 'expo-secure-store'
-import { useTheme } from '../ThemeProvider'
-import { createMeteorVoiceApiClient, formatApiRequestError, type PreferencesResponse } from '@meteorvoice/api-client'
-import { appFeedback, runAppOperationGroup, displayErrorFeedback, type Locale, type VoiceProfile } from '@meteorvoice/shared'
-import { syncMobilePreferences, type XunfeiVoice } from '../mobilePreferences'
-import { themeLabels, type ThemeKey } from '../theme'
+
 import { useLog } from '../LogContext'
+import { syncMobilePreferences } from '../mobilePreferences'
+import type { XunfeiVoice } from '../mobilePreferences'
 import { useSession } from '../SessionContext'
-import { getDefaultApiBaseUrl } from '../mobileConfig'
+import { themeLabels } from '../theme'
+import type { ThemeKey } from '../theme'
+import { useTheme } from '../ThemeProvider'
 
 interface Props {
   tr: (key: string) => string
@@ -27,11 +53,12 @@ export function SettingsScreen({
   auth, signOut, handleUnauthorized, getAuthHeaders,
   onLocaleChange,
 }: Props) {
+  /* eslint-disable react-hooks/exhaustive-deps */
   const { voiceMetricsText, asrEvaluationText, clearVoiceMetrics, logMetric } = useLog()
   const { ttsProvider: ctxTtsProvider, ttsVoiceId: ctxTtsVoiceId, selectedAccentKey: ctxAccentKey, selectedScenarioKey: ctxScenarioKey, clearAudio } = useSession()
   const { C, setTheme: setThemeLocal, themeKey } = useTheme()
 
-  // Own state
+  // ─── State / 状态 ───
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
@@ -112,7 +139,7 @@ export function SettingsScreen({
     }
   }, [email, password, auth, authSubmitting, authMode])
 
-  // ── Preference apply helpers ──
+  // ─── Preference Helpers / 偏好辅助 ───
   const applyTtsPreferences = useCallback((prefs: PreferencesResponse, msg = tr('session.status.preferences_saved')) => {
     setTtsProvider(prefs.tts_provider ?? 'mock')
     setTtsSpeedLocal(prefs.tts_speed ?? 1)
@@ -145,14 +172,7 @@ export function SettingsScreen({
     }
   }, [sessionSttProvider])
 
-  // ── Load preferences ──
-  const fetchSessionSttProviders = useCallback(async () => {
-    const result = await api.listASRProviders()
-    const providers: ('native' | 'xunfei')[] = ['native']
-    if (result.providers.some(p => p.key === 'xunfei' && p.enabled)) providers.push('xunfei')
-    return providers
-  }, [api])
-
+  // ─── Load Operations / 加载操作 ───
   const loadPreferences = useCallback(async (options: { force?: boolean; successMessage?: string } = {}) => {
     if (settingsLoadingRef.current && !options.force) return
     if (auth.state !== 'signed-in') { setSettingsMessage(tr('settings.auth_required')); return }
@@ -169,7 +189,7 @@ export function SettingsScreen({
       if (prefs.tts_voice_id !== undefined) setTtsVoiceId(prefs.tts_voice_id)
       if (prefs.voice_profiles) setVoiceProfiles(prefs.voice_profiles)
       if (prefs.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(prefs.selected_voice_profile_id)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ext = prefs as Record<string, any>
       if (ext.xunfei_voices?.configured) setXunfeiVoices(ext.xunfei_voices.configured)
@@ -236,7 +256,7 @@ export function SettingsScreen({
     return () => { cancelled = true }
   }, [api, auth.state, setSettingsLoadingFlag, setLocale, setThemeLocal, applySessionSttProviders, tr])
 
-  // ── Save operations ──
+  // ─── Save Operations / 保存操作 ───
   const saveProvider = useCallback(async (provider: string) => {
     settingsRequestRef.current += 1
     setTtsProvider(provider)
@@ -304,7 +324,7 @@ export function SettingsScreen({
     const requestId = ++settingsRequestRef.current
     setSettingsLoadingFlag(true); setSettingsMessage(null)
     try {
-      const prefs = await api.updatePreferences({ locale: nextLocale })
+      await api.updatePreferences({ locale: nextLocale })
       if (requestId !== settingsRequestRef.current) return
       setSettingsMessage(tr('session.status.preferences_saved'))
     } catch (error) {
@@ -314,7 +334,7 @@ export function SettingsScreen({
     } finally { if (requestId === settingsRequestRef.current) setSettingsLoadingFlag(false) }
   }, [api, auth.state, locale, setLocale, setSettingsLoadingFlag, tr])
 
-  // ── Auto-load on mount ──
+  // ─── Auto-load / 自动加载 ───
   useEffect(() => {
     if (auth.state !== 'signed-in') { settingsAutoLoadRef.current = false; return }
     if (settingsAutoLoadRef.current) return
@@ -323,7 +343,6 @@ export function SettingsScreen({
     return cleanup
   }, [auth.state, loadSettingsDataGroup])
 
-  // ── Alias old names for internal code compatibility ──
   const onSetLocale = (l: string) => { void saveLocalePreference(l as Locale) }
   const onSetTheme = setTheme
   const onSaveProvider = saveProvider
@@ -366,6 +385,7 @@ export function SettingsScreen({
     return locale === 'zh' ? profile.displayNameZh ?? profile.displayName : profile.displayName
   }
 
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     scrollView: { flex: 1 },
@@ -446,6 +466,8 @@ export function SettingsScreen({
     diagnosticsText: { color: C.textSecondary, fontSize: 11, lineHeight: 16 },
     appVersion: { color: C.textMuted, fontSize: 11, textAlign: 'center', paddingBottom: 16 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView

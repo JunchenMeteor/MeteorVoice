@@ -1,3 +1,6 @@
+/**
+ * Supabase server client with Bearer token support. / Supabase 服务端客户端（支持 Bearer Token）。
+ */
 import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'

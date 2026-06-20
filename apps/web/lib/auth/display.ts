@@ -1,3 +1,6 @@
+/**
+ * Auth display name parsing. / 登录标识解析。
+ */
 import type { User } from '@supabase/supabase-js'
 import { usernameEmailDomain } from './identifier'
 

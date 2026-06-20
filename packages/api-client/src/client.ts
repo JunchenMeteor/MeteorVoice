@@ -1,3 +1,7 @@
+/**
+ * Typed HTTP API client with exponential backoff retry.
+ * 类型化 HTTP API 客户端（指数退避重试）。
+ */
 import type {
   ApiClientOptions,
   ApiErrorBody,
@@ -223,10 +227,18 @@ export class MeteorVoiceApiClient {
   }
 }
 
+/**
+ * Creates a new MeteorVoice API client instance configured with the given options.
+ * 创建一个使用给定选项配置的 MeteorVoice API 客户端实例。
+ */
 export function createMeteorVoiceApiClient(options?: ApiClientOptions) {
   return new MeteorVoiceApiClient(options)
 }
 
+/**
+ * Fetches a resource with an abort-controller timeout, throwing MeteorVoiceApiTimeoutError on timeout or abort.
+ * 使用 AbortController 超时机制进行 fetch 请求，超时或中止时抛出 MeteorVoiceApiTimeoutError。
+ */
 export async function fetchWithTimeout(
   fetchImpl: typeof fetch,
   input: RequestInfo | URL,

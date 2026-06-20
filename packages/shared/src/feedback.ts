@@ -1,3 +1,7 @@
+/**
+ * App feedback system (pub-sub, multi-source merge).
+ * 应用反馈系统（发布订阅、多源合并）。
+ */
 export type AppFeedbackVariant = 'hud' | 'panel' | 'bar'
 export type AppFeedbackSeverity = 'info' | 'warning' | 'error'
 export type AppFeedbackPresentation =
@@ -91,6 +95,10 @@ function isSameFeedback(current: AppFeedbackState | null, next: AppFeedbackState
     current.autoDismissMs === next.autoDismissMs
 }
 
+/**
+ * Global singleton for managing application feedback state, subscriptions, and show/hide lifecycle.
+ * 管理应用反馈状态、订阅以及显示/隐藏生命周期的全局单例。
+ */
 export const appFeedback = {
   getFeedback() {
     return appFeedbackState
@@ -130,14 +138,26 @@ export const appFeedback = {
   },
 }
 
+/**
+ * Shows application feedback using the global feedback system.
+ * 使用全局反馈系统显示应用反馈。
+ */
 export function showAppFeedback(feedback: AppFeedbackInput) {
   appFeedback.show(feedback)
 }
 
+/**
+ * Hides application feedback for the given source. If no source is provided, clears all feedback.
+ * 隐藏指定来源的应用反馈。未提供来源时清空所有反馈。
+ */
 export function hideAppFeedback(source?: string) {
   appFeedback.hide(source)
 }
 
+/**
+ * Displays error feedback when conditions are met (presentation is not inline or silent, and shouldDisplay is true).
+ * 在满足条件时显示错误反馈（展示模式不是 inline 或 silent，且 shouldDisplay 为 true）。
+ */
 export function displayErrorFeedback(error: DisplayableErrorFeedback, source: string) {
   if (!error.shouldDisplay || error.presentation === 'inline' || error.presentation === 'silent') {
     return

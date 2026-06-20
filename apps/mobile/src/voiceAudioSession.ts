@@ -1,3 +1,8 @@
+/**
+ * iOS AVAudioSession management (Expo Module).
+ * iOS 音频会话管理。
+ */
+
 import { requireOptionalNativeModule } from 'expo-modules-core'
 import { Platform } from 'react-native'
 
