@@ -1,21 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useTheme } from '../ThemeProvider'
-import type { HistorySession, SessionTurnDto } from '@meteorvoice/api-client'
+import { formatApiRequestError, fetchWithTimeout, type MeteorVoiceApiClient, type HistorySession, type SessionTurnDto } from '@meteorvoice/api-client'
 import { scenarios, accentProfiles, getScenarioLabel, getAccentLabel } from '@meteorvoice/shared'
 import type { Locale } from '@meteorvoice/shared'
 
 interface Props {
   tr: (key: string) => string
   locale: Locale
-  sessions: HistorySession[]
-  loading: boolean
-  error: string | null
-  selectedHistory: HistorySession | null
-  selectedTurns: SessionTurnDto[]
-  onLoad: () => void
-  onSelect: (item: HistorySession) => void
-  onDelete: (id: string) => void
+  api: MeteorVoiceApiClient
+  getAuthHeaders: () => Promise<HeadersInit>
+  handleUnauthorized: () => void
+  defaultApiBaseUrl: string
 }
 
 function scenarioLabel(entry: HistorySession, locale: Locale) {
@@ -28,22 +24,71 @@ function accentLabel(entry: HistorySession, locale: Locale) {
   return a ? getAccentLabel(a, locale) : entry.accent
 }
 
-export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHistory, selectedTurns, onLoad, onSelect, onDelete }: Props) {
+export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthorized, defaultApiBaseUrl }: Props) {
   const { C } = useTheme()
   const [expandedId, setExpandedId] = useState<string | number | null>(null)
   const [filterScenario, setFilterScenario] = useState<string | null>(null)
+
+  // Own state (was in AppInner)
+  const [sessions, setSessions] = useState<HistorySession[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
+  const [selectedTurns, setSelectedTurns] = useState<SessionTurnDto[]>([])
+  const autoLoadRef = useRef(false)
+
+  const loadHistory = useCallback(async () => {
+    if (loading) return
+    setLoading(true); setError(null)
+    try {
+      const result = await api.listHistory()
+      setSessions(result.sessions)
+      setSelectedHistory(result.sessions[0] ?? null)
+      setSelectedTurns([])
+    } catch (e) {
+      const reqErr = formatApiRequestError(e, { context: 'mobile_history_list', presentation: 'inline' })
+      setError(reqErr.displayMessage)
+    } finally { setLoading(false) }
+  }, [api, loading])
+
+  useEffect(() => {
+    if (autoLoadRef.current) return
+    autoLoadRef.current = true
+    void loadHistory()
+  }, [loadHistory])
+
+  const deleteSession = useCallback(async (id: string) => {
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' as const } : s))
+    try {
+      const authHeaders = await getAuthHeaders()
+      await fetchWithTimeout(fetch, `${defaultApiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE', headers: authHeaders as Record<string, string>,
+      }).then(res => { if (res.status === 401) handleUnauthorized() })
+    } catch { /* best-effort */ }
+  }, [defaultApiBaseUrl, getAuthHeaders, handleUnauthorized])
+
+  const selectHistory = useCallback(async (item: HistorySession) => {
+    setSelectedHistory(item); setSelectedTurns([])
+    try {
+      const result = await api.listSessionTurns(item.id)
+      setSelectedTurns(result.turns)
+    } catch (e) {
+      const reqErr = formatApiRequestError(e, { context: 'mobile_history_turns', presentation: 'inline' })
+      setError(reqErr.displayMessage)
+    }
+  }, [api])
 
   function toggle(id: string | number) {
     if (expandedId === id) {
       setExpandedId(null)
     } else {
       setExpandedId(id)
-      onSelect(sessions.find(s => s.id === id)!)
+      selectHistory(sessions.find(s => s.id === id)!)
     }
   }
 
   function handleDelete(id: string) {
-    onDelete(id)
+    deleteSession(id)
   }
 
   const filtered = filterScenario
@@ -118,7 +163,7 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
     <View style={styles.shell}>
       <View style={styles.header}>
         <Text style={styles.title}>{tr('history.title')}</Text>
-        <Pressable onPress={onLoad} style={styles.loadBtn} disabled={loading}>
+        <Pressable onPress={loadHistory} style={styles.loadBtn} disabled={loading}>
           <Text style={styles.loadTxt}>{loading ? tr('history.loading') : tr('nav.history') || 'Refresh'}</Text>
         </Pressable>
       </View>
