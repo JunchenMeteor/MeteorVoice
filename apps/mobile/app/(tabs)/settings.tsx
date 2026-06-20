@@ -3,7 +3,7 @@ import { SettingsScreen } from '../../src/screens/SettingsScreen'
 import { useMobileAuth } from '../../src/mobileAuth'
 
 export default function SettingsTab() {
-  const { tr, locale, api, setLocale } = useSession()
+  const { tr, locale, setLocale } = useSession()
   const auth = useMobileAuth()
 
   return (

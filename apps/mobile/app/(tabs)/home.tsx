@@ -4,7 +4,7 @@ import { scenarios } from '@meteorvoice/shared'
 import { useRouter } from 'expo-router'
 
 export default function HomeTab() {
-  const { tr, locale, selectScenario, selectedScenarioKey, isSessionActive, scenarioSwitching } = useSession()
+  const { tr, locale } = useSession()
   const router = useRouter()
 
   return (

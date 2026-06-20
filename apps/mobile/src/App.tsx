@@ -66,18 +66,12 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
 import {
   canStartListening,
-  createStoppedSignal,
-  delay,
   enqueueRuntimeOperation,
   getPlaybackTailPrewarmDecision,
   routePresenceForTab,
-  settleWithTimeout,
   shouldResumeListening,
   withTimeout,
   STT_MAX_CONSECUTIVE_RESTARTS,
-  STT_PREWARM_STALE_TIMEOUT_MS,
-  STT_RESTART_DEBOUNCE_MS,
-  STT_STOP_SETTLE_TIMEOUT_MS,
   type SessionRoutePresence,
   type SessionSttProvider,
   type Tab,
@@ -85,22 +79,7 @@ import {
 import { LogProvider, useLog } from './LogContext'
 import { SessionContext, type SessionContextValue } from './SessionContext'
 import { useXunfeiStt } from './hooks/useXunfeiStt'
-import {
-  addPcmFrameListener,
-  addPcmStateListener,
-  isPcmCaptureAvailable,
-  startPcmCapture,
-  stopPcmCapture,
-  type PcmCaptureFrameEvent,
-} from './voicePcmCapture'
-import {
-  createXunfeiASRFrame,
-  extractXunfeiRecognitionResult,
-  getObject,
-  parseJsonObject,
-} from './xunfeiAsrWire'
 import { canApplyEndpointResult, classifyRequestTerminalStage, isTurnStale } from './sessionTurnRuntime'
-import type { CreateASRSessionResponse } from '@meteorvoice/api-client'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
@@ -162,7 +141,8 @@ export default function App({ children }: { children?: React.ReactNode }) {
 // ────────────────────────────────────────────────
 
 function AppInner() {
-  const { C, setTheme: setThemeLocal } = useTheme()
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const { C } = useTheme()
   const { logMetric, logUserAction, setEnrichment } = useLog()
 
   // ── 导航 ──
@@ -386,6 +366,8 @@ function AppInner() {
     endedWithoutTranscriptHandlerRef: xunfeiEndedWithoutTranscriptHandlerRef,
   })
   const { startXunfeiSessionListening, cancelXunfeiSessionListening } = xunfeiStt
+  // Synced from hook — used by prewarm/ref wiring effects
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const xunfeiSessionSttRef = xunfeiStt.xunfeiSessionSttRef
 
   // ── STT Ref Wiring ──
@@ -753,8 +735,7 @@ function AppInner() {
   useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
 
   // HUD feedback overlay effects
-  const [settingsLoading] = useState(false) // placeholder — SettingsScreen manages actual loading
-  const [authSubmitting] = useState(false) // placeholder — SettingsScreen manages actual submitting
+  // Placeholder states kept for HUD overlay feedbaack compatibility
 
   useEffect(() => {
     if (scenarioSwitching) {
@@ -798,7 +779,7 @@ function AppInner() {
     audioUrl, api,
     startSession, endSession, playCorrection, selectScenario, setLocale, submitText: submitTurn,
     clearAudio: () => { setAudioUrl(null); playbackEndedAtMsRef.current = null },
-  }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, scenario, accent, audioUrl, api, startSession, endSession, playCorrection, selectScenario, submitTurn])
+  }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
 
   // ── Tab Selection ──
   const selectTab = useCallback((tab: Tab) => {
@@ -859,4 +840,5 @@ function AppInner() {
       </View>
     </SafeAreaView>
   )
+  /* eslint-enable react-hooks/exhaustive-deps */
 }
