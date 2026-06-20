@@ -238,18 +238,21 @@ function AppInner() {
   const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
-  // Ref bridge for native speech → session workflow handlers
-  // useNativeSpeech captures callbacks at creation time, but sessionWorkflow
-  // hasn't been created yet. These refs act as an indirection layer.
+  // Ref bridges for handlers that are created later in hook order
+  // useNativeSpeech and useXunfeiStt capture callbacks at creation time,
+  // but sessionWorkflow (which provides the real handlers) hasn't been created yet.
+  // These refs act as an indirection layer, wired after sessionWorkflow is ready.
   const nativeFinalTranscriptHandlerRef = useRef<(t: string) => Promise<void>>(() => Promise.resolve())
   const nativeEndedWithoutTranscriptHandlerRef = useRef<() => void>(() => {})
+  const nativeMetricHandlerRef = useRef<(stage: string, data?: Record<string, unknown>) => void>(() => {})
+  const xunfeiFinalTranscriptHandlerRef = useRef<(t: string) => Promise<void>>(() => Promise.resolve())
+  const xunfeiEndedWithoutTranscriptHandlerRef = useRef<() => void>(() => {})
 
   const speech = useNativeSpeech({
     onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptHandlerRef.current(t) }, []),
     onListeningEndedWithoutTranscript: useCallback(() => { nativeEndedWithoutTranscriptHandlerRef.current() }, []),
-    onMetric: useCallback((_stage: string, _data?: Record<string, unknown>) => {
-      // Metrics forwarded to vm.logVoiceMetric via ref bridge
-      // (set after vm is created below)
+    onMetric: useCallback((stage: string, data?: Record<string, unknown>) => {
+      nativeMetricHandlerRef.current(stage, data)
     }, []),
   })
   useEffect(() => {
@@ -330,8 +333,8 @@ function AppInner() {
     enqueueSttOperation: vm.enqueueSttOperation,
     logVoiceMetric: vm.logVoiceMetric,
     setStatus: vm.setStatus,
-    handleListeningEndedWithoutTranscript: useCallback(() => {}, []), // populated below
-    handleNativeFinalTranscript: useCallback(async (t: string) => {}, []), // populated below
+    handleListeningEndedWithoutTranscript: useCallback(() => { xunfeiEndedWithoutTranscriptHandlerRef.current() }, []),
+    handleNativeFinalTranscript: useCallback(async (t: string) => { await xunfeiFinalTranscriptHandlerRef.current(t) }, []),
     nativeSpeechStartListeningRef,
     nativeSpeechCancelListeningRef,
     routePresenceRef,
@@ -461,10 +464,13 @@ function AppInner() {
     xunfeiStt.cancelXunfeiSessionListening,
   ])
 
-  // Wire native speech ref bridge to sessionWorkflow handlers
+  // Wire all handler ref bridges to sessionWorkflow handlers
   useEffect(() => {
     nativeFinalTranscriptHandlerRef.current = sessionWorkflow.handleNativeFinalTranscript
     nativeEndedWithoutTranscriptHandlerRef.current = sessionWorkflow.handleListeningEndedWithoutTranscript
+    nativeMetricHandlerRef.current = vm.logVoiceMetric
+    xunfeiFinalTranscriptHandlerRef.current = sessionWorkflow.handleNativeFinalTranscript
+    xunfeiEndedWithoutTranscriptHandlerRef.current = sessionWorkflow.handleListeningEndedWithoutTranscript
   })
 
   // Sync xunfeiSessionSttRef from hook to App.tsx level ref (for metric logging)
@@ -782,7 +788,7 @@ function AppInner() {
             }}
             onClearVoiceMetrics={() => {
               vm.logUserAction('diagnostics_clear_tap')
-              // voiceMetrics state is internal to useVoiceMetrics hook
+              vm.clearVoiceMetrics()
             }}
             onShareVoiceMetrics={() => {
               vm.logUserAction('diagnostics_share_tap')

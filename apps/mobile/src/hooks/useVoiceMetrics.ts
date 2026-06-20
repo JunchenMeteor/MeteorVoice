@@ -50,6 +50,7 @@ export interface VoiceMetricsReturn {
   clearResumeListeningTimer: () => void
   listeningStartupStatus: (provider?: SessionSttProvider) => string
   voiceMetricSeqRef: React.MutableRefObject<number>
+  clearVoiceMetrics: () => void
 }
 
 export function useVoiceMetrics(
@@ -258,6 +259,10 @@ export function useVoiceMetrics(
     }, delayMs)
   }, [canStartSessionListening, clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric, setStatus, refs, speechStartListeningRef])
 
+  const clearVoiceMetrics = useCallback(() => {
+    setVoiceMetrics([])
+  }, [])
+
   return {
     voiceMetrics,
     voiceMetricsText,
@@ -276,5 +281,6 @@ export function useVoiceMetrics(
     clearResumeListeningTimer,
     listeningStartupStatus,
     voiceMetricSeqRef,
+    clearVoiceMetrics,
   }
 }
