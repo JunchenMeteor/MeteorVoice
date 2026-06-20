@@ -1,3 +1,6 @@
+/**
+ * Accent profile and voice listing. / 口音配置和音色列表。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
 import { getAvailableProviders, getTTSProviderPreference } from '@/lib/server/preferences'
 import {

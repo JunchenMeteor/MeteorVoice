@@ -1,3 +1,7 @@
+/**
+ * Internationalization string map (~250 entries).
+ * 国际化文案映射（约 250 条）。
+ */
 import type { Locale } from './locale'
 
 export const t: Record<Locale, Record<string, string>> = {

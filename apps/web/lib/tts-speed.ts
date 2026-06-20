@@ -1,3 +1,6 @@
+/**
+ * TTS speed preference management. / TTS 语速偏好管理。
+ */
 export const ttsSpeedStorageKey = 'meteorvoice-tts-speed'
 export const ttsSpeedChangeEvent = 'meteorvoice-tts-speed-change'
 export const ttsSpeedOptions = [0.75, 0.9, 1, 1.2, 1.35, 1.5] as const

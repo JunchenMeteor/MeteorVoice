@@ -1,3 +1,8 @@
+/**
+ * Volcengine TTS provider.
+ * 火山引擎语音合成提供者。
+ */
+
 import crypto from 'crypto'
 import type { TTSProvider, TTSResult } from './types'
 import { requireEnv } from '@/lib/server/env'
@@ -9,6 +14,10 @@ function voiceForAccent(accent?: string) {
   return process.env.VOLCENGINE_TTS_VOICE || 'BV001_streaming'
 }
 
+/**
+ * Create a Volcengine (ByteDance) Text-to-Speech provider using the OpenSpeech API.
+ * 创建使用火山引擎 OpenSpeech API 的文本转语音提供者。
+ */
 export function createVolcengineTTS(): TTSProvider {
   const appId = requireEnv('VOLCENGINE_TTS_APP_ID', 'Volcengine TTS')
   const token = requireEnv('VOLCENGINE_TTS_ACCESS_TOKEN', 'Volcengine TTS')

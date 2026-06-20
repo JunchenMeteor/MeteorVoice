@@ -1,6 +1,12 @@
+/**
+ * Review corrections page.
+ * 纠错复习页面。
+ */
+
 'use client'
 
 import { useState } from 'react'
+
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { Card, CardContent } from '@/components/ui/card'
 import type { ConversationResponse } from '@/lib/providers/types'

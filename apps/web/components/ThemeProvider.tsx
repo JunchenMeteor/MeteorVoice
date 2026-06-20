@@ -1,6 +1,12 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+/**
+ * Theme context provider.
+ * 主题上下文提供者。
+ */
+
+import { createContext, useContext, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 
 const themes = [
   { key: 'default-calm', labelKey: 'settings.theme_default_calm' },

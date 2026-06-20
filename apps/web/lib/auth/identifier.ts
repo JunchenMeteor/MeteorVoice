@@ -1,3 +1,6 @@
+/**
+ * Login identifier parsing (phone/email/username). / 登录标识解析（手机号/邮箱/用户名）。
+ */
 export const defaultUsernameEmailDomain = 'users.meteorvoice.local'
 
 export type LoginIdentifier =

@@ -1,10 +1,17 @@
+/**
+ * Voice practice session screen.
+ * 语音练习会话界面。
+ */
+
 import { useMemo, useState } from 'react'
 import { Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { useTheme } from '../ThemeProvider'
-import { VoiceWaveform, type WaveformMode } from '../components/VoiceWaveform'
-import { BottomSheet } from '../components/BottomSheet'
+
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+
+import { BottomSheet } from '../components/BottomSheet'
+import { VoiceWaveform } from '../components/VoiceWaveform'
+import type { WaveformMode } from '../components/VoiceWaveform'
+import { useTheme } from '../ThemeProvider'
 
 const { width: SW, height: SH } = Dimensions.get('window')
 
@@ -42,6 +49,8 @@ export function SessionScreen({
     startSession, endSession, playCorrection, submitText,
   } = useSession()
   const { C } = useTheme()
+
+  // ─── State / 状态 ───
   const [sheetOpen, setSheetOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'corrections' | 'transcript'>('corrections')
   const [textDraft, setTextDraft] = useState('')
@@ -53,6 +62,7 @@ export function SessionScreen({
 
   const statusColor = isSessionActive ? C.success : C.textMuted
 
+  // ─── Callbacks / 回调 ───
   function openSheet(tab: 'corrections' | 'transcript') {
     setActiveTab(tab)
     setSheetOpen(true)
@@ -66,6 +76,7 @@ export function SessionScreen({
   }
 
 
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     gradientCircle: {
@@ -154,6 +165,8 @@ export function SessionScreen({
     panelCardTitle: { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
     panelCardMeta: { color: C.textMuted, fontSize: 12 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <View style={styles.shell}>
       <View style={styles.gradientCircle} pointerEvents="none" />

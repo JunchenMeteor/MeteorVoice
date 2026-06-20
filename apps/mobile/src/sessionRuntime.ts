@@ -1,3 +1,8 @@
+/**
+ * Session runtime utilities and constants.
+ * 会话运行时工具与常量。
+ */
+
 export type Tab = 'session' | 'home' | 'history' | 'settings'
 export type ApiBaseUrlSource = 'default' | 'user'
 export type SessionSttProvider = 'native' | 'xunfei'

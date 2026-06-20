@@ -1,13 +1,22 @@
 'use client'
 
+/**
+ * Settings page.
+ * 设置页面。
+ */
+
+import { useCallback, useEffect, useState } from 'react'
+
+import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
+import type { Locale, VoiceProfile } from '@meteorvoice/shared'
+import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+
 import { useTheme, themes } from '@/components/ThemeProvider'
 import { useLocale, useT } from '@/components/LanguageProvider'
-import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
-import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup, type Locale, type VoiceProfile } from '@meteorvoice/shared'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { useCallback, useEffect, useState } from 'react'
+import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference } from '@/lib/tts-speed'
+import type { TTSSpeed } from '@/lib/tts-speed'
+import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },

@@ -1,3 +1,8 @@
+/**
+ * Azure TTS provider.
+ * Azure 语音合成提供者。
+ */
+
 import type { TTSProvider, TTSResult } from './types'
 import { getAzureVoiceIdForAccent, isAzureVoiceId } from './azure-voices'
 import { requireEnv } from '@/lib/server/env'
@@ -19,6 +24,10 @@ function speedToRate(speed?: number): string {
   return pct >= 0 ? `+${pct}%` : `${pct}%`
 }
 
+/**
+ * Create an Azure Cognitive Services Text-to-Speech provider using SSML.
+ * 创建使用 SSML 的 Azure 认知服务文本转语音提供者。
+ */
 export function createAzureTTS(): TTSProvider {
   const key = requireEnv('AZURE_SPEECH_KEY', 'Azure TTS')
   const region = requireEnv('AZURE_SPEECH_REGION', 'Azure TTS')

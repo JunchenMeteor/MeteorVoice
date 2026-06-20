@@ -1,7 +1,13 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+/**
+ * Session page client component.
+ * 会话页面客户端组件。
+ */
+
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+
 import {
   getAccentLabel,
   getAccentRegion,
@@ -13,7 +19,8 @@ import type { ConversationResponse } from '@/lib/providers/types'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { useVoiceSession } from '@/components/VoiceSessionProvider'
 import { Button } from '@/components/ui/button'
-import { VoiceWaveform, type VoiceWaveformMode } from './VoiceWaveform'
+import { VoiceWaveform } from './VoiceWaveform'
+import type { VoiceWaveformMode } from './VoiceWaveform'
 
 type SidePanelTab = 'corrections' | 'transcript'
 

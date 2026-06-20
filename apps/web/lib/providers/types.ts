@@ -1,3 +1,8 @@
+/**
+ * Provider type definitions.
+ * 提供者类型定义。
+ */
+
 export type {
   ConversationContext,
   ConversationMessage,

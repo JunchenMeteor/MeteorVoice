@@ -1,15 +1,23 @@
+/**
+ * Voice session context provider with turn orchestration.
+ * 语音会话上下文提供者，管理对话轮次编排。
+ */
+
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
+
 import {
   accentProfiles,
   pickRandomAccent,
   scenarios,
-  type AccentProfile,
-  type Scenario,
 } from '@/lib/scenarios'
-import { createInitialSnapshot, transition, type WorkflowSnapshot, type WorkflowState } from '@/lib/conversation-workflow'
+import type { AccentProfile, Scenario } from '@/lib/scenarios'
+import { createInitialSnapshot, transition } from '@/lib/conversation-workflow'
+import type { WorkflowSnapshot, WorkflowState } from '@/lib/conversation-workflow'
+
 import {
   acceptTranscriptTurn,
   canContinueListening as canContinueCurrentTurn,
@@ -27,7 +35,8 @@ import {
 import { displayErrorFeedback } from '@meteorvoice/shared'
 import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
 import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
+import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences } from '@/lib/tts-speed'
+import type { TTSSpeed } from '@/lib/tts-speed'
 import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
 import { useLocale, useT } from '@/components/LanguageProvider'
 import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
@@ -75,6 +84,7 @@ interface VoiceSessionContextValue {
 
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null)
 
+/** 获取语音会话上下文的 React Hook */
 export function useVoiceSession() {
   const context = useContext(VoiceSessionContext)
   if (!context) throw new Error('useVoiceSession must be used within VoiceSessionProvider')
@@ -86,7 +96,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const tr = useT()
   const { locale } = useLocale()
 
-  // ─── 会话状态 ───
+  // ─── Session State / 会话状态 ───
   const [initialState] = useState(readPersistedSessionState)
   const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
   const [accent, setAccent] = useState<AccentProfile>(() =>
@@ -105,7 +115,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
 
-  // ─── 派生值 ───
+  // ─── Derived Values / 派生值 ───
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
     [scenarioKey],
@@ -113,7 +123,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const messages = snapshot.messages
   const isSessionRoute = pathname.startsWith('/session')
 
-  // ─── Refs：非响应式实时访问（不触发 re-render）───
+  // ─── Refs / 可变引用 ───
   const snapshotRef = useRef(snapshot)
   const scenarioRef = useRef(scenario)
   const accentRef = useRef(accent)
@@ -131,7 +141,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const listeningStartMsRef = useRef(0)
   const pendingEndpointTranscriptRef = useRef('')
 
-  // ─── 引擎 Hooks ───
+  // ─── Engine Hooks / 引擎 Hook ───
   // 播放引擎：audioRef、playbackNodesRef、unlock、blocked playback 等
   const playback = usePlaybackEngine()
 
@@ -159,7 +169,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     tr,
   })
 
-  // ─── Ref 同步：state → ref，供 callback 读取最新值 ───
+  // ─── Ref Sync / 引用同步 ───
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
@@ -184,7 +194,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     ttsVoiceIdRef.current = ttsVoiceId
   }, [ttsVoiceId])
 
-  // ─── TTS 偏好同步 ───
+  // ─── TTS Pref Sync / TTS 偏好同步 ───
   useEffect(() => {
     const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
 
@@ -247,7 +257,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       .finally(() => setTtsPreferenceLoaded(true))
   }, [])
 
-  // ─── 会话生命周期副作用 ───
+  // ─── Session Lifecycle / 会话生命周期 ───
   useEffect(() => {
     publishActiveSession(isSessionActive)
     return () => publishActiveSession(false)
@@ -272,7 +282,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     })
   }, [tr])
 
-  // ─── 会话状态持久化到 sessionStorage ───
+  // ─── Session Persistence / 会话持久化 ───
   useEffect(() => {
     correctionHistoryRef.current = corrections
   }, [corrections])
@@ -296,7 +306,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     sessionStorage.setItem(voiceSessionStateStorageKey, JSON.stringify(state))
   }, [accent.key, corrections, isRoutePaused, isSessionActive, scenario.key, snapshot, statusText, summary])
 
-  // ─── 工作流辅助：状态转换 ───
+  // ─── Workflow Helpers / 工作流辅助 ───
   const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
     const next = updater(snapshotRef.current)
     snapshotRef.current = next
@@ -307,7 +317,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     updateSnapshot(prev => transition(prev, to, { ...patch }))
   }, [updateSnapshot])
 
-  // ─── Turn 控制：中止、暂停、恢复 ───
+  // ─── Turn Control / 轮次控制 ───
   /** 中止当前 turn：abort STT、递增 turnId、停止音量采样、释放播放锁 */
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
@@ -337,7 +347,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     return next
   }, [])
 
-  // ─── 会话管理：开始、结束、配置、继续 ───
+  // ─── Session Management / 会话管理 ───
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
     const nextTurnId = activeTurnRef.current + 1
@@ -486,7 +496,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     void tts.speakText(text, accentRef.current.name)
   }, [tts])
 
-  // ─── Turn 编排：一个完整的对话周期 listening → endpoint → thinking → speaking → correcting ───
+  // ─── Turn Orchestration / 轮次编排 ───
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
     const canContinueListening = () => canContinueCurrentTurn({

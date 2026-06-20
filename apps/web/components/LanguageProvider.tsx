@@ -1,6 +1,12 @@
+/**
+ * Locale context provider for internationalization.
+ * 国际化语言上下文提供者。
+ */
+
 'use client'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { Locale } from '@meteorvoice/shared'
 import { t } from '@meteorvoice/shared'
 
@@ -10,7 +16,9 @@ const LangContext = createContext<{
   t: (key: string) => string
 }>({ locale: 'en', setLocale: () => {}, t: (k: string) => k })
 
+/** 获取当前语言的 React Hook */
 export function useLocale() { return useContext(LangContext) }
+/** 获取翻译函数的 React Hook */
 export function useT() { return useContext(LangContext).t }
 
 function initialLocale(): Locale {

@@ -1,3 +1,8 @@
+/**
+ * Browser STT provider (Web Speech API).
+ * 浏览器语音识别提供者。
+ */
+
 import type { STTProvider, STTResult } from './types'
 import {
   getSpeechEndpointDelay,
@@ -43,10 +48,18 @@ function debugVad(event: string, details: Record<string, unknown>) {
   console.debug('[MeteorVoice VAD]', event, details)
 }
 
+/**
+ * Detect whether the browser SpeechRecognition API is available.
+ * 检测浏览器是否支持 SpeechRecognition API。
+ */
 export function browserSTTSupported(): boolean {
   return !!(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition))
 }
 
+/**
+ * Create a browser-native Speech-to-Text provider using the Web Speech API with VAD-aware silence detection.
+ * 创建基于浏览器原生 Web Speech API 的语音识别提供者，支持 VAD 静音检测。
+ */
 export function createBrowserSTT(): STTProvider {
   const SpeechRecognitionCtor = (typeof window !== 'undefined'
     ? window.SpeechRecognition ?? window.webkitSpeechRecognition

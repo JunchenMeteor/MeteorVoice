@@ -1,3 +1,6 @@
+/**
+ * User preferences read and update. / 用户偏好读写。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { getPreferences, setPreferences } from '@/lib/server/preferences'
 

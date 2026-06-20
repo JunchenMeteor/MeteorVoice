@@ -1,3 +1,7 @@
+/**
+ * ASR provider types, capability matrix, and static declarations.
+ * ASR 提供商类型、能力矩阵和静态声明。
+ */
 export type ASRProviderKey = 'native' | 'xunfei' | 'azure' | 'tencent' | 'volcengine'
 
 export type ASRMode = 'single_utterance' | 'streaming' | 'file'
@@ -173,14 +177,26 @@ export const asrProviderLabels: Record<ASRProviderKey, string> = {
 
 export const asrProviderKeys = Object.keys(asrProviderCapabilities) as ASRProviderKey[]
 
+/**
+ * Type guard that checks whether a value is a valid ASR provider key.
+ * 类型守卫，检查值是否为有效的 ASR 提供商 key。
+ */
 export function isASRProviderKey(value: unknown): value is ASRProviderKey {
   return typeof value === 'string' && asrProviderKeys.includes(value as ASRProviderKey)
 }
 
+/**
+ * Normalizes a value to a valid ASR provider key, falling back to the given default (native).
+ * 将值规范化为有效的 ASR 提供商 key，无效时回退到指定的默认值（默认为 native）。
+ */
 export function normalizeASRProviderKey(value: unknown, fallback: ASRProviderKey = 'native'): ASRProviderKey {
   return isASRProviderKey(value) ? value : fallback
 }
 
+/**
+ * Creates a full ASR provider descriptor from a key and optional configuration flags.
+ * 根据 key 和可选配置标志创建完整的 ASR 提供商描述符。
+ */
 export function createASRProviderDescriptor(
   key: ASRProviderKey,
   options: {
@@ -201,6 +217,10 @@ export function createASRProviderDescriptor(
   }
 }
 
+/**
+ * Normalizes a partial session bootstrap request into a validated, fully-populated ASR session config.
+ * 将部分会话启动请求规范化为经过验证的完整 ASR 会话配置。
+ */
 export function normalizeASRSessionConfig(input: ASRSessionBootstrapRequest): ASRSessionConfig {
   const provider = normalizeASRProviderKey(input.provider)
   const capability = asrProviderCapabilities[provider]

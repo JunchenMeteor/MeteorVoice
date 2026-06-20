@@ -1,3 +1,6 @@
+/**
+ * Session summary generation. / 会话总结生成。
+ */
 import { createAICoach } from '@/lib/providers/ai-provider'
 import { saveSessionSummary } from './turns'
 

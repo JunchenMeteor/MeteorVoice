@@ -1,6 +1,12 @@
+/**
+ * Mobile authentication hook (Supabase).
+ * 移动端登录鉴权 Hook。
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Platform, Settings } from 'react-native'
-import { createClient, type Session, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
+import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 import * as SecureStore from 'expo-secure-store'
 
 function resolveEmail(input: string): string {

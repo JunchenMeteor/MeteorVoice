@@ -1,3 +1,6 @@
+/**
+ * Turn history operations. / 对话轮次操作。
+ */
 import { createClient } from '@/lib/supabase/server'
 
 export async function createTurn(input: {

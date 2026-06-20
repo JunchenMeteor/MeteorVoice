@@ -1,10 +1,21 @@
+/**
+ * Home screen with scenario selection.
+ * 场景选择主界面。
+ */
+
 import { useMemo } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { useTheme } from '../ThemeProvider'
-import { getScenarioLabel, getScenarioDescription, getDifficultyLabel, type scenarios as ScenariosType } from '@meteorvoice/shared'
+
+import {
+  getScenarioLabel,
+  getScenarioDescription,
+  getDifficultyLabel,
+} from '@meteorvoice/shared'
 import type { Locale } from '@meteorvoice/shared'
+import type { scenarios as ScenariosType } from '@meteorvoice/shared'
+
 import { useSession } from '../SessionContext'
-import { useLog } from '../LogContext'
+import { useTheme } from '../ThemeProvider'
 
 type Scenario = (typeof ScenariosType)[number]
 
@@ -12,14 +23,11 @@ interface Props {
   tr: (key: string) => string
   locale: Locale
   scenarios: Scenario[]
-  appVersion: string
-  defaultApiBaseUrl: string
   onGoToSession: () => void
 }
 
 export function HomeScreen({
   tr, locale, scenarios,
-  appVersion: _appVersion, defaultApiBaseUrl: _defaultApiBaseUrl,
   onGoToSession,
 }: Props) {
   const { selectedScenarioKey, isSessionActive, selectScenario, scenarioSwitching } = useSession()
@@ -59,6 +67,8 @@ export function HomeScreen({
     },
     resumeTxt: { color: C.cream, fontSize: 14, fontWeight: '700' },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <ScrollView
       style={styles.shell}

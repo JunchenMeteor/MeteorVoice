@@ -1,3 +1,8 @@
+/**
+ * App sidebar navigation with session controls.
+ * 应用侧边栏导航。
+ */
+
 'use client'
 
 import Link from 'next/link'

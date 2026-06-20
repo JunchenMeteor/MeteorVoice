@@ -1,3 +1,8 @@
+/**
+ * AI coach provider (DeepSeek via Vercel AI SDK).
+ * AI 教练提供者（DeepSeek + Vercel AI SDK）。
+ */
+
 import { generateText } from 'ai'
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
@@ -79,6 +84,10 @@ function getDeepSeek() {
   })
 }
 
+/**
+ * Create an AI conversation coach provider backed by DeepSeek, with automatic fallback to mock AI.
+ * 创建基于 DeepSeek 的 AI 对话教练提供者，失败时自动回退到模拟 AI。
+ */
 export function createAICoach(): AIProvider {
   const deepseek = getDeepSeek()
 

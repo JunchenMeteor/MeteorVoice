@@ -1,3 +1,6 @@
+/**
+ * Session summary generation. / 会话总结生成。
+ */
 import { guardApiRequest, jsonApiResult, requireApiUser } from '@/lib/server/http'
 import { FALLBACK_SESSION_SUMMARY, generateSessionSummary } from '@/lib/server/summary'
 

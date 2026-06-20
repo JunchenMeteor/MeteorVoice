@@ -1,3 +1,8 @@
+/**
+ * Xunfei ASR provider.
+ * 讯飞语音识别提供者。
+ */
+
 import crypto from 'crypto'
 import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice/shared'
 import { requireEnv } from '@/lib/server/env'
@@ -52,6 +57,10 @@ function getCachedAuthUrl(apiKey: string, apiSecret: string, now: number) {
   return cachedSignedUrl
 }
 
+/**
+ * Create a Xunfei (iFlytek) Automatic Speech Recognition session with cached signed WebSocket URL.
+ * 创建讯飞（科大讯飞）语音识别会话，使用缓存的签名 WebSocket URL。
+ */
 export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<ASRSessionBootstrapResponse> {
   const appId = requireEnv('XUNFEI_ASR_APP_ID', 'Xunfei ASR')
   const apiKey = requireEnv('XUNFEI_ASR_API_KEY', 'Xunfei ASR')

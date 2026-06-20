@@ -1,3 +1,6 @@
+/**
+ * TTS voice preference management. / TTS 音色偏好管理。
+ */
 export const ttsVoiceIdChangeEvent = 'meteorvoice-tts-voice-id-change'
 export const ttsVoiceIdStorageKey = 'meteorvoice-tts-voice-id'
 

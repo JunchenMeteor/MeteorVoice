@@ -1,3 +1,6 @@
+/**
+ * AI coach chat generation. / AI 教练对话生成。
+ */
 import {
   buildMixedChineseSpokenHint,
   findCommonCorrections,

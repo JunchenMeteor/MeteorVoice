@@ -1,3 +1,6 @@
+/**
+ * ASR provider listing. / 语音识别提供商列表。
+ */
 import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
 import { getASRProviders, getDefaultASRProvider } from '@/lib/server/asr'
 
