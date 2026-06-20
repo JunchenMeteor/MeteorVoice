@@ -20,33 +20,27 @@ function toWaveformMode(state: WorkflowSnapshot['state'], isActive: boolean): Wa
   }
 }
 
+import { useSession } from '../SessionContext'
+
 interface Props {
   tr: (key: string) => string
-  snapshot: WorkflowSnapshot
-  messages: ConversationMessage[]
-  corrections: ConversationResponse['corrections']
-  isSessionActive: boolean
-  status: string
-  summary: string | null
-  busy: boolean
   scenarioName: string
   scenarioIcon: string
   scenarioDifficulty: string
   scenarioDescription: string
   accentName: string
   accentRegion: string
-  onStart: () => void
-  onEnd: () => void
-  onPlayCorrection: (text: string) => void
-  onSubmitText: (text: string) => void
 }
 
 export function SessionScreen({
-  tr, snapshot, messages, corrections, isSessionActive, status, summary, busy,
+  tr,
   scenarioName, scenarioIcon, scenarioDifficulty, scenarioDescription,
   accentName, accentRegion,
-  onStart, onEnd, onPlayCorrection, onSubmitText,
 }: Props) {
+  const {
+    snapshot, messages, corrections, isSessionActive, status, summary, busy,
+    startSession, endSession, playCorrection, submitText,
+  } = useSession()
   const { C } = useTheme()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'corrections' | 'transcript'>('corrections')
@@ -68,7 +62,7 @@ export function SessionScreen({
     const text = textDraft.trim()
     if (!text || busy || !isSessionActive) return
     setTextDraft('')
-    onSubmitText(text)
+    submitText(text)
   }
 
 
@@ -225,7 +219,7 @@ export function SessionScreen({
         {!isSessionActive ? (
           <View style={styles.startRow}>
             <Pressable
-              onPress={onStart}
+              onPress={startSession}
               disabled={busy}
               style={[styles.startBtn, busy && styles.disabled]}
             >
@@ -257,7 +251,7 @@ export function SessionScreen({
               </Pressable>
             </View>
             <View style={styles.endRow}>
-              <Pressable onPress={onEnd} style={styles.endBtn}>
+              <Pressable onPress={endSession} style={styles.endBtn}>
                 <View style={styles.stopIcon} />
               </Pressable>
             </View>
@@ -288,7 +282,7 @@ export function SessionScreen({
         onTabChange={setActiveTab}
         corrections={corrections}
         messages={messages}
-        onPlayCorrection={onPlayCorrection}
+        onPlayCorrection={playCorrection}
       />
     </View>
   )

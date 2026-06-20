@@ -3,6 +3,8 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { useTheme } from '../ThemeProvider'
 import { getScenarioLabel, getScenarioDescription, getDifficultyLabel, type scenarios as ScenariosType } from '@meteorvoice/shared'
 import type { Locale } from '@meteorvoice/shared'
+import { useSession } from '../SessionContext'
+import { useLog } from '../LogContext'
 
 type Scenario = (typeof ScenariosType)[number]
 
@@ -10,21 +12,20 @@ interface Props {
   tr: (key: string) => string
   locale: Locale
   scenarios: Scenario[]
-  selectedScenarioKey: string
-  isSessionActive: boolean
-  scenarioSwitching: boolean
-  onSelectScenario: (key: string) => boolean | Promise<boolean>
+  appVersion: string
+  defaultApiBaseUrl: string
   onGoToSession: () => void
 }
 
 export function HomeScreen({
   tr, locale, scenarios,
-  selectedScenarioKey, isSessionActive, scenarioSwitching,
-  onSelectScenario, onGoToSession,
+  appVersion: _appVersion, defaultApiBaseUrl: _defaultApiBaseUrl,
+  onGoToSession,
 }: Props) {
+  const { selectedScenarioKey, isSessionActive, selectScenario, scenarioSwitching } = useSession()
   const { C } = useTheme()
   async function handleScenario(key: string) {
-    const shouldNavigate = await onSelectScenario(key)
+    const shouldNavigate = await selectScenario(key)
     if (shouldNavigate) onGoToSession()
   }
 
