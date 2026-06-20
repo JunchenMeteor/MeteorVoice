@@ -147,11 +147,11 @@ function TabIcon({ tab, color }: { tab: Tab; color: string }) {
 // Main entry
 // ────────────────────────────────────────────────
 
-export default function App() {
+export default function App({ children }: { children?: React.ReactNode }) {
   return (
     <ThemeProvider>
       <LogProvider>
-        <AppInner />
+        {children ?? <AppInner />}
       </LogProvider>
     </ThemeProvider>
   )
@@ -791,12 +791,14 @@ function AppInner() {
   const sessionContext = useMemo<SessionContextValue>(() => ({
     snapshot, messages, corrections: correctionHistory, summary,
     isSessionActive, status, busy, scenarioSwitching,
-    audioUrl, ttsProvider, ttsVoiceId,
+    locale, tr,
+    ttsProvider, ttsVoiceId,
     selectedScenarioKey, selectedAccentKey,
     voiceProfileAccentLabel, voiceProfileAccentRegion,
-    startSession, endSession, playCorrection, selectScenario, submitText: submitTurn,
+    audioUrl, api,
+    startSession, endSession, playCorrection, selectScenario, setLocale, submitText: submitTurn,
     clearAudio: () => { setAudioUrl(null); playbackEndedAtMsRef.current = null },
-  }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, audioUrl, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, startSession, endSession, playCorrection, selectScenario])
+  }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, scenario, accent, audioUrl, api, startSession, endSession, playCorrection, selectScenario, submitTurn])
 
   // ── Tab Selection ──
   const selectTab = useCallback((tab: Tab) => {
