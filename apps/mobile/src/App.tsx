@@ -51,6 +51,7 @@ import { HistoryScreen } from './screens/HistoryScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
 import {
+  getPlaybackTailPrewarmDecision,
   routePresenceForTab,
   type ApiBaseUrlSource,
   type SessionRoutePresence,
@@ -237,11 +238,19 @@ function AppInner() {
   const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
   const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
 
-  // Swappable refs for native speech
+  // Ref bridge for native speech → session workflow handlers
+  // useNativeSpeech captures callbacks at creation time, but sessionWorkflow
+  // hasn't been created yet. These refs act as an indirection layer.
+  const nativeFinalTranscriptHandlerRef = useRef<(t: string) => Promise<void>>(() => Promise.resolve())
+  const nativeEndedWithoutTranscriptHandlerRef = useRef<() => void>(() => {})
+
   const speech = useNativeSpeech({
-    onFinalTranscript: useCallback((_transcript: string) => {}, []), // populated below after hooks
-    onListeningEndedWithoutTranscript: useCallback(() => {}, []),
-    onMetric: useCallback(() => {}, []),
+    onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptHandlerRef.current(t) }, []),
+    onListeningEndedWithoutTranscript: useCallback(() => { nativeEndedWithoutTranscriptHandlerRef.current() }, []),
+    onMetric: useCallback((_stage: string, _data?: Record<string, unknown>) => {
+      // Metrics forwarded to vm.logVoiceMetric via ref bridge
+      // (set after vm is created below)
+    }, []),
   })
   useEffect(() => {
     nativeSpeechStartListeningRef.current = speech.startListening
@@ -452,6 +461,12 @@ function AppInner() {
     xunfeiStt.cancelXunfeiSessionListening,
   ])
 
+  // Wire native speech ref bridge to sessionWorkflow handlers
+  useEffect(() => {
+    nativeFinalTranscriptHandlerRef.current = sessionWorkflow.handleNativeFinalTranscript
+    nativeEndedWithoutTranscriptHandlerRef.current = sessionWorkflow.handleListeningEndedWithoutTranscript
+  })
+
   // Sync xunfeiSessionSttRef from hook to App.tsx level ref (for metric logging)
   useEffect(() => {
     xunfeiSessionSttRef.current = xunfeiStt.xunfeiSessionSttRef.current
@@ -468,6 +483,40 @@ function AppInner() {
   useEffect(() => { sessionSttProviderRef.current = sessionSttProvider }, [sessionSttProvider])
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
   useEffect(() => { busyRef.current = busy }, [busy])
+
+  // ─── Xunfei STT Prewarm ───
+  useEffect(() => {
+    if (!audioUrl || sessionSttProvider !== 'xunfei') {
+      sttPrewarmAudioUrlRef.current = null
+      return
+    }
+    const prewarmDecision = getPlaybackTailPrewarmDecision({
+      provider: sessionSttProvider,
+      isPlaying: audio.isPlaying,
+      playbackActive: playbackActiveRef.current,
+      audioUrl,
+      prewarmedAudioUrl: sttPrewarmAudioUrlRef.current,
+      playbackDurationSeconds: audio.playbackDurationSeconds,
+      playbackRemainingMs: audio.playbackRemainingMs,
+    })
+    if (!prewarmDecision.shouldPrewarm || prewarmDecision.remainingMs == null) return
+
+    sttPrewarmAudioUrlRef.current = audioUrl
+    const remainingMs = Math.round(prewarmDecision.remainingMs)
+    const timer = setTimeout(() => {
+      vm.logVoiceMetric('stt_prewarm_scheduled', {
+        provider: 'xunfei', remainingMs,
+        windowMs: prewarmDecision.windowMs,
+        durationMs: Math.round(prewarmDecision.durationMs ?? 0),
+      })
+      void xunfeiStt.startXunfeiSessionListening(true)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [
+    audio.isPlaying, audio.playbackDurationSeconds, audio.playbackRemainingMs, audioUrl,
+    sessionSttProvider, playbackActiveRef, sttPrewarmAudioUrlRef,
+    vm.logVoiceMetric, xunfeiStt.startXunfeiSessionListening,
+  ])
 
   useEffect(() => {
     SecureStore.getItemAsync('session_stt_provider').then(value => {
@@ -541,7 +590,7 @@ function AppInner() {
 
   useEffect(() => {
     if (auth.state !== 'signed-in') return
-    const timer = setTimeout(() => { preferences.loadSettingsDataGroup()() }, 0)
+    const timer = setTimeout(() => { preferences.loadSettingsDataGroup() }, 0)
     return () => clearTimeout(timer)
   }, [auth.state, preferences.loadSettingsDataGroup])
 
@@ -686,6 +735,8 @@ function AppInner() {
             }}
             onSaveProvider={provider => {
               vm.logUserAction('settings_tts_provider_tap', { provider })
+              setAudioUrl(null)
+              playbackEndedAtMsRef.current = null
               void preferences.saveProvider(provider)
             }}
             onSetSessionSttProvider={provider => {
@@ -706,6 +757,8 @@ function AppInner() {
             }}
             onSelectVoiceProfile={profile => {
               vm.logUserAction('settings_voice_profile_tap', { profileId: profile.id, provider: profile.provider })
+              setAudioUrl(null)
+              playbackEndedAtMsRef.current = null
               void preferences.selectVoiceProfile(profile)
             }}
             onSetEmail={setEmail}

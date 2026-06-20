@@ -3,6 +3,7 @@ import {
   acceptTranscriptTurn,
   canAcceptUserTranscript,
   canEndSession,
+  createInitialSnapshot,
   createPlaybackQueueSnapshot,
   endActiveSession,
   gateUserTranscript,
@@ -714,7 +715,7 @@ export function useSessionWorkflow(deps: SessionWorkflowDeps): SessionWorkflowRe
       setAudioUrl(null)
       setPlaybackQueue(createPlaybackQueueSnapshot())
       setSummary(null)
-      setSnapshot(createPlaybackQueueSnapshot() as unknown as WorkflowSnapshot)
+      setSnapshot(createInitialSnapshot('mobile-session'))
       setIsSessionActive(false)
       setStatus('session.status.scenario_selected')
       logVoiceMetric('scenario_selected', { key })

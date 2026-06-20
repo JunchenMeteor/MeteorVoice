@@ -123,51 +123,13 @@ export function useSttProvider(deps: SttProviderDeps): SttProviderReturn {
     setSessionSttProvider,
   ])
 
-  // Swap speech refs when STT provider changes
+  // Swap speech refs when STT provider changes (stubs — real wiring in App.tsx)
   useEffect(() => {
-    speechStartListeningRef.current = sessionSttProvider === 'xunfei'
-      ? () => {
-          // Handled externally by the parent component
-          return Promise.resolve(false)
-        }
-      : nativeSpeechStartListeningRef.current
-    speechCancelListeningRef.current = sessionSttProvider === 'xunfei'
-      ? () => undefined  // Handled externally
-      : () => undefined  // Handled externally
-  }, [sessionSttProvider, speechStartListeningRef, speechCancelListeningRef, nativeSpeechStartListeningRef])
-
-  // Prewarm scheduling effect
-  useEffect(() => {
-    if (!audioUrl) {
-      sttPrewarmAudioUrlRef.current = null
-      return
+    if (sessionSttProvider !== 'xunfei') {
+      speechStartListeningRef.current = nativeSpeechStartListeningRef.current
+      speechCancelListeningRef.current = () => undefined
     }
-    const prewarmDecision = getPlaybackTailPrewarmDecision({
-      provider: sessionSttProvider,
-      isPlaying: audio.isPlaying,
-      playbackActive: playbackActiveRef.current,
-      audioUrl,
-      prewarmedAudioUrl: sttPrewarmAudioUrlRef.current,
-      playbackDurationSeconds: audio.playbackDurationSeconds,
-      playbackRemainingMs: audio.playbackRemainingMs,
-    })
-    if (!prewarmDecision.shouldPrewarm || prewarmDecision.remainingMs == null) return
-
-    sttPrewarmAudioUrlRef.current = audioUrl
-    const remaining = prewarmDecision.remainingMs as number
-    const timer = setTimeout(() => {
-      logVoiceMetric('stt_prewarm_scheduled', {
-        provider: 'xunfei',
-        remainingMs: Math.round(remaining),
-        windowMs: prewarmDecision.windowMs,
-        durationMs: Math.round(prewarmDecision.durationMs ?? 0),
-      })
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [
-    audio.isPlaying, audio.playbackDurationSeconds, audio.playbackRemainingMs, audioUrl,
-    logVoiceMetric, sessionSttProvider, playbackActiveRef, sttPrewarmAudioUrlRef,
-  ])
+  }, [sessionSttProvider, speechStartListeningRef, speechCancelListeningRef, nativeSpeechStartListeningRef])
 
   const loadSessionSttProviders = useCallback(async () => {
     try {
