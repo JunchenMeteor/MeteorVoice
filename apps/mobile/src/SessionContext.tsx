@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+import type { ConversationMessage, ConversationResponse, Locale } from '@meteorvoice/shared'
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
+import type { MeteorVoiceApiClient } from '@meteorvoice/api-client'
 
 export interface SessionContextValue {
   // 会话数据
@@ -14,17 +15,24 @@ export interface SessionContextValue {
   status: string
   busy: boolean
   scenarioSwitching: boolean
+
+  // 显示/i18n
+  locale: Locale
+  tr: (key: string) => string
+
+  // 场景/口音/Provider
   ttsProvider: string
   ttsVoiceId: string | null
-
-  // 音频
-  audioUrl: string | null
-
-  // 场景 / 口音
   selectedScenarioKey: string
   selectedAccentKey: string
   voiceProfileAccentLabel: string | null
   voiceProfileAccentRegion: string | null
+
+  // 音频
+  audioUrl: string | null
+
+  // 网络/鉴权
+  api: MeteorVoiceApiClient
 
   // 操作
   startSession: () => Promise<void>
@@ -32,6 +40,7 @@ export interface SessionContextValue {
   submitText: (text: string) => void
   playCorrection: (text: string) => void
   selectScenario: (key: string) => Promise<boolean>
+  setLocale: (l: Locale) => void
   clearAudio: () => void
 }
 

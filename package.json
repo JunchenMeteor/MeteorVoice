@@ -47,6 +47,7 @@
     "ai": "^6.0.185",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "expo-router": "~55.0.16",
     "lucide-react": "^1.16.0",
     "next": "^16.2.7",
     "react": "19.2.4",
