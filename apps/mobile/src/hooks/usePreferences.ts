@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store'
 import { formatApiRequestError, type PreferencesResponse } from '@meteorvoice/api-client'
 import { runAppOperationGroup, displayErrorFeedback, type Locale, type VoiceProfile } from '@meteorvoice/shared'
 import { syncMobilePreferences } from '../mobilePreferences'
-import type { SessionSttProvider, ApiBaseUrlSource } from '../sessionRuntime'
+import type { SessionSttProvider } from '../sessionRuntime'
 
 export interface PreferencesDeps {
   api: {
@@ -33,11 +33,10 @@ export interface PreferencesDeps {
   setTtsVoiceId: Dispatch<SetStateAction<string | null>>
   setVoiceProfiles: Dispatch<SetStateAction<VoiceProfile[]>>
   setSelectedVoiceProfileId: Dispatch<SetStateAction<string | null>>
-  setXunfeiVoices: Dispatch<SetStateAction<Array<{ configured?: unknown[] }>>>
+  setXunfeiVoices: Dispatch<SetStateAction<unknown[]>>
   setSelectedScenarioKey: Dispatch<SetStateAction<string>>
   setSelectedAccentKey: Dispatch<SetStateAction<string>>
   setSettingsMessage: Dispatch<SetStateAction<string | null>>
-  setSettingsLoading: Dispatch<SetStateAction<boolean>>
   setAvailableSessionSttProviders: Dispatch<SetStateAction<SessionSttProvider[]>>
   setSessionSttProvider: Dispatch<SetStateAction<SessionSttProvider>>
   // Theme
@@ -45,8 +44,6 @@ export interface PreferencesDeps {
   // Refs & util
   sessionSttProviderRef: React.MutableRefObject<SessionSttProvider>
   settingsRequestRef: React.MutableRefObject<number>
-  settingsAutoLoadRef: React.MutableRefObject<boolean>
-  sessionSttProvidersLoadedRef: React.MutableRefObject<boolean>
   setSettingsLoadingFlag: (loading: boolean) => void
   logVoiceMetric: (stage: string, data?: Record<string, unknown>) => void
   tr: (key: string) => string
@@ -71,10 +68,10 @@ export function usePreferences(deps: PreferencesDeps): PreferencesReturn {
     appliedThemeRef,
     setLocale, setTtsProvider, setAvailableProviders, setTtsSpeed, setTtsVoiceId,
     setVoiceProfiles, setSelectedVoiceProfileId, setXunfeiVoices,
-    setSelectedScenarioKey, setSelectedAccentKey, setSettingsMessage, setSettingsLoading,
+    setSelectedScenarioKey, setSelectedAccentKey, setSettingsMessage,
     setAvailableSessionSttProviders, setSessionSttProvider, setTheme,
-    sessionSttProviderRef, settingsRequestRef, settingsAutoLoadRef,
-    sessionSttProvidersLoadedRef, setSettingsLoadingFlag,
+    sessionSttProviderRef, settingsRequestRef,
+    setSettingsLoadingFlag,
     logVoiceMetric, tr,
   } = deps
 
@@ -88,14 +85,16 @@ export function usePreferences(deps: PreferencesDeps): PreferencesReturn {
     if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
     if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
     if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-    if ((preferences as any).xunfei_voices?.configured) setXunfeiVoices((preferences as any).xunfei_voices.configured)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const extPrefs = preferences as Record<string, any>
+    if (extPrefs.xunfei_voices?.configured) setXunfeiVoices(extPrefs.xunfei_voices.configured)
     if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
     const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
     if (profile) setSelectedAccentKey(profile.accentKey)
     if (preferences.ui_theme && !appliedThemeRef.current) {
       appliedThemeRef.current = true
       void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
-        const serverTs = new Date((preferences as any).ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
+        const serverTs = new Date(extPrefs.ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
         const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
         if (serverTs >= localTs) {
           setTheme(preferences.ui_theme as string)
@@ -204,8 +203,10 @@ export function usePreferences(deps: PreferencesDeps): PreferencesReturn {
       }
 
       if (providersResult.status === 'fulfilled') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const provs = (providersResult.value as any).providers as Array<{ key: string; enabled: boolean }>
         applySessionSttProvidersFn(
-          (providersResult.value as any).providers.some((p: { key: string; enabled: boolean }) => p.key === 'xunfei' && p.enabled)
+          provs.some((p) => p.key === 'xunfei' && p.enabled)
             ? ['native', 'xunfei'] as SessionSttProvider[]
             : ['native'] as SessionSttProvider[]
         )

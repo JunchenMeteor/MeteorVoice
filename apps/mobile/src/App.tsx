@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert,
   AppState,
   Pressable,
   SafeAreaView,
@@ -12,7 +11,6 @@ import {
 } from 'react-native'
 import {
   createMeteorVoiceApiClient,
-  formatApiRequestError,
   type HistorySession,
   type SessionTurnDto,
 } from '@meteorvoice/api-client'
@@ -31,6 +29,7 @@ import {
   getScenarioLabel,
   getTTSSpeedRouting,
   scenarios,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   t,
   appFeedback,
   type AppFeedbackState,
@@ -57,17 +56,16 @@ import {
   type SessionRoutePresence,
   type SessionSttProvider,
   type Tab,
-  type VoiceMetricEntry,
 } from './sessionRuntime'
 
 // Hooks extracted from this file
 import { useVoiceMetrics, type VoiceMetricsRefs } from './hooks/useVoiceMetrics'
-import { useXunfeiStt, type XunfeiSttDeps } from './hooks/useXunfeiStt'
-import { usePlaybackQueue, type PlaybackQueueDeps } from './hooks/usePlaybackQueue'
-import { useSessionWorkflow, type SessionWorkflowDeps } from './hooks/useSessionWorkflow'
-import { useSttProvider, type SttProviderDeps } from './hooks/useSttProvider'
-import { usePreferences, type PreferencesDeps } from './hooks/usePreferences'
-import { useHistory, type HistoryDeps } from './hooks/useHistory'
+import { useXunfeiStt } from './hooks/useXunfeiStt'
+import { usePlaybackQueue } from './hooks/usePlaybackQueue'
+import { useSessionWorkflow } from './hooks/useSessionWorkflow'
+import { useSttProvider } from './hooks/useSttProvider'
+import { usePreferences } from './hooks/usePreferences'
+import { useHistory } from './hooks/useHistory'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
@@ -167,6 +165,7 @@ function AppInner() {
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
   const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
   const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [xunfeiVoices, setXunfeiVoices] = useState<any[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
   const [isSessionActive, setIsSessionActive] = useState(false)
@@ -194,7 +193,6 @@ function AppInner() {
   const sessionSttProviderHydratedRef = useRef(false)
   const sessionSttProvidersLoadedRef = useRef(false)
   const startListeningWithProviderRef = useRef<(provider: SessionSttProvider, lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
-  const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const themeInitializedRef = useRef(false)
   const listeningStartMsRef = useRef(0)
   const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
@@ -226,7 +224,7 @@ function AppInner() {
   const settingsLoadingRef = useRef(false)
   const activeTabRef = useRef(activeTab)
   const listeningTeardownRef = useRef<Promise<void> | null>(null)
-  const xunfeiSessionSttRef = useRef<any>(null)
+  const xunfeiSessionSttRef = useRef<import('./sessionRuntime').XunfeiSessionSttState | null>(null)
 
   // ─── Derived values ───
   const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
@@ -241,7 +239,7 @@ function AppInner() {
 
   // Swappable refs for native speech
   const speech = useNativeSpeech({
-    onFinalTranscript: useCallback((t: string) => {}, []), // populated below after hooks
+    onFinalTranscript: useCallback((_transcript: string) => {}, []), // populated below after hooks
     onListeningEndedWithoutTranscript: useCallback(() => {}, []),
     onMetric: useCallback(() => {}, []),
   })
@@ -267,7 +265,8 @@ function AppInner() {
     setSettingsLoading(loading)
   }, [setSettingsLoading])
 
-  // ─── Hooks ───
+  // ─── Hooks (coordination layer — intentional type bridging) ───
+  /* eslint-disable @typescript-eslint/no-explicit-any */
 
   // 1. VoiceMetrics — logging, status, busy, teardown
   const metricsRefs: VoiceMetricsRefs = {
@@ -375,6 +374,7 @@ function AppInner() {
     audioStopPlayback: audio.stopPlayback,
     startListeningWithProviderRef,
     speechStartListeningRef,
+    nativeSpeechStartListeningRef,
     scenarioSwitching,
     apiSessionId,
     correctionHistory,
@@ -413,11 +413,10 @@ function AppInner() {
     appliedThemeRef: themeInitializedRef,
     setLocale, setTtsProvider, setAvailableProviders, setTtsSpeed,
     setTtsVoiceId, setVoiceProfiles, setSelectedVoiceProfileId, setXunfeiVoices,
-    setSelectedScenarioKey, setSelectedAccentKey, setSettingsMessage, setSettingsLoading,
+    setSelectedScenarioKey, setSelectedAccentKey, setSettingsMessage,
     setAvailableSessionSttProviders, setSessionSttProvider: setSessionSttProviderState,
     setTheme: setThemeLocal as any,
-    sessionSttProviderRef, settingsRequestRef, settingsAutoLoadRef,
-    sessionSttProvidersLoadedRef,
+    sessionSttProviderRef, settingsRequestRef,
     setSettingsLoadingFlag,
     logVoiceMetric: vm.logVoiceMetric,
     tr,
@@ -433,6 +432,7 @@ function AppInner() {
     setSelectedHistory, setSelectedHistoryTurns, historyAutoLoadRef,
     logVoiceMetric: vm.logVoiceMetric, tr,
   })
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // ─── Wire up Swappable Refs ───
   useEffect(() => {
@@ -451,6 +451,11 @@ function AppInner() {
     sessionSttProvider, speech, xunfeiStt.startXunfeiSessionListening,
     xunfeiStt.cancelXunfeiSessionListening,
   ])
+
+  // Sync xunfeiSessionSttRef from hook to App.tsx level ref (for metric logging)
+  useEffect(() => {
+    xunfeiSessionSttRef.current = xunfeiStt.xunfeiSessionSttRef.current
+  })
 
   useEffect(() => { sessionActiveRef.current = isSessionActive }, [isSessionActive])
 
@@ -499,6 +504,7 @@ function AppInner() {
       return
     }
     if (vm.canStartSessionListening('tab_session')) {
+      // eslint-disable-next-line react-hooks/purity
       listeningStartMsRef.current = Date.now()
       vm.setStatus(vm.listeningStartupStatus())
       void speechStartListeningRef.current('en-US')
@@ -619,9 +625,8 @@ function AppInner() {
             scenarioDescription={getScenarioDescription(scenario, locale)}
             accentName={sessionAccentName} accentRegion={sessionAccentRegion}
             onStart={async () => {
-              // Use ensureSessionSttProviderForStart for preflight, then start
-              await sttProvider.ensureSessionSttProviderForStart()
-              return sessionWorkflow.startSession()
+              const provider = await sttProvider.ensureSessionSttProviderForStart()
+              return sessionWorkflow.startSession(provider)
             }}
             onEnd={() => void sessionWorkflow.endSession()}
             onPlayCorrection={sessionWorkflow.playCorrection}

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+/* eslint-disable react-hooks/immutability */
+import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   canStartListening,
   createASREvaluationReport,

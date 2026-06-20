@@ -63,6 +63,7 @@ export interface SessionWorkflowDeps {
   setStatus: (status: string) => void
   setBusy: (busy: boolean) => void
   setSummary: Dispatch<SetStateAction<string | null>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setActiveTab: Dispatch<SetStateAction<any>>
   setScenarioSwitching: Dispatch<SetStateAction<boolean>>
   setSelectedScenarioKey: Dispatch<SetStateAction<string>>
@@ -104,6 +105,7 @@ export interface SessionWorkflowDeps {
   // STT
   startListeningWithProviderRef: React.MutableRefObject<(provider: SessionSttProvider, lang?: string) => Promise<boolean>>
   speechStartListeningRef: React.MutableRefObject<(lang?: string) => Promise<boolean>>
+  nativeSpeechStartListeningRef: React.MutableRefObject<(lang?: string) => Promise<boolean>>
   // Scenario
   scenarioSwitching: boolean
   apiSessionId: string | null
@@ -111,7 +113,7 @@ export interface SessionWorkflowDeps {
 }
 
 export interface SessionWorkflowReturn {
-  startSession: () => Promise<void>
+  startSession: (sttProvider?: SessionSttProvider) => Promise<void>
   synthesizeCoachSpeech: (text: string) => Promise<{ audioUrl: string; duration?: number }>
   submitTurn: (sourceTranscript: string) => Promise<void>
   handleNativeFinalTranscript: (finalTranscript: string) => Promise<void>
@@ -139,7 +141,7 @@ export function useSessionWorkflow(deps: SessionWorkflowDeps): SessionWorkflowRe
     cancelListeningForReason, waitForListeningTeardown,
     scheduleResumeListening, clearResumeListeningTimer, listeningStartupStatus,
     audioStopPlayback, startListeningWithProviderRef, speechStartListeningRef,
-    scenarioSwitching,
+    nativeSpeechStartListeningRef, scenarioSwitching,
     apiSessionId, correctionHistory,
   } = deps
 
@@ -153,7 +155,7 @@ export function useSessionWorkflow(deps: SessionWorkflowDeps): SessionWorkflowRe
     })
   }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
 
-  const startSession = useCallback(async () => {
+  const startSession = useCallback(async (sttProvider?: SessionSttProvider) => {
     logUserAction('session_start_tap', { scenario: scenario.key })
     if (scenarioSwitching) {
       logVoiceMetric('session_start_blocked', { reason: 'scenario_switching' })
@@ -173,7 +175,7 @@ export function useSessionWorkflow(deps: SessionWorkflowDeps): SessionWorkflowRe
     })
     await waitForListeningTeardown('session_start')
     await cancelListeningForReason('session_start_reset')
-    const listeningProvider: SessionSttProvider = 'native'
+    const listeningProvider: SessionSttProvider = sttProvider ?? 'native'
     logVoiceMetric('session_start', {
       scenario: scenario.key, accent: accent.name,
       provider: ttsProvider, sttProvider: listeningProvider,
@@ -599,6 +601,7 @@ export function useSessionWorkflow(deps: SessionWorkflowDeps): SessionWorkflowRe
       })
       sttRestartCountRef.current = 0
       sttRestartStartMsRef.current = 0
+      void nativeSpeechStartListeningRef.current('en-US')
       return
     }
 

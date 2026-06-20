@@ -64,7 +64,11 @@ export function useXunfeiStt(deps: XunfeiSttDeps): XunfeiSttReturn {
     sttStreamIdRef, sttRestartCountRef, sttRestartStartMsRef,
   } = deps
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xunfeiSessionSttRef = useRef<XunfeiSessionSttState | null>(null)
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  void (api as unknown)
 
   const cancelXunfeiSessionListening = useCallback(async (reason = 'cancel') => {
     await enqueueSttOperation(`stop:${reason}`, async () => {

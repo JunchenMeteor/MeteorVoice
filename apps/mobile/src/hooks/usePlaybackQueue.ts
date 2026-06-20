@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import { advancePlaybackQueue, getPlaybackCompletionEffects, type PlaybackQueueSnapshot } from '@meteorvoice/session-core'
 import { shouldResumeListening } from '../sessionRuntime'
 
