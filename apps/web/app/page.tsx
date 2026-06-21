@@ -74,7 +74,7 @@ export default function HomePage() {
             onClick={() => startSession(s.key)}
             className="data-panel p-5 text-left hover:ring-2 hover:ring-[var(--theme-accent)] transition-all cursor-pointer"
           >
-            <div className="text-2xl mb-3">{s.icon}</div>
+            <div className="text-2xl mb-3" aria-hidden="true">{s.icon}</div>
             <h3 className="font-semibold text-[var(--theme-text-primary)]">{getScenarioLabel(s, locale)}</h3>
             <p className="text-sm text-[var(--theme-text-secondary)] mt-2">{getScenarioDescription(s, locale)}</p>
             <span className="inline-block chip-action mt-3">{getDifficultyLabel(s.difficulty, locale)}</span>
@@ -84,8 +84,14 @@ export default function HomePage() {
 
       {pendingScenarioKey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'var(--theme-overlay)' }}>
-          <div className="w-full max-w-sm rounded-lg border p-4 shadow-xl" style={{ background: 'var(--theme-bg-card)', borderColor: 'var(--theme-border)' }}>
-            <h2 className="text-base font-semibold text-[var(--theme-text-primary)]">{t('home.active_session_dialog_title')}</h2>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="home-active-session-dialog-title"
+            className="w-full max-w-sm rounded-lg border p-4 shadow-xl"
+            style={{ background: 'var(--theme-bg-card)', borderColor: 'var(--theme-border)' }}
+          >
+            <h2 id="home-active-session-dialog-title" className="text-base font-semibold text-[var(--theme-text-primary)]">{t('home.active_session_dialog_title')}</h2>
             <p className="mt-2 text-sm leading-relaxed text-[var(--theme-text-secondary)]">
               {t('home.active_session_dialog_desc')}
             </p>

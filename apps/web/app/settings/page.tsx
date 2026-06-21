@@ -348,6 +348,7 @@ export default function SettingsPage() {
                 onClick={() => isAvailable && handleTtsProviderChange(provider.key)}
                 disabled={settingsLoading || !isAvailable}
                 title={isAvailable ? undefined : t('settings.tts_not_configured')}
+                aria-label={isAvailable ? t(provider.labelKey) : `${t(provider.labelKey)} (${t('settings.tts_not_configured')})`}
                 className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''} ${!isAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 {t(provider.labelKey)}
@@ -395,6 +396,9 @@ export default function SettingsPage() {
                         type="button"
                         disabled={settingsLoading || unavailable}
                         onClick={() => handleVoiceProfileChange(profile)}
+                        aria-label={unavailable
+                          ? `${getVoiceProfileName(profile, locale)} (${t('settings.voice_profile_unavailable')})`
+                          : getVoiceProfileName(profile, locale)}
                         className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${selectedVoiceProfile?.id === profile.id ? 'is-active' : ''} ${unavailable ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <span className="text-sm font-medium">{getVoiceProfileName(profile, locale)}</span>

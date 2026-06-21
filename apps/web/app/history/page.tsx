@@ -321,6 +321,7 @@ export default function HistoryPage() {
                           onClick={() => void handleDelete(s.id)}
                           disabled={deletingId === s.id}
                           className="text-xs text-[var(--theme-text-muted)] hover:text-[var(--theme-danger)] transition-colors"
+                          aria-label={`${t('history.delete')}: ${scenarioLabel(s)}`}
                           title={t('history.delete')}
                         >
                           {deletingId === s.id ? '...' : '✕'}
