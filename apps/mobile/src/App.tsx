@@ -85,7 +85,7 @@ import { HomeScreen } from './screens/HomeScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SessionContext } from './SessionContext'
-import { createHandlerBridge } from './utils/handlerBridge'
+import { useHandlerBridge } from './utils/handlerBridge'
 import {
   LogProvider,
   useLog,
@@ -365,10 +365,10 @@ function AppInner() {
   }, [logMetric])
 
   // ─── Native Speech / 原生语音 ───
-  const nativeFinalTranscriptRef = createHandlerBridge<(t: string) => Promise<void>>()
-  const nativeEndedWithoutTranscriptRef = createHandlerBridge<() => void>()
-  const xunfeiFinalTranscriptRef = createHandlerBridge<(t: string) => Promise<void>>()
-  const xunfeiEndedWithoutTranscriptRef = createHandlerBridge<() => void>()
+  const nativeFinalTranscriptRef = useHandlerBridge<(t: string) => Promise<void>>()
+  const nativeEndedWithoutTranscriptRef = useHandlerBridge<() => void>()
+  const xunfeiFinalTranscriptRef = useHandlerBridge<(t: string) => Promise<void>>()
+  const xunfeiEndedWithoutTranscriptRef = useHandlerBridge<() => void>()
 
   const speech = useNativeSpeech({
     onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptRef.current(t) }, []),

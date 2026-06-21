@@ -7,13 +7,16 @@
  * 当 Hook A 在 Hook B 之前创建，但需要调用 B 的回调时使用。
  *
  * @example
- *   const onResult = createHandlerBridge<(text: string) => void>()
+ *   const onResult = useHandlerBridge<(text: string) => void>()
  *   useHookA({ onResult: useCallback((t) => onResult.current(t), []) })
  *   const hookB = useHookB(...)
  *   useEffect(() => { onResult.current = hookB.handleResult })
  */
-export function createHandlerBridge<T extends (...args: never[]) => unknown>(
+import type { MutableRefObject } from 'react'
+import { useRef } from 'react'
+
+export function useHandlerBridge<T extends (...args: never[]) => unknown>(
   stub?: T,
-): { current: T } {
-  return { current: (stub ?? (() => {})) as unknown as T }
+): MutableRefObject<T> {
+  return useRef((stub ?? (() => {})) as unknown as T)
 }
