@@ -234,7 +234,7 @@ export function SessionPageClient() {
 
         <div className="relative z-10 mt-3 flex items-center gap-2 pr-14">
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: statusColor }} />
-          <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]">{statusText}</span>
+          <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]" aria-live="polite">{statusText}</span>
           {interrupted && (
             <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
           )}
@@ -357,13 +357,16 @@ export function SessionPageClient() {
               aria-label={tr('session.close_panel')}
             />
             <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="session-mobile-panel-title"
               className="fixed inset-x-0 bottom-0 z-40 flex max-h-[78dvh] min-h-[45dvh] flex-col rounded-t-2xl border-t p-4 shadow-2xl"
               style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}
             >
-              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--theme-border)]" />
+              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--theme-border)]" aria-hidden="true" />
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
+                  <h2 id="session-mobile-panel-title" className="text-sm font-semibold text-[var(--theme-text-primary)]">
                     {activeTab === 'corrections' ? tr('session.correction_tips') : tr('session.transcript')}
                   </h2>
                   <p className="text-xs text-[var(--theme-text-muted)]">
@@ -412,8 +415,9 @@ export function SessionPageClient() {
             <span
               className="w-2 h-2 rounded-full shrink-0"
               style={{ background: statusColor }}
+              aria-hidden="true"
             />
-            <span className="text-sm text-[var(--theme-text-secondary)]">{statusText}</span>
+            <span className="text-sm text-[var(--theme-text-secondary)]" aria-live="polite">{statusText}</span>
             {interrupted && (
               <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
             )}

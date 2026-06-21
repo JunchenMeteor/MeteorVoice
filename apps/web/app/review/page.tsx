@@ -170,6 +170,7 @@ export default function ReviewPage() {
                 onClick={() => setRevealed(true)}
                 className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: 'var(--theme-accent)' }}
+                aria-expanded={revealed}
               >
                 {t('review.reveal')}
               </button>
