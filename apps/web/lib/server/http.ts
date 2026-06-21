@@ -2,6 +2,7 @@
  * API request guard, rate limiting, and authentication helpers. / API 请求守卫、限流和鉴权工具。
  */
 import { NextResponse } from 'next/server'
+import type { User } from '@supabase/supabase-js'
 
 import { createClient } from '@/lib/supabase/server'
 
@@ -78,13 +79,19 @@ export function guardApiRequest(request: Request, options: GuardOptions): ApiErr
 }
 
 export async function requireApiUser(): Promise<ApiErrorResult | null> {
+  const result = await getApiUser()
+  if (isApiErrorResult(result)) return result
+  return null
+}
+
+export async function getApiUser(): Promise<{ user: User } | ApiErrorResult> {
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) {
     return { error: 'Authentication required', status: 401 }
   }
 
-  return null
+  return { user }
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
