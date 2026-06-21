@@ -14,7 +14,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'preferences_get', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'preferences_get', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'preferences_patch', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'preferences_patch', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

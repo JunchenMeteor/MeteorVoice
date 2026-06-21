@@ -15,7 +15,7 @@ export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'asr_session', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'asr_session', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

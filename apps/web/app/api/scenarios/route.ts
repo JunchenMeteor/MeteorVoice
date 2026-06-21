@@ -16,7 +16,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'scenarios', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'scenarios', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const url = new URL(request.url)
     const locale = normalizeLocale(url.searchParams.get('locale'))

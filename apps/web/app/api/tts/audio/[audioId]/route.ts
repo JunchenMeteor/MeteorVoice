@@ -25,7 +25,7 @@ export async function GET(
   context: { params: Promise<{ audioId: string }> },
 ) {
   try {
-    const guard = guardApiRequest(request, { name: 'tts_audio', windowMs: 60_000, maxRequests: 240 })
+    const guard = await guardApiRequest(request, { name: 'tts_audio', windowMs: 60_000, maxRequests: 240 })
     if (guard) return jsonApiResult(guard)
 
     const { audioId } = await context.params
