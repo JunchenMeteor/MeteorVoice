@@ -6,6 +6,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { headers } from 'next/headers'
 
+import type { Database } from './database.types'
+
 export async function createClient() {
   const requestHeaders = await headers()
   const authorization = requestHeaders.get('authorization')
@@ -13,7 +15,7 @@ export async function createClient() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
   if (authorization?.startsWith('Bearer ')) {
-    return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -25,7 +27,7 @@ export async function createClient() {
   }
 
   const cookieStore = await cookies()
-  return createServerClient(
+  return createServerClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     {
