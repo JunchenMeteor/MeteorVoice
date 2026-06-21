@@ -41,16 +41,21 @@ export type ProductizedPreferences = {
   ui_theme_updated_at: string
 }
 
-type PreferenceRow = {
+type ProductPreferenceRow = {
   tts_provider?: string | null
   locale?: string | null
   default_scenario_key?: string | null
   tts_speed?: number | string | null
   tts_voice_id?: string | null
   selected_voice_profile_id?: string | null
+} | null
+
+type ThemePreferenceRow = {
   ui_theme?: string | null
   ui_theme_updated_at?: string | null
 } | null
+
+type PreferenceRow = ProductPreferenceRow & ThemePreferenceRow
 
 type VoiceProfileRow = {
   id: string
@@ -247,6 +252,23 @@ function isMissingColumnError(error: unknown, column: string) {
   )
 }
 
+function isMissingRelationError(error: unknown, relation: string) {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    ((error as { code?: string }).code === '42P01' || (error as { code?: string }).code === 'PGRST205') &&
+    JSON.stringify(error).includes(relation),
+  )
+}
+
+function combinePreferenceRows(product: ProductPreferenceRow, theme: ThemePreferenceRow): PreferenceRow {
+  return {
+    ...(product ?? {}),
+    ...(theme ?? {}),
+  }
+}
+
 export async function getPreferences(): Promise<ProductizedPreferences> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -275,23 +297,41 @@ export async function getPreferences(): Promise<ProductizedPreferences> {
     }
   }
 
-  let { data, error }: { data: PreferenceRow; error: unknown } = await supabase
-    .from('theme_preferences')
-    .select('tts_provider, locale, default_scenario_key, tts_speed, tts_voice_id, selected_voice_profile_id, ui_theme, ui_theme_updated_at')
+  let data: PreferenceRow = null
+  const productResult = await supabase
+    .from('user_preferences')
+    .select('tts_provider, locale, default_scenario_key, tts_speed, tts_voice_id, selected_voice_profile_id')
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (error && (isMissingColumnError(error, 'tts_voice_id') || isMissingColumnError(error, 'selected_voice_profile_id'))) {
-    const fallback = await supabase
+  if (productResult.error && isMissingRelationError(productResult.error, 'user_preferences')) {
+    let legacy = await supabase
       .from('theme_preferences')
-      .select('tts_provider, locale, default_scenario_key, tts_speed')
+      .select('tts_provider, locale, default_scenario_key, tts_speed, tts_voice_id, selected_voice_profile_id, ui_theme, ui_theme_updated_at')
       .eq('user_id', user.id)
       .maybeSingle()
-    data = fallback.data as PreferenceRow
-    error = fallback.error
+
+    if (legacy.error && (isMissingColumnError(legacy.error, 'tts_voice_id') || isMissingColumnError(legacy.error, 'selected_voice_profile_id'))) {
+      legacy = await supabase
+        .from('theme_preferences')
+        .select('tts_provider, locale, default_scenario_key, tts_speed')
+        .eq('user_id', user.id)
+        .maybeSingle()
+    }
+
+    if (legacy.error) throw legacy.error
+    data = legacy.data as PreferenceRow
+  } else {
+    if (productResult.error) throw productResult.error
+    const themeResult = await supabase
+      .from('theme_preferences')
+      .select('ui_theme, ui_theme_updated_at')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (themeResult.error && !isMissingColumnError(themeResult.error, 'ui_theme')) throw themeResult.error
+    data = combinePreferenceRows(productResult.data as ProductPreferenceRow, themeResult.data as ThemePreferenceRow)
   }
 
-  if (error) throw error
   const provider = resolveTTSProviderPreference(data?.tts_provider)
   const selectedProfile = resolveVoiceProfile({
     selectedVoiceProfileId: data?.selected_voice_profile_id,
@@ -360,8 +400,9 @@ export async function setPreferences(input: {
   const selectedVoiceProfileId = activeProfile?.id ?? null
   const uiTheme = input.ui_theme ?? previous.ui_theme
   const uiThemeUpdatedAt = input.ui_theme !== undefined ? new Date().toISOString() : previous.ui_theme_updated_at
-  let { error } = await supabase
-    .from('theme_preferences')
+  const updatedAt = new Date().toISOString()
+  const productResult = await supabase
+    .from('user_preferences')
     .upsert({
       user_id: user.id,
       tts_provider: normalized,
@@ -370,13 +411,12 @@ export async function setPreferences(input: {
       tts_speed: ttsSpeed,
       tts_voice_id: ttsVoiceId,
       selected_voice_profile_id: selectedVoiceProfileId,
-      ui_theme: uiTheme,
-      ui_theme_updated_at: uiThemeUpdatedAt,
-      updated_at: new Date().toISOString(),
+      updated_at: updatedAt,
     }, { onConflict: 'user_id' })
+  let error: unknown = productResult.error
 
-  if (error && (isMissingColumnError(error, 'tts_voice_id') || isMissingColumnError(error, 'selected_voice_profile_id'))) {
-    const fallback = await supabase
+  if (error && isMissingRelationError(error, 'user_preferences')) {
+    const legacy = await supabase
       .from('theme_preferences')
       .upsert({
         user_id: user.id,
@@ -384,12 +424,43 @@ export async function setPreferences(input: {
         locale,
         default_scenario_key: defaultScenarioKey,
         tts_speed: ttsSpeed,
-        updated_at: new Date().toISOString(),
+        tts_voice_id: ttsVoiceId,
+        selected_voice_profile_id: selectedVoiceProfileId,
+        ui_theme: uiTheme,
+        ui_theme_updated_at: uiThemeUpdatedAt,
+        updated_at: updatedAt,
       }, { onConflict: 'user_id' })
-    error = fallback.error
+    error = legacy.error
+
+    if (error && (isMissingColumnError(error, 'tts_voice_id') || isMissingColumnError(error, 'selected_voice_profile_id'))) {
+      const fallback = await supabase
+        .from('theme_preferences')
+        .upsert({
+          user_id: user.id,
+          tts_provider: normalized,
+          locale,
+          default_scenario_key: defaultScenarioKey,
+          tts_speed: ttsSpeed,
+          updated_at: updatedAt,
+        }, { onConflict: 'user_id' })
+      error = fallback.error
+    }
   }
 
   if (error) throw error
+
+  if (input.ui_theme !== undefined) {
+    const { error: themeError } = await supabase
+      .from('theme_preferences')
+      .upsert({
+        user_id: user.id,
+        ui_theme: uiTheme,
+        ui_theme_updated_at: uiThemeUpdatedAt,
+        updated_at: updatedAt,
+      }, { onConflict: 'user_id' })
+    if (themeError) throw themeError
+  }
+
   return {
     tts_provider: normalized,
     available_providers: available,

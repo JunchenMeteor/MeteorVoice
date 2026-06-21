@@ -175,7 +175,8 @@ Web 当前局部应用函数：
 | TTS provider/speed | `tts_provider`, `tts_speed` | provider、speed、voice id、必要的 voice profile。 |
 | Practice defaults | `default_scenario_key` | 默认 scenario；不要重置无关 TTS 列表。 |
 | Voice profile | `selected_voice_profile_id` | selected profile、accent、provider、voice id。 |
-| Theme/locale | `ui_theme`, future locale field | 只更新本地显示和必要持久化。 |
+| UI theme | `ui_theme` | 只更新本地主题显示和 `theme_preferences` 持久化。 |
+| Locale | `locale` | 只更新界面语言和 `user_preferences` 持久化。 |
 
 ## Response Language
 
