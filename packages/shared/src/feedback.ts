@@ -45,41 +45,14 @@ type FeedbackEntry = AppFeedbackState & {
   source: string
   order: number
 }
+export type AppFeedbackStore = {
+  getFeedback: () => AppFeedbackState | null
+  subscribe: (listener: FeedbackListener) => () => void
+  show: (feedback: AppFeedbackInput) => void
+  hide: (source?: string) => void
+}
 
-let appFeedbackState: AppFeedbackState | null = null
-let feedbackOrder = 0
-const feedbackBySource = new Map<string, FeedbackEntry>()
-const feedbackListeners = new Set<FeedbackListener>()
 const defaultFeedbackSource = 'app'
-
-function emitAppFeedback(next: AppFeedbackState | null) {
-  if (isSameFeedback(appFeedbackState, next)) return
-  appFeedbackState = next
-  feedbackListeners.forEach(listener => listener(appFeedbackState))
-}
-
-function publishActiveFeedback() {
-  const next = Array.from(feedbackBySource.values())
-    .sort((a, b) => a.order - b.order)
-    .at(-1) ?? null
-
-  if (!next) {
-    emitAppFeedback(null)
-    return
-  }
-
-  emitAppFeedback({
-    active: next.active,
-    message: next.message,
-    variant: next.variant,
-    source: next.source,
-    title: next.title,
-    severity: next.severity,
-    blocksInteraction: next.blocksInteraction,
-    dismissible: next.dismissible,
-    autoDismissMs: next.autoDismissMs,
-  })
-}
 
 function isSameFeedback(current: AppFeedbackState | null, next: AppFeedbackState | null) {
   if (current === next) return true
@@ -96,47 +69,89 @@ function isSameFeedback(current: AppFeedbackState | null, next: AppFeedbackState
 }
 
 /**
+ * Creates an isolated feedback store for app runtime or tests.
+ * 创建隔离的反馈 store，供应用运行时或测试使用。
+ */
+export function createAppFeedbackStore(): AppFeedbackStore {
+  let feedbackState: AppFeedbackState | null = null
+  let feedbackOrder = 0
+  const feedbackBySource = new Map<string, FeedbackEntry>()
+  const feedbackListeners = new Set<FeedbackListener>()
+
+  function emit(next: AppFeedbackState | null) {
+    if (isSameFeedback(feedbackState, next)) return
+    feedbackState = next
+    feedbackListeners.forEach(listener => listener(feedbackState))
+  }
+
+  function publishActive() {
+    const next = Array.from(feedbackBySource.values())
+      .sort((a, b) => a.order - b.order)
+      .at(-1) ?? null
+
+    if (!next) {
+      emit(null)
+      return
+    }
+
+    emit({
+      active: next.active,
+      message: next.message,
+      variant: next.variant,
+      source: next.source,
+      title: next.title,
+      severity: next.severity,
+      blocksInteraction: next.blocksInteraction,
+      dismissible: next.dismissible,
+      autoDismissMs: next.autoDismissMs,
+    })
+  }
+
+  return {
+    getFeedback() {
+      return feedbackState
+    },
+
+    subscribe(listener: FeedbackListener) {
+      feedbackListeners.add(listener)
+      listener(feedbackState)
+      return () => {
+        feedbackListeners.delete(listener)
+      }
+    },
+
+    show(feedback: AppFeedbackInput) {
+      const source = feedback.source ?? defaultFeedbackSource
+      const next: FeedbackEntry = {
+        ...feedback,
+        source,
+        active: feedback.active ?? true,
+        order: feedbackOrder + 1,
+      }
+      const existing = feedbackBySource.get(source)
+      if (existing && isSameFeedback(existing, next)) return
+      feedbackOrder = next.order
+      feedbackBySource.set(source, next)
+      publishActive()
+    },
+
+    hide(source?: string) {
+      if (!source) {
+        feedbackBySource.clear()
+        emit(null)
+        return
+      }
+      feedbackBySource.delete(source)
+      publishActive()
+    }
+  }
+}
+
+/**
  * Global singleton for managing application feedback state, subscriptions, and show/hide lifecycle.
  * 管理应用反馈状态、订阅以及显示/隐藏生命周期的全局单例。
  */
-export const appFeedback = {
-  getFeedback() {
-    return appFeedbackState
-  },
-
-  subscribe(listener: FeedbackListener) {
-    feedbackListeners.add(listener)
-    listener(appFeedbackState)
-    return () => {
-      feedbackListeners.delete(listener)
-    }
-  },
-
-  show(feedback: AppFeedbackInput) {
-    const source = feedback.source ?? defaultFeedbackSource
-    const next: FeedbackEntry = {
-      ...feedback,
-      source,
-      active: feedback.active ?? true,
-      order: feedbackOrder + 1,
-    }
-    const existing = feedbackBySource.get(source)
-    if (existing && isSameFeedback(existing, next)) return
-    feedbackOrder = next.order
-    feedbackBySource.set(source, next)
-    publishActiveFeedback()
-  },
-
-  hide(source?: string) {
-    if (!source) {
-      feedbackBySource.clear()
-      emitAppFeedback(null)
-      return
-    }
-    feedbackBySource.delete(source)
-    publishActiveFeedback()
-  },
-}
+export const appFeedback = createAppFeedbackStore()
 
 /**
  * Shows application feedback using the global feedback system.
