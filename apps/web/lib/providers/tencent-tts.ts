@@ -4,7 +4,11 @@
  */
 
 import crypto from 'crypto'
-import type { TTSProvider, TTSResult } from './types'
+
+import type {
+  TTSProvider,
+  TTSResult,
+} from './types'
 import { requireEnv } from '@/lib/server/env'
 
 const service = 'tts'

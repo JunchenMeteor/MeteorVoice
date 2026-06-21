@@ -4,15 +4,22 @@
  */
 
 import { useMemo } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-
 import {
-  getScenarioLabel,
-  getScenarioDescription,
-  getDifficultyLabel,
-} from '@meteorvoice/shared'
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
 import type { Locale } from '@meteorvoice/shared'
 import type { scenarios as ScenariosType } from '@meteorvoice/shared'
+import {
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
+} from '@meteorvoice/shared'
 
 import { useSession } from '../SessionContext'
 import { useTheme } from '../ThemeProvider'

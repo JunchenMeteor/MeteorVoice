@@ -16,7 +16,11 @@ export type {
   TTSProvider,
 } from '@meteorvoice/shared'
 
-import type { ConversationContext, ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+import type {
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+} from '@meteorvoice/shared'
 
 export interface AIProvider {
   generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse>

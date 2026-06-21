@@ -4,9 +4,21 @@
  */
 
 import { useMemo } from 'react'
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
+import type {
+  ConversationMessage,
+  ConversationResponse,
+} from '@meteorvoice/shared'
+
 import { useTheme } from '../ThemeProvider'
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
 
 type Tab = 'corrections' | 'transcript'
 

@@ -5,19 +5,24 @@
 
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-
 import {
-  accentProfiles,
-  pickRandomAccent,
-  scenarios,
-} from '@/lib/scenarios'
-import type { AccentProfile, Scenario } from '@/lib/scenarios'
-import { createInitialSnapshot, transition } from '@/lib/conversation-workflow'
-import type { WorkflowSnapshot, WorkflowState } from '@/lib/conversation-workflow'
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
+import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
+import { displayErrorFeedback } from '@meteorvoice/shared'
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
 import {
   acceptTranscriptTurn,
   canContinueListening as canContinueCurrentTurn,
@@ -30,27 +35,63 @@ import {
   requestCoachReply,
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
-  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { displayErrorFeedback } from '@meteorvoice/shared'
-import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
-import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences } from '@/lib/tts-speed'
+
+import type { PersistedVoiceSessionState } from '@/lib/session-persistence'
 import type { TTSSpeed } from '@/lib/tts-speed'
-import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+import type {
+  WorkflowSnapshot,
+  WorkflowState,
+} from '@/lib/conversation-workflow'
+import type {
+  ConversationMessage,
+  ConversationResponse,
+} from '@/lib/providers/types'
+import type {
+  AccentProfile,
+  Scenario,
+} from '@/lib/scenarios'
+import { useListeningEngine } from '@/lib/hooks/use-listening-engine'
+import { usePlaybackEngine } from '@/lib/hooks/use-playback-engine'
+import { useTTSEngine } from '@/lib/hooks/use-tts-engine'
 import {
-  type PersistedVoiceSessionState,
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  createInitialSnapshot,
+  transition,
+} from '@/lib/conversation-workflow'
+import {
+  browserSTTSupported,
+  createBrowserSTT,
+} from '@/lib/providers/browser-stt'
+import {
+  getSessionStatusKey,
+  isKnownLocalizedSessionStatus,
+} from '@/lib/session-status'
+import {
+  accentProfiles,
+  pickRandomAccent,
+  scenarios,
+} from '@/lib/scenarios'
+import {
+  readTTSVoiceIdPreference,
+  ttsVoiceIdChangeEvent,
+  writeTTSVoiceIdPreference,
+} from '@/lib/tts-voice'
+import {
   createClientSessionId,
   publishActiveSession,
   readPersistedSessionState,
   voiceSessionStateStorageKey,
 } from '@/lib/session-persistence'
-import { getSessionStatusKey, isKnownLocalizedSessionStatus } from '@/lib/session-status'
-import { usePlaybackEngine } from '@/lib/hooks/use-playback-engine'
-import { useListeningEngine } from '@/lib/hooks/use-listening-engine'
-import { useTTSEngine } from '@/lib/hooks/use-tts-engine'
+import {
+  flushPendingPreferences,
+  normalizeTTSSpeed,
+  readTTSSpeedPreference,
+  ttsSpeedChangeEvent,
+} from '@/lib/tts-speed'
 
 /** 教练语音播放完毕后、自动进入下一轮 listening 之前的静默间隔（毫秒） */
 const postPlaybackListenDelayMs = 900
@@ -153,11 +194,23 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     snapshotRef,
     voiceActivityRef,
   })
+  const {
+    playbackBlocked,
+    playBlockedReply,
+    resolvePendingPlayback,
+    unlockSessionAudio,
+  } = playback
+  const {
+    setVoiceLevel,
+    startListeningLevelSampling,
+    stopVoiceLevelSampling,
+    voiceLevel,
+  } = listening
 
   // TTS 引擎：文本合成、播放、错误恢复、mock 降级
   const tts = useTTSEngine({
     playback,
-    setVoiceLevel: listening.setVoiceLevel,
+    setVoiceLevel,
     ttsProviderRef,
     ttsSpeedRef,
     ttsVoiceIdRef,
@@ -323,9 +376,9 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     abortListeningRef.current?.abort()
     abortListeningRef.current = null
     activeTurnRef.current += 1
-    listening.stopVoiceLevelSampling()
-    playback.resolvePendingPlayback()
-  }, [listening.stopVoiceLevelSampling, playback.resolvePendingPlayback])
+    stopVoiceLevelSampling()
+    resolvePendingPlayback()
+  }, [resolvePendingPlayback, stopVoiceLevelSampling])
 
   const pauseListeningForNavigation = useCallback(() => {
     if (!activeSessionRef.current) return
@@ -337,8 +390,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       updateSnapshot(current => pauseSessionForRoute(current).snapshot)
     }
     setStatusText(tr('session.paused'))
-    listening.stopVoiceLevelSampling()
-  }, [cancelCurrentTurn, listening.stopVoiceLevelSampling, tr, updateSnapshot])
+    stopVoiceLevelSampling()
+  }, [cancelCurrentTurn, stopVoiceLevelSampling, tr, updateSnapshot])
 
   const rotateAccent = useCallback((): AccentProfile => {
     const next = pickRandomAccent()
@@ -386,7 +439,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   }, [])
 
   const startSession = useCallback(() => {
-    playback.unlockSessionAudio()
+    unlockSessionAudio()
     if (!ttsPreferenceLoaded) {
       setStatusText(tr('session.loading_voice'))
       return
@@ -410,7 +463,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     listeningStartMsRef.current = 0
     pendingEndpointTranscriptRef.current = ''
     startNextTurn()
-  }, [playback.unlockSessionAudio, startNextTurn, tr, ttsPreferenceLoaded])
+  }, [startNextTurn, tr, ttsPreferenceLoaded, unlockSessionAudio])
 
   const endSession = useCallback(async () => {
     activeSessionRef.current = false
@@ -420,7 +473,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     setIsSessionActive(false)
     applyTransition('session_ended')
     setStatusText(tr('session.ended'))
-    listening.stopVoiceLevelSampling()
+    stopVoiceLevelSampling()
     sessionStorage.removeItem(voiceSessionStateStorageKey)
 
     const currentSnapshot = snapshotRef.current
@@ -477,10 +530,10 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       const data = await res.json()
       if (data.summary) setSummary(data.summary)
     } catch {}
-  }, [applyTransition, cancelCurrentTurn, listening.stopVoiceLevelSampling, tr])
+  }, [applyTransition, cancelCurrentTurn, stopVoiceLevelSampling, tr])
 
   const continueSpeaking = useCallback(() => {
-    playback.unlockSessionAudio()
+    unlockSessionAudio()
     activeSessionRef.current = true
     if (!canListenOnRouteRef.current) {
       setStatusText(tr('session.paused'))
@@ -489,7 +542,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     listeningStartMsRef.current = 0
     pendingEndpointTranscriptRef.current = ''
     startNextTurn()
-  }, [playback.unlockSessionAudio, startNextTurn, tr])
+  }, [startNextTurn, tr, unlockSessionAudio])
 
   /** 用 TTS 引擎朗读纠错文本 */
   const playCorrection = useCallback((text: string) => {
@@ -523,7 +576,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     let transcript: string
     if (browserSTTSupported()) {
       try {
-        listening.startListeningLevelSampling(turnId)
+        startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()
         const result = await browserSTT.transcribe(new Blob(), {
           signal: abortController.signal,
@@ -533,7 +586,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
         if (!canContinueListening()) return
         transcript = result.transcript
       } catch {
-        listening.stopVoiceLevelSampling()
+        stopVoiceLevelSampling()
         if (!canContinueListening()) return
         setStatusText(tr('session.waiting_for_speech'))
         updateSnapshot(current => recoverSessionError({
@@ -551,7 +604,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       }
     } else {
       abortListeningRef.current = null
-      listening.stopVoiceLevelSampling()
+      stopVoiceLevelSampling()
       if (!canContinueListening()) return
       setStatusText(tr('session.stt_unavailable'))
       updateSnapshot(current => recoverSessionError({
@@ -564,7 +617,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     }
     abortListeningRef.current = null
     const endpointVoiceActivity = voiceActivityRef.current
-    listening.stopVoiceLevelSampling()
+    stopVoiceLevelSampling()
     const endpointTranscript = [pendingEndpointTranscriptRef.current, transcript]
       .map(part => part.trim())
       .filter(Boolean)
@@ -664,7 +717,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     })
     snapshotRef.current = coachTurn.snapshot
     setSnapshot(coachTurn.snapshot)
-    listening.setVoiceLevel(null)
+    setVoiceLevel(null)
     await tts.speakText(response.text, newAccent.name)
     await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
@@ -709,13 +762,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     interrupted,
     accentBanner,
     ttsPreferenceLoaded,
-    voiceLevel: listening.voiceLevel,
-    playbackBlocked: playback.playbackBlocked,
+    voiceLevel,
+    playbackBlocked,
     configureSession,
     startSession,
     endSession,
     continueSpeaking,
-    playBlockedReply: playback.playBlockedReply,
+    playBlockedReply,
     playCorrection,
   }), [
     accent,
@@ -728,8 +781,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     isRoutePaused,
     isSessionActive,
     messages,
-    playback.playbackBlocked,
-    playback.playBlockedReply,
+    playbackBlocked,
+    playBlockedReply,
     playCorrection,
     scenario,
     snapshot,
@@ -737,7 +790,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     statusText,
     summary,
     ttsPreferenceLoaded,
-    listening.voiceLevel,
+    voiceLevel,
   ])
 
   return (

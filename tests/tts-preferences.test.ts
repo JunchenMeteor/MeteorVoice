@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
 import { resolveTTSProviderPreference } from '@/lib/server/preferences'
 
 describe('resolveTTSProviderPreference', () => {

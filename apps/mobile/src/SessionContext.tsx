@@ -8,10 +8,18 @@
  * AppInner 作为 provider，编排状态填充所有字段。Screen 组件通过 useSession() 消费，
  * 无需 prop drilling。Context 只放数据 key，显示标签由消费者自己计算。
  */
-import { createContext, useContext } from 'react'
-import type { ConversationMessage, ConversationResponse, Locale } from '@meteorvoice/shared'
-import type { WorkflowSnapshot } from '@meteorvoice/session-core'
+import {
+  createContext,
+  useContext,
+} from 'react'
+
 import type { MeteorVoiceApiClient } from '@meteorvoice/api-client'
+import type { WorkflowSnapshot } from '@meteorvoice/session-core'
+import type {
+  ConversationMessage,
+  ConversationResponse,
+  Locale,
+} from '@meteorvoice/shared'
 
 export interface SessionContextValue {
   api: MeteorVoiceApiClient

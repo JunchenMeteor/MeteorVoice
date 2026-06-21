@@ -2,7 +2,10 @@
  * Session workflow state machine — 7 states with explicit transition matrix.
  * 会话工作流状态机 — 7 状态 + 显式转换矩阵。
  */
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+import type {
+  ConversationMessage,
+  ConversationResponse,
+} from '@meteorvoice/shared'
 
 export type WorkflowState =
   | 'idle'

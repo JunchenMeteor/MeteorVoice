@@ -2,8 +2,11 @@
  * Parallel operation group execution.
  * 并行操作组执行。
  */
-import type { AppFeedbackInput } from './feedback';
-import { hideAppFeedback, showAppFeedback } from './feedback'
+import type { AppFeedbackInput } from './feedback'
+import {
+  hideAppFeedback,
+  showAppFeedback,
+} from './feedback'
 
 export type AppOperationGroupTasks = Record<string, () => Promise<unknown>>
 

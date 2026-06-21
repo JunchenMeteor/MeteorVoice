@@ -2,7 +2,10 @@
  * Scenarios and accent profiles data and label functions.
  * 场景和口音数据与标签函数。
  */
-import type { Locale, LocalizedText } from './locale'
+import type {
+  Locale,
+  LocalizedText,
+} from './locale'
 
 export interface Scenario {
   key: string

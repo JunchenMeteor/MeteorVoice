@@ -1,9 +1,17 @@
 /**
  * AI coach chat endpoint. / AI 教练对话端点。
  */
-import type { ConversationMessage, ConversationContext } from '@/lib/providers/types'
+import type {
+  ConversationContext,
+  ConversationMessage,
+} from '@/lib/providers/types'
 import { generateCoachReply } from '@/lib/server/chat'
-import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+  requireApiUser,
+} from '@/lib/server/http'
 
 export async function POST(request: Request) {
   try {

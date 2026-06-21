@@ -3,7 +3,15 @@
  * 应用入口 — 主题、日志、会话编排。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { AppStateStatus } from 'react-native'
+import * as SecureStore from 'expo-secure-store'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Alert,
   AppState,
@@ -13,14 +21,35 @@ import {
   Text,
   View,
 } from 'react-native'
-import type { AppStateStatus } from 'react-native'
 
+import type {
+  PlaybackQueueSnapshot,
+  WorkflowSnapshot,
+} from '@meteorvoice/session-core'
+import type {
+  AppFeedbackState,
+  ConversationMessage,
+  ConversationResponse,
+  Locale,
+} from '@meteorvoice/shared'
 import {
   createMeteorVoiceApiClient,
   fetchWithTimeout,
   formatApiRequestError,
 } from '@meteorvoice/api-client'
-
+import {
+  accentProfiles,
+  appFeedback,
+  displayErrorFeedback,
+  getAccentLabel,
+  getAccentRegion,
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
+  getTTSSpeedRouting,
+  scenarios,
+  t,
+} from '@meteorvoice/shared'
 import {
   acceptTranscriptTurn,
   canAcceptUserTranscript,
@@ -39,37 +68,15 @@ import {
   startListeningSession,
   startPlaybackQueue,
 } from '@meteorvoice/session-core'
+
+import type { SessionContextValue } from './SessionContext'
 import type {
-  PlaybackQueueSnapshot,
-  WorkflowSnapshot,
-} from '@meteorvoice/session-core'
-
-import {
-  accentProfiles,
-  appFeedback,
-  displayErrorFeedback,
-  getAccentLabel,
-  getAccentRegion,
-  getDifficultyLabel,
-  getScenarioDescription,
-  getScenarioLabel,
-  getTTSSpeedRouting,
-  scenarios,
-  t,
-} from '@meteorvoice/shared'
-import type {
-  AppFeedbackState,
-  ConversationMessage,
-  ConversationResponse,
-  Locale,
-} from '@meteorvoice/shared'
-
-import * as SecureStore from 'expo-secure-store'
-
+  SessionRoutePresence,
+  SessionSttProvider,
+  Tab,
+} from './sessionRuntime'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
 import { useXunfeiStt } from './hooks/useXunfeiStt'
-import { LogProvider, useLog } from './LogContext'
-import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
@@ -78,7 +85,24 @@ import { HomeScreen } from './screens/HomeScreen'
 import { SessionScreen } from './screens/SessionScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SessionContext } from './SessionContext'
-import type { SessionContextValue } from './SessionContext'
+import { createHandlerBridge } from './utils/handlerBridge'
+import {
+  LogProvider,
+  useLog,
+} from './LogContext'
+import {
+  getDefaultApiBaseUrl,
+  getDisplayAppVersion,
+} from './mobileConfig'
+import {
+  ThemeProvider,
+  useTheme,
+} from './ThemeProvider'
+import {
+  canApplyEndpointResult,
+  classifyRequestTerminalStage,
+  isTurnStale,
+} from './sessionTurnRuntime'
 import {
   canStartListening,
   enqueueRuntimeOperation,
@@ -88,14 +112,6 @@ import {
   STT_MAX_CONSECUTIVE_RESTARTS,
   withTimeout,
 } from './sessionRuntime'
-import type {
-  SessionRoutePresence,
-  SessionSttProvider,
-  Tab,
-} from './sessionRuntime'
-import { canApplyEndpointResult, classifyRequestTerminalStage, isTurnStale } from './sessionTurnRuntime'
-import { ThemeProvider, useTheme } from './ThemeProvider'
-import { createHandlerBridge } from './utils/handlerBridge'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()

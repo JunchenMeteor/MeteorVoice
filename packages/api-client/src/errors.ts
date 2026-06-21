@@ -2,7 +2,10 @@
  * API error formatting — 7 error kinds + 7 presentation modes.
  * API 错误格式化 — 7 种错误类型 + 7 种展示模式。
  */
-import { MeteorVoiceApiError, MeteorVoiceApiTimeoutError } from './client'
+import {
+  MeteorVoiceApiError,
+  MeteorVoiceApiTimeoutError,
+} from './client'
 
 export type ApiRequestErrorKind =
   | 'unauthorized'

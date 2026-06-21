@@ -3,8 +3,8 @@
  * Provides relevant context to enrich AI prompts without a vector DB.
  */
 
-import { scenarios } from './scenarios'
 import type { CorrectionItem } from './providers/types'
+import { scenarios } from './scenarios'
 
 interface RetrievalResult {
   type: 'scenario' | 'correction_tip'

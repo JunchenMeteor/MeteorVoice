@@ -5,6 +5,7 @@
  * ThemeProvider, LogProvider, and SessionContext are provided by App.tsx.
  */
 import { Stack } from 'expo-router'
+
 import App from '../src/App'
 
 export default function RootLayout() {

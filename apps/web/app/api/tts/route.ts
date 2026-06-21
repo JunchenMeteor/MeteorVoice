@@ -1,8 +1,13 @@
 /**
  * Text-to-speech synthesis. / 文本转语音合成。
  */
-import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
 import { synthesizeSpeechFromRequest } from '@/lib/server/tts'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+  requireApiUser,
+} from '@/lib/server/http'
 
 export const runtime = 'nodejs'
 

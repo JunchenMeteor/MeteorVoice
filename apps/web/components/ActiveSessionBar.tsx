@@ -7,10 +7,17 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { useVoiceSession } from '@/components/VoiceSessionProvider'
+
 import { Button } from '@/components/ui/button'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  getAccentLabel,
+  getScenarioLabel,
+} from '@/lib/scenarios'
 
 export default function ActiveSessionBar() {
   const pathname = usePathname()

@@ -3,9 +3,15 @@
  * 原生音频播放与录音 Hook。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState } from 'react-native'
 import type { AppStateStatus } from 'react-native'
+import { AppState } from 'react-native'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   getRecordingPermissionsAsync,
   RecordingPresets,
@@ -16,6 +22,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio'
+
 import { configureVoiceAudioSession } from './voiceAudioSession'
 
 type NativeAudioPermission = 'unknown' | 'granted' | 'denied'

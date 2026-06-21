@@ -1,13 +1,18 @@
 /**
  * Practice scenario listing. / 练习场景列表。
  */
-import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
 import {
   getScenarioDescription,
   getScenarioLabel,
   normalizeLocale,
   scenarios,
 } from '@meteorvoice/shared'
+
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+} from '@/lib/server/http'
 
 export async function GET(request: Request) {
   try {

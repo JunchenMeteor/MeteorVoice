@@ -3,8 +3,16 @@
  * 语音波形动画组件。
  */
 
-import { useEffect, useMemo } from 'react'
-import { Animated, StyleSheet, View } from 'react-native'
+import {
+  useEffect,
+  useMemo,
+} from 'react'
+import {
+  Animated,
+  StyleSheet,
+  View,
+} from 'react-native'
+
 import { useTheme } from '../ThemeProvider'
 
 export type WaveformMode = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'paused' | 'ended'

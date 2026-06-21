@@ -3,9 +3,15 @@
  * Azure 语音合成提供者。
  */
 
-import type { TTSProvider, TTSResult } from './types'
-import { getAzureVoiceIdForAccent, isAzureVoiceId } from './azure-voices'
+import type {
+  TTSProvider,
+  TTSResult,
+} from './types'
 import { requireEnv } from '@/lib/server/env'
+import {
+  getAzureVoiceIdForAccent,
+  isAzureVoiceId,
+} from './azure-voices'
 
 function resolveAzureVoice(accent?: string, voiceId?: string) {
   if (voiceId?.trim()) {
