@@ -29,8 +29,8 @@ import type {
   SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
-  fetchWithTimeout,
   formatApiRequestError,
+  MeteorVoiceApiError,
 } from '@meteorvoice/api-client'
 import {
   accentProfiles,
@@ -97,12 +97,13 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
   const deleteSession = useCallback(async (id: string) => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' as const } : s))
     try {
-      const authHeaders = await getAuthHeaders()
-      await fetchWithTimeout(fetch, `${defaultApiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE', headers: authHeaders as Record<string, string>,
-      }).then(res => { if (res.status === 401) handleUnauthorized() })
-    } catch { /* best-effort */ }
-  }, [defaultApiBaseUrl, getAuthHeaders, handleUnauthorized])
+      await api.deleteSession(id)
+    } catch (error) {
+      if (error instanceof MeteorVoiceApiError && error.status === 401) {
+        handleUnauthorized()
+      }
+    }
+  }, [api, handleUnauthorized])
 
   const selectHistory = useCallback(async (item: HistorySession) => {
     setSelectedHistory(item); setSelectedTurns([])

@@ -244,6 +244,23 @@ describe('MeteorVoiceApiClient', () => {
     expect(calls[0]).toBe('https://example.com/api/sessions/s%201/turns')
   })
 
+  it('deletes sessions through the REST session resource route', async () => {
+    const calls: { input: string; init?: RequestInit }[] = []
+    const client = createMeteorVoiceApiClient({
+      baseUrl: 'https://example.com',
+      fetch: async (input, init) => {
+        calls.push({ input: String(input), init })
+        return new Response(JSON.stringify({ success: true }), { status: 200 })
+      },
+    })
+
+    const result = await client.deleteSession('s 1')
+
+    expect(result.success).toBe(true)
+    expect(calls[0].input).toBe('https://example.com/api/sessions/s%201')
+    expect(calls[0].init?.method).toBe('DELETE')
+  })
+
   it('exposes ASR provider listing and session bootstrap routes', async () => {
     const calls: { input: string; init?: RequestInit }[] = []
     const client = createMeteorVoiceApiClient({

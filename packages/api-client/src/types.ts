@@ -226,3 +226,8 @@ export type ListSessionTurnsResponse = {
   session_id: string
   turns: SessionTurnDto[]
 }
+
+export type DeleteSessionResponse = {
+  success?: boolean
+  error?: string
+}

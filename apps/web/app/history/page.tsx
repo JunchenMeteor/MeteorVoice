@@ -233,7 +233,7 @@ export default function HistoryPage() {
       },
       tasks: {
         deleted: async () => {
-          const res = await fetch(`/api/session?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+          const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
           if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
           return true
         },
