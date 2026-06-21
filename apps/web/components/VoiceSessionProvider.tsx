@@ -93,6 +93,12 @@ import {
   ttsSpeedChangeEvent,
 } from '@/lib/tts-speed'
 
+declare global {
+  interface Window {
+    __METEORVOICE_E2E_TRANSCRIPT__?: string
+  }
+}
+
 /** 教练语音播放完毕后、自动进入下一轮 listening 之前的静默间隔（毫秒） */
 const postPlaybackListenDelayMs = 900
 
@@ -574,7 +580,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     abortListeningRef.current = abortController
 
     let transcript: string
-    if (browserSTTSupported()) {
+    const e2eTranscript = process.env.NODE_ENV !== 'production'
+      ? window.__METEORVOICE_E2E_TRANSCRIPT__?.trim()
+      : undefined
+    if (e2eTranscript) {
+      transcript = e2eTranscript
+      window.__METEORVOICE_E2E_TRANSCRIPT__ = undefined
+    } else if (browserSTTSupported()) {
       try {
         startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()

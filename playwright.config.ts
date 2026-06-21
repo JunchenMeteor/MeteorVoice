@@ -14,7 +14,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001',
     trace: 'on-first-retry',
   },
 
@@ -28,8 +28,8 @@ export default defineConfig({
   webServer: process.env.CI
     ? undefined
     : {
-        command: 'npm run web:dev',
-        url: 'http://127.0.0.1:3000',
+        command: 'PLAYWRIGHT_E2E_AUTH_BYPASS=1 npm --workspace @meteorvoice/web run dev -- --hostname 127.0.0.1 --port 3001',
+        url: 'http://127.0.0.1:3001',
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
       },
