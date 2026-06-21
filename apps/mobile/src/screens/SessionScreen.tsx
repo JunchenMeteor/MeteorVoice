@@ -18,6 +18,7 @@ import {
 } from 'react-native'
 
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
+import type { TranslateFn } from '@meteorvoice/shared'
 
 import type { WaveformMode } from '../components/VoiceWaveform'
 import { BottomSheet } from '../components/BottomSheet'
@@ -41,7 +42,7 @@ function toWaveformMode(state: WorkflowSnapshot['state'], isActive: boolean): Wa
 import { useSession } from '../SessionContext'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   scenarioName: string
   scenarioIcon: string
   scenarioDifficulty: string
@@ -286,13 +287,13 @@ export function SessionScreen({
           <Pressable style={styles.panelCard} onPress={() => openSheet('corrections')}>
             <Text style={styles.panelCardTitle}>{tr('session.corrections_tab')}</Text>
             <Text style={styles.panelCardMeta}>
-              {corrections.length === 0 ? tr('session.corrections_empty') : tr('session.corrections_count').replace('{count}', String(corrections.length))}
+              {corrections.length === 0 ? tr('session.corrections_empty') : tr('session.corrections_count', { count: corrections.length })}
             </Text>
           </Pressable>
           <Pressable style={styles.panelCard} onPress={() => openSheet('transcript')}>
             <Text style={styles.panelCardTitle}>{tr('session.transcript_tab')}</Text>
             <Text style={styles.panelCardMeta}>
-              {messages.length === 0 ? tr('session.transcript_empty') : tr('session.transcript_count').replace('{count}', String(messages.length))}
+              {messages.length === 0 ? tr('session.transcript_empty') : tr('session.transcript_count', { count: messages.length })}
             </Text>
           </Pressable>
         </View>
@@ -311,4 +312,3 @@ export function SessionScreen({
     </View>
   )
 }
-

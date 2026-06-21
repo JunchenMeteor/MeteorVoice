@@ -31,6 +31,7 @@ import type {
   ConversationMessage,
   ConversationResponse,
   Locale,
+  TranslateFn,
 } from '@meteorvoice/shared'
 import {
   createMeteorVoiceApiClient,
@@ -48,7 +49,7 @@ import {
   getScenarioLabel,
   getTTSSpeedRouting,
   scenarios,
-  t,
+  translate,
 } from '@meteorvoice/shared'
 import {
   acceptTranscriptTurn,
@@ -217,7 +218,7 @@ function AppInner() {
   const getAuthHeaders = auth.getAuthHeaders
   const signOut = auth.signOut
 
-  const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
+  const tr: TranslateFn = useCallback((key, values) => translate(locale, key, values), [locale])
 
   const handleUnauthorized = useCallback(() => {
     if (auth.state !== 'signed-in') return signOut(null)

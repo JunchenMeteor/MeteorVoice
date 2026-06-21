@@ -123,10 +123,10 @@ export function SessionPageClient() {
     }`
   const correctionSummary = corrections.length === 0
     ? tr('session.corrections_empty')
-    : tr('session.corrections_count').replace('{count}', String(corrections.length))
+    : tr('session.corrections_count', { count: corrections.length })
   const transcriptSummary = messages.length === 0
     ? tr('session.transcript_empty')
-    : tr('session.transcript_count').replace('{count}', String(messages.length))
+    : tr('session.transcript_count', { count: messages.length })
 
   function openMobilePanel(tab: SidePanelTab) {
     setActiveTab(tab)
