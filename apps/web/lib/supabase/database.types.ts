@@ -302,6 +302,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_preferences: {
+        Row: {
+          default_scenario_key: string
+          locale: string
+          selected_voice_profile_id: string | null
+          tts_provider: string
+          tts_speed: number
+          tts_voice_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          default_scenario_key?: string
+          locale?: string
+          selected_voice_profile_id?: string | null
+          tts_provider?: string
+          tts_speed?: number
+          tts_voice_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          default_scenario_key?: string
+          locale?: string
+          selected_voice_profile_id?: string | null
+          tts_provider?: string
+          tts_speed?: number
+          tts_voice_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tts_voice_profiles: {
         Row: {
           accent_key: string
