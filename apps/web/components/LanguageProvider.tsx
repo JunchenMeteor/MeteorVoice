@@ -13,12 +13,16 @@ import {
 } from 'react'
 
 import type { Locale } from '@meteorvoice/shared'
-import { t } from '@meteorvoice/shared'
+import type {
+  TranslateFn,
+  TranslateValues,
+} from '@meteorvoice/shared'
+import { translate } from '@meteorvoice/shared'
 
 const LangContext = createContext<{
   locale: Locale
   setLocale: (l: Locale) => void
-  t: (key: string) => string
+  t: TranslateFn
 }>({ locale: 'en', setLocale: () => {}, t: (k: string) => k })
 
 /** 获取当前语言的 React Hook */
@@ -40,12 +44,12 @@ export default function LanguageProvider({ children }: { children: ReactNode }) 
     localStorage.setItem('coach-locale', l)
   }
 
-  function translate(key: string): string {
-    return t[locale]?.[key] ?? t['en']?.[key] ?? key
+  function tr(key: string, values?: TranslateValues): string {
+    return translate(locale, key, values)
   }
 
   return (
-    <LangContext.Provider value={{ locale, setLocale, t: translate }}>
+    <LangContext.Provider value={{ locale, setLocale, t: tr }}>
       {children}
     </LangContext.Provider>
   )

@@ -19,7 +19,10 @@ import {
   View,
 } from 'react-native'
 
-import type { Locale } from '@meteorvoice/shared'
+import type {
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
 import type {
   HistorySession,
   MeteorVoiceApiClient,
@@ -39,7 +42,7 @@ import {
 import { useTheme } from '../ThemeProvider'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
   api: MeteorVoiceApiClient
   getAuthHeaders: () => Promise<HeadersInit>

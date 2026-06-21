@@ -350,7 +350,7 @@ export default function HistoryPage() {
                       ) : (
                         <>
                           <p className="text-xs font-medium text-[var(--theme-text-muted)]">
-                            {t('history.turns_count').replace('{count}', String(turns.length))}
+                            {t('history.turns_count', { count: turns.length })}
                           </p>
                           {turns.map(turn => (
                             <div

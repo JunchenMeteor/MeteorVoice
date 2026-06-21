@@ -26,6 +26,7 @@ import {
 import type { PreferencesResponse } from '@meteorvoice/api-client'
 import type {
   Locale,
+  TranslateFn,
   VoiceProfile,
 } from '@meteorvoice/shared'
 import {
@@ -47,7 +48,7 @@ import { themeLabels } from '../theme'
 import { useTheme } from '../ThemeProvider'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
   appVersion: string
   defaultApiBaseUrl: string

@@ -4,6 +4,10 @@
  */
 import type { Locale } from './locale'
 
+export type TranslateValue = string | number | boolean | null | undefined
+export type TranslateValues = Record<string, TranslateValue>
+export type TranslateFn = (key: string, values?: TranslateValues) => string
+
 export const t: Record<Locale, Record<string, string>> = {
   en: {
     'common.cancel': 'Cancel',
@@ -535,4 +539,16 @@ export const t: Record<Locale, Record<string, string>> = {
     'login.signup_email_success': '请查看邮箱中的确认链接。',
     'login.signup_phone_success': '账号已创建，可以使用手机号登录。',
   },
+}
+
+export function interpolate(template: string, values?: TranslateValues): string {
+  if (!values) return template
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, name: string) => {
+    const value = values[name]
+    return value === null || value === undefined ? match : String(value)
+  })
+}
+
+export function translate(locale: Locale, key: string, values?: TranslateValues): string {
+  return interpolate(t[locale]?.[key] ?? t.en[key] ?? key, values)
 }

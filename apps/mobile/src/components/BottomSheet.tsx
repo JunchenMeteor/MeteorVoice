@@ -16,6 +16,7 @@ import {
 import type {
   ConversationMessage,
   ConversationResponse,
+  TranslateFn,
 } from '@meteorvoice/shared'
 
 import { useTheme } from '../ThemeProvider'
@@ -23,7 +24,7 @@ import { useTheme } from '../ThemeProvider'
 type Tab = 'corrections' | 'transcript'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   visible: boolean
   onClose: () => void
   activeTab: Tab
@@ -129,4 +130,3 @@ export function BottomSheet({ tr, visible, onClose, activeTab, onTabChange, corr
     </Modal>
   )
 }
-

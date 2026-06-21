@@ -19,6 +19,7 @@ import type {
   ConversationMessage,
   ConversationResponse,
   Locale,
+  TranslateFn,
 } from '@meteorvoice/shared'
 
 export interface SessionContextValue {
@@ -42,7 +43,7 @@ export interface SessionContextValue {
   status: string
   submitText: (text: string) => void
   summary: string | null
-  tr: (key: string) => string
+  tr: TranslateFn
   ttsProvider: string
   ttsVoiceId: string | null
   voiceProfileAccentLabel: string | null

@@ -13,7 +13,10 @@ import {
   View,
 } from 'react-native'
 
-import type { Locale } from '@meteorvoice/shared'
+import type {
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
 import type { scenarios as ScenariosType } from '@meteorvoice/shared'
 import {
   getDifficultyLabel,
@@ -27,7 +30,7 @@ import { useTheme } from '../ThemeProvider'
 type Scenario = (typeof ScenariosType)[number]
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
   scenarios: Scenario[]
   onGoToSession: () => void
