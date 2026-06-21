@@ -3,9 +3,15 @@
  * AI 教练提供者（DeepSeek + Vercel AI SDK）。
  */
 
-import { generateText } from 'ai'
 import { createDeepSeek } from '@ai-sdk/deepseek'
-import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
+import { generateText } from 'ai'
+
+import type {
+  AIProvider,
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+} from './types'
 
 function responseLanguageInstruction(context: ConversationContext) {
   if (context.responseLocale === 'zh') {

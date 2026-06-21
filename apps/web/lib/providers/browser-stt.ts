@@ -3,12 +3,16 @@
  * 浏览器语音识别提供者。
  */
 
-import type { STTProvider, STTResult } from './types'
+import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
 import {
   getSpeechEndpointDelay,
   getVoiceActivityHoldDelay,
-  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
+
+import type {
+  STTProvider,
+  STTResult,
+} from './types'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList

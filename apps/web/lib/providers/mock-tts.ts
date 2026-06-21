@@ -4,7 +4,11 @@
  */
 
 import { sleep } from '@meteorvoice/shared/utils'
-import type { TTSProvider, TTSResult } from './types'
+
+import type {
+  TTSProvider,
+  TTSResult,
+} from './types'
 
 /**
  * Create a mock Text-to-Speech provider using the browser SpeechSynthesis API when available.

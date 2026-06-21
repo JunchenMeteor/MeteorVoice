@@ -3,26 +3,38 @@
  * 会话历史记录界面。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-
 import {
-  fetchWithTimeout,
-  formatApiRequestError,
-} from '@meteorvoice/api-client'
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
+import type { Locale } from '@meteorvoice/shared'
 import type {
   HistorySession,
   MeteorVoiceApiClient,
   SessionTurnDto,
 } from '@meteorvoice/api-client'
-
+import {
+  fetchWithTimeout,
+  formatApiRequestError,
+} from '@meteorvoice/api-client'
 import {
   accentProfiles,
   getAccentLabel,
   getScenarioLabel,
   scenarios,
 } from '@meteorvoice/shared'
-import type { Locale } from '@meteorvoice/shared'
 
 import { useTheme } from '../ThemeProvider'
 

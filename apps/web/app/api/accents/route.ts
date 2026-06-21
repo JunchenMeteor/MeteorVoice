@@ -1,8 +1,6 @@
 /**
  * Accent profile and voice listing. / 口音配置和音色列表。
  */
-import { guardApiRequest, jsonApiResult, jsonServerError } from '@/lib/server/http'
-import { getAvailableProviders, getTTSProviderPreference } from '@/lib/server/preferences'
 import {
   accentProfiles,
   getAccentDescription,
@@ -12,6 +10,16 @@ import {
   supportsAccent,
   ttsProviderCapabilities,
 } from '@meteorvoice/shared'
+
+import {
+  getAvailableProviders,
+  getTTSProviderPreference,
+} from '@/lib/server/preferences'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+} from '@/lib/server/http'
 
 export async function GET(request: Request) {
   try {

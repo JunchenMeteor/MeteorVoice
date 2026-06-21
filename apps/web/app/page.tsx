@@ -5,13 +5,22 @@
  * 首页。
  */
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
-import { getDifficultyLabel, getScenarioDescription, getScenarioLabel, scenarios, pickRandomAccent } from '@/lib/scenarios'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { useVoiceSession } from '@/components/VoiceSessionProvider'
 import { Button } from '@/components/ui/button'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
+  pickRandomAccent,
+  scenarios,
+} from '@/lib/scenarios'
 
 export default function HomePage() {
   const router = useRouter()

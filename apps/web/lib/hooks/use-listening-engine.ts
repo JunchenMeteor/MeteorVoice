@@ -5,17 +5,22 @@
  * 监听引擎 Hook。
  */
 
-import { useCallback, useRef, useState } from 'react'
-import { createMicLevelSampler } from '@/lib/audio-engine'
-import type { AudioLevelStop } from '@/lib/audio-engine'
+import {
+  useCallback,
+  useRef,
+  useState,
+} from 'react'
 
+import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
 import {
   canSampleListeningLevel,
   createVoiceActivitySnapshot,
   updateVoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
+
+import type { AudioLevelStop } from '@/lib/audio-engine'
 import type { WorkflowSnapshot } from '@/lib/conversation-workflow'
+import { createMicLevelSampler } from '@/lib/audio-engine'
 
 /** 传入 hook 的共享上下文：这些 ref 由 Provider 持有，hook 需要读取来做 turn 守卫 */
 interface ListeningContext {

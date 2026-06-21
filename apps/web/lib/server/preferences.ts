@@ -1,12 +1,27 @@
 /**
  * User preferences management. / 用户偏好管理。
  */
-import { createClient } from '@/lib/supabase/server'
-import { getConfiguredXunfeiVoices, getDefaultXunfeiVoiceId, getSelectableXunfeiVoices, hasXunfeiVoiceConfig } from '@/lib/providers/xunfei-voices'
-import type { XunfeiConfiguredVoiceInfo, XunfeiVoiceInfo } from '@/lib/providers/xunfei-voices'
+import type {
+  Locale,
+  VoiceProfile,
+} from '@meteorvoice/shared'
+import {
+  normalizeLocale,
+  scenarios,
+} from '@meteorvoice/shared'
+
+import type {
+  XunfeiConfiguredVoiceInfo,
+  XunfeiVoiceInfo,
+} from '@/lib/providers/xunfei-voices'
 import { getAzureVoiceProfiles } from '@/lib/providers/azure-voices'
-import { normalizeLocale, scenarios } from '@meteorvoice/shared'
-import type { Locale, VoiceProfile } from '@meteorvoice/shared'
+import { createClient } from '@/lib/supabase/server'
+import {
+  getConfiguredXunfeiVoices,
+  getDefaultXunfeiVoiceId,
+  getSelectableXunfeiVoices,
+  hasXunfeiVoiceConfig,
+} from '@/lib/providers/xunfei-voices'
 
 export type TTSProviderPreference = 'mock' | 'xunfei' | 'volcengine' | 'tencent' | 'azure'
 export type ProductizedPreferences = {

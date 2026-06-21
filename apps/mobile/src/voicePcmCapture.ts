@@ -3,8 +3,8 @@
  * iOS PCM 音频采集。
  */
 
-import { requireOptionalNativeModule } from 'expo-modules-core'
 import type { EventSubscription } from 'expo-modules-core'
+import { requireOptionalNativeModule } from 'expo-modules-core'
 import { Platform } from 'react-native'
 
 export type PcmCaptureOptions = {

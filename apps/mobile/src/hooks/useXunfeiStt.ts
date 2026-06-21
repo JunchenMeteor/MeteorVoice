@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, prefer-const */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * useXunfeiStt — Xunfei ASR WebSocket Engine / 讯飞流式语音识别 WebSocket 引擎
  *
@@ -24,7 +24,27 @@
  *   startXunfeiSessionListening  — start or prewarm a Xunfei session / 启动或预热讯飞会话
  *   cancelXunfeiSessionListening — cleanly tear down / 清理并关闭会话
  */
-import { useCallback, useRef } from 'react'
+import {
+  useCallback,
+  useRef,
+} from 'react'
+
+import type { CreateASRSessionResponse } from '@meteorvoice/api-client'
+
+import type { PcmCaptureFrameEvent } from '../voicePcmCapture'
+import {
+  createXunfeiASRFrame,
+  extractXunfeiRecognitionResult,
+  getObject,
+  parseJsonObject,
+} from '../xunfeiAsrWire'
+import {
+  addPcmFrameListener,
+  addPcmStateListener,
+  isPcmCaptureAvailable,
+  startPcmCapture,
+  stopPcmCapture,
+} from '../voicePcmCapture'
 import {
   createStoppedSignal,
   delay,
@@ -33,21 +53,6 @@ import {
   STT_RESTART_DEBOUNCE_MS,
   STT_STOP_SETTLE_TIMEOUT_MS,
 } from '../sessionRuntime'
-import {
-  addPcmFrameListener,
-  addPcmStateListener,
-  isPcmCaptureAvailable,
-  startPcmCapture,
-  stopPcmCapture,
-  type PcmCaptureFrameEvent,
-} from '../voicePcmCapture'
-import {
-  createXunfeiASRFrame,
-  extractXunfeiRecognitionResult,
-  getObject,
-  parseJsonObject,
-} from '../xunfeiAsrWire'
-import type { CreateASRSessionResponse } from '@meteorvoice/api-client'
 
 interface XunfeiSttDeps {
   network: {
@@ -174,7 +179,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
       let bootstrappedSession: CreateASRSessionResponse | null = null
       let finishAudio: (() => void) | null = null
 
-      const isCurrentStream = (context: string) => {
+      const isCurrentStream = () => {
         const current = xunfeiSessionSttRef.current
         return current && current.streamId === streamId && generation === sessionGeneration.current
       }
@@ -188,7 +193,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         } as any
       }
 
-      const settle = (reason: string, submitted: boolean) => {
+      const settle = (reason: string) => {
         if (settled) return
         settled = true; updateCurrent()
         if (bootstrapTimer) { clearTimeout(bootstrapTimer); bootstrapTimer = null }
@@ -232,7 +237,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         await nativeSpeechCancel.current()
 
         bootstrapTimer = setTimeout(() => {
-          if (!settled) { settle('bootstrap_timeout', false); void nativeSpeechStart.current('en-US') }
+          if (!settled) { settle('bootstrap_timeout'); void nativeSpeechStart.current('en-US') }
         }, 10_000)
 
         socket = new WebSocket(session.endpointUrl)
@@ -240,7 +245,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
 
         // PCM state listener — diagnostic logging
         stateSubscription = addPcmStateListener(event => {
-          if (!isCurrentStream('pcm_state')) return
+          if (!isCurrentStream()) return
           logMetric('stt_pcm_state', {
             provider: 'xunfei', state: event.state,
             frameCount: event.frameCount, totalBytes: event.totalBytes,
@@ -250,8 +255,8 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
 
         // PCM frame listener — streams microphone audio to Xunfei WebSocket
         frameSubscription = addPcmFrameListener((event: PcmCaptureFrameEvent) => {
-          if (!isCurrentStream('pcm_frame')) return
-          if (!canUseXunfeiRoute('pcm_frame')) { settle('route_inactive', false); return }
+          if (!isCurrentStream()) return
+          if (!canUseXunfeiRoute('pcm_frame')) { settle('route_inactive'); return }
           if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
           frameCount += 1
           totalBytes += event.byteCount
@@ -275,45 +280,45 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         }
 
         finishAudio = () => {
-          if (!isCurrentStream('finish_audio')) { settle('route_inactive', false); return }
+          if (!isCurrentStream()) { settle('route_inactive'); return }
           if (finalFrameSent) return
           sendAudioFrame(2, '')
           void stopPcmCapture('session_endpoint').catch(() => undefined)
         }
 
         socket.onopen = () => {
-          if (!isCurrentStream('socket_open')) return
-          if (!canUseXunfeiRoute('socket_open')) { settle('route_inactive', false); return }
+          if (!isCurrentStream()) return
+          if (!canUseXunfeiRoute('socket_open')) { settle('route_inactive'); return }
           if (prewarm) {
             prewarmStaleTimer = setTimeout(() => {
               if (settled || recordingStarted) return
-              settle('prewarm_expired', false)
+              settle('prewarm_expired')
             }, STT_PREWARM_STALE_TIMEOUT_MS)
             updateCurrent()
             return
           }
           const startStreamingPcm = async (context: string) => {
             if (recordingStarted || settled) return
-            if (!bootstrappedSession) { settle('missing_session', false); return }
-            if (!isCurrentStream(`start_pcm:${context}`)) return
-            if (!canUseXunfeiRoute(`start_pcm:${context}`)) { settle('route_inactive', false); return }
+            if (!bootstrappedSession) { settle('missing_session'); return }
+            if (!isCurrentStream()) return
+            if (!canUseXunfeiRoute(`start_pcm:${context}`)) { settle('route_inactive'); return }
             if (prewarmStaleTimer) { clearTimeout(prewarmStaleTimer); prewarmStaleTimer = null }
             recordingStarted = true; updateCurrent()
             try {
-              const pcmStatus = await startPcmCapture({ sampleRate: bootstrappedSession.providerConfig?.sampleRate ?? 16000, frameDurationMs: bootstrappedSession.providerConfig?.frameIntervalMs ?? 40 })
-              if (!isCurrentStream(`after_pcm_start:${context}`)) return
-              if (!canUseXunfeiRoute(`after_pcm_start:${context}`)) { void stopPcmCapture('session_route_inactive').catch(() => undefined); settle('route_inactive', false); return }
+              await startPcmCapture({ sampleRate: bootstrappedSession.providerConfig?.sampleRate ?? 16000, frameDurationMs: bootstrappedSession.providerConfig?.frameIntervalMs ?? 40 })
+              if (!isCurrentStream()) return
+              if (!canUseXunfeiRoute(`after_pcm_start:${context}`)) { void stopPcmCapture('session_route_inactive').catch(() => undefined); settle('route_inactive'); return }
               listeningStartMs.current = Date.now()
               if (bootstrapTimer) { clearTimeout(bootstrapTimer); bootstrapTimer = null }
               setStatus('session.status.listening')
               if (!hardTimer && finishAudio) hardTimer = setTimeout(finishAudio, 15_000)
               noFrameTimer = setTimeout(() => {
                 if (settled || frameCount > 0) return
-                settle('pcm_no_frame', false)
+                settle('pcm_no_frame')
                 endedWithoutTranscript.current()
               }, 1800)
               updateCurrent()
-            } catch { settle('pcm_error', false); endedWithoutTranscript.current() }
+            } catch { settle('pcm_error'); endedWithoutTranscript.current() }
           }
           void startStreamingPcm('socket_open')
           if (!hardTimer && finishAudio) hardTimer = setTimeout(finishAudio, 15_000)
@@ -321,11 +326,11 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         }
 
         socket.onmessage = event => {
-          if (!isCurrentStream('socket_message')) return
+          if (!isCurrentStream()) return
           const payload = parseJsonObject(event.data)
           const header = getObject(payload?.header)
           const code = typeof header?.code === 'number' ? header.code : typeof payload?.code === 'number' ? payload.code : 0
-          if (code !== 0) { settle('provider_error', false); endedWithoutTranscript.current(); return }
+          if (code !== 0) { settle('provider_error'); endedWithoutTranscript.current(); return }
 
           const recognitionResult = extractXunfeiRecognitionResult(payload)
           if (recognitionResult?.text) {
@@ -350,22 +355,22 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
             if (normalized) {
               sttRestartCount.current = 0; sttRestartStartMs.current = 0
               void finalTranscript.current(normalized)
-              settle('final', true)
-            } else { settle('final', false); endedWithoutTranscript.current() }
+              settle('final')
+            } else { settle('final'); endedWithoutTranscript.current() }
           }
         }
 
-        socket.onerror = () => { if (isCurrentStream('socket_error')) { settle('socket_error', false); endedWithoutTranscript.current() } }
+        socket.onerror = () => { if (isCurrentStream()) { settle('socket_error'); endedWithoutTranscript.current() } }
 
-        socket.onclose = event => {
-          if (!isCurrentStream('socket_close')) return
-          if (!finalReceived && !settled) { settle('socket_closed', false); endedWithoutTranscript.current() }
+        socket.onclose = () => {
+          if (!isCurrentStream()) return
+          if (!finalReceived && !settled) { settle('socket_closed'); endedWithoutTranscript.current() }
         }
         updateCurrent()
         return true
       } catch (error) {
         logMetric('stt_provider_error', { provider: 'xunfei', message: error instanceof Error ? error.message : 'Xunfei STT failed to start' })
-        settle('start_error', false)
+        settle('start_error')
         return nativeSpeechStart.current('en-US')
       }
     })

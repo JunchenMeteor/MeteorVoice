@@ -7,10 +7,19 @@
 
 import { useState } from 'react'
 
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { Card, CardContent } from '@/components/ui/card'
 import type { ConversationResponse } from '@/lib/providers/types'
-import { findScenarioByKeyOrName, getScenarioLabel } from '@/lib/scenarios'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  Card,
+  CardContent,
+} from '@/components/ui/card'
+import {
+  findScenarioByKeyOrName,
+  getScenarioLabel,
+} from '@/lib/scenarios'
 
 interface ReviewItem {
   id: string

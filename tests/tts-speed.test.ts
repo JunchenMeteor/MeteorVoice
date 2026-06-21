@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import { normalizeTTSSpeed, ttsSpeedOptions } from '@/lib/tts-speed'
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
 import { getTTSSpeedRouting } from '@meteorvoice/shared'
+
+import {
+  normalizeTTSSpeed,
+  ttsSpeedOptions,
+} from '@/lib/tts-speed'
 
 describe('tts speed preferences', () => {
   it('uses the normal speed option by default', () => {

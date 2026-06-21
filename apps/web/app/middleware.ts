@@ -3,9 +3,9 @@
  * Edge 中间件：鉴权保护。
  */
 
-import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request })

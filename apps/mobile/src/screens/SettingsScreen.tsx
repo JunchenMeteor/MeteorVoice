@@ -3,7 +3,14 @@
  * 应用设置与偏好界面。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import * as SecureStore from 'expo-secure-store'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,24 +23,27 @@ import {
   View,
 } from 'react-native'
 
-import { createMeteorVoiceApiClient, formatApiRequestError } from '@meteorvoice/api-client'
 import type { PreferencesResponse } from '@meteorvoice/api-client'
-
+import type {
+  Locale,
+  VoiceProfile,
+} from '@meteorvoice/shared'
+import {
+  createMeteorVoiceApiClient,
+  formatApiRequestError,
+} from '@meteorvoice/api-client'
 import {
   appFeedback,
   displayErrorFeedback,
   runAppOperationGroup,
 } from '@meteorvoice/shared'
-import type { Locale, VoiceProfile } from '@meteorvoice/shared'
 
-import * as SecureStore from 'expo-secure-store'
-
+import type { XunfeiVoice } from '../mobilePreferences'
+import type { ThemeKey } from '../theme'
 import { useLog } from '../LogContext'
 import { syncMobilePreferences } from '../mobilePreferences'
-import type { XunfeiVoice } from '../mobilePreferences'
 import { useSession } from '../SessionContext'
 import { themeLabels } from '../theme'
-import type { ThemeKey } from '../theme'
 import { useTheme } from '../ThemeProvider'
 
 interface Props {

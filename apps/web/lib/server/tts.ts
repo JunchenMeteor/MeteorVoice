@@ -1,14 +1,20 @@
 /**
  * TTS speech synthesis orchestration. / TTS 语音合成编排。
  */
+import type { TTSProviderPreference } from './preferences'
+import type {
+  TTSProvider,
+  TTSResult,
+} from '@/lib/providers/types'
+import { createAzureTTS } from '@/lib/providers/azure-tts'
 import { createMockTTS } from '@/lib/providers/mock-tts'
 import { createTencentTTS } from '@/lib/providers/tencent-tts'
 import { createVolcengineTTS } from '@/lib/providers/volcengine-tts'
 import { createXunfeiTTS } from '@/lib/providers/xunfei-tts'
-import { createAzureTTS } from '@/lib/providers/azure-tts'
-import type { TTSProvider, TTSResult } from '@/lib/providers/types'
-import { getAvailableProviders, normalizeTTSProvider } from './preferences'
-import type { TTSProviderPreference } from './preferences'
+import {
+  getAvailableProviders,
+  normalizeTTSProvider,
+} from './preferences'
 
 function createProvider(provider: TTSProviderPreference): TTSProvider {
   if (provider === 'xunfei') return createXunfeiTTS()

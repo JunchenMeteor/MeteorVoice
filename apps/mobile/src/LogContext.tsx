@@ -7,9 +7,17 @@
  * 独立于会话生命周期。任何组件都可以通过 useLog() 记录指标或用户操作。
  * AppInner 通过 setEnrichment() 注入会话上下文。
  */
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
-import { createASREvaluationReport } from './sessionRuntime'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
 import type { VoiceMetricEntry } from './sessionRuntime'
+import { createASREvaluationReport } from './sessionRuntime'
 
 export interface LogContextValue {
   asrEvaluationText: string

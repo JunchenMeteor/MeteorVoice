@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test'
+import {
+  expect,
+  test,
+} from '@playwright/test'
 
 test.describe('MeteorVoice login page', () => {
   test('renders identifier and password inputs', async ({ page }) => {

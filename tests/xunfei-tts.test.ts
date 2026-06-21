@@ -1,13 +1,18 @@
-import { describe, expect, it } from 'vitest'
 import {
-  XUNFEI_TRIAL_VOICE_CATHERINE,
-  XUNFEI_TRIAL_VOICE_EXPIRES_AT,
-  XUNFEI_TRIAL_VOICE_RYAN,
-  XUNFEI_TRIAL_VOICE_YEZI,
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
+import {
   getConfiguredXunfeiVoices,
   hasXunfeiVoiceConfig,
   resolveXunfeiVoiceForAccent,
   resolveXunfeiVoiceForText,
+  XUNFEI_TRIAL_VOICE_CATHERINE,
+  XUNFEI_TRIAL_VOICE_EXPIRES_AT,
+  XUNFEI_TRIAL_VOICE_RYAN,
+  XUNFEI_TRIAL_VOICE_YEZI,
 } from '@/lib/providers/xunfei-voices'
 
 const beforeTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT) - 1

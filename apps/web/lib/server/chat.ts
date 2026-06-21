@@ -1,14 +1,17 @@
 /**
  * AI coach chat generation. / AI 教练对话生成。
  */
+import type {
+  ConversationContext,
+  ConversationMessage,
+} from '@/lib/providers/types'
+import { createAICoach } from '@/lib/providers/ai-provider'
 import {
   buildMixedChineseSpokenHint,
   findCommonCorrections,
   findCommonErrors,
   retrieveRelevantContext,
 } from '@/lib/retrieval'
-import type { ConversationContext, ConversationMessage } from '@/lib/providers/types'
-import { createAICoach } from '@/lib/providers/ai-provider'
 
 export async function generateCoachReply(messages: ConversationMessage[], context: ConversationContext) {
   const ai = createAICoach()

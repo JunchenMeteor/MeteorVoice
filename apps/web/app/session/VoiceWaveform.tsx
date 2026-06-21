@@ -5,7 +5,10 @@
  * 语音波形可视化组件。
  */
 
-import type { CSSProperties, JSX } from 'react'
+import type {
+  CSSProperties,
+  JSX,
+} from 'react'
 
 export type VoiceWaveformMode =
   | 'idle'

@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
 import { guardApiRequest } from '@/lib/server/http'
 
 describe('API guard', () => {

@@ -5,18 +5,48 @@
  * 设置页面。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
 
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
-import type { Locale, VoiceProfile } from '@meteorvoice/shared'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
+import type {
+  Locale,
+  VoiceProfile,
+} from '@meteorvoice/shared'
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
+import {
+  displayErrorFeedback,
+  hideAppFeedback,
+  runAppOperationGroup,
+} from '@meteorvoice/shared'
 
-import { useTheme, themes } from '@/components/ThemeProvider'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference } from '@/lib/tts-speed'
 import type { TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  themes,
+  useTheme,
+} from '@/components/ThemeProvider'
+import {
+  readTTSSpeedPreference,
+  ttsSpeedOptions,
+  writeTTSSpeedPreference,
+} from '@/lib/tts-speed'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },

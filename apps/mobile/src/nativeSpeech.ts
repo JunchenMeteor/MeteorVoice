@@ -3,19 +3,26 @@
  * 原生语音识别 Hook。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ExpoSpeechRecognitionModule,
+  type ExpoSpeechRecognitionErrorEvent,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
 import {
   createVoiceActivitySnapshot,
   FINAL_RESULT_SILENCE_FINALIZE_MS,
   getSpeechEndpointDelay,
-  updateVoiceActivitySnapshot,
   type VoiceActivitySnapshot,
+  updateVoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-  type ExpoSpeechRecognitionErrorEvent,
-} from 'expo-speech-recognition'
 
 export type NativeSpeechPhase =
   | 'idle'

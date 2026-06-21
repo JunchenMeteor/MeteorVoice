@@ -5,15 +5,38 @@
 
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
 
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
+import {
+  displayErrorFeedback,
+  hideAppFeedback,
+  runAppOperationGroup,
+} from '@meteorvoice/shared'
 
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { Card, CardContent } from '@/components/ui/card'
-import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
 import { flushPendingPreferences } from '@/lib/tts-speed'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  Card,
+  CardContent,
+} from '@/components/ui/card'
+import {
+  findAccentByKeyOrName,
+  findScenarioByKeyOrName,
+  getAccentLabel,
+  getScenarioLabel,
+  scenarios,
+} from '@/lib/scenarios'
 
 interface HistorySession {
   id: string

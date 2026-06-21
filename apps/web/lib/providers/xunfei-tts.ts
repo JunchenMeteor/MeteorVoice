@@ -5,7 +5,11 @@
 
 import crypto from 'crypto'
 import WebSocket from 'ws'
-import type { TTSProvider, TTSResult } from './types'
+
+import type {
+  TTSProvider,
+  TTSResult,
+} from './types'
 import { resolveXunfeiVoiceForText } from './xunfei-voices'
 import { requireEnv } from '@/lib/server/env'
 

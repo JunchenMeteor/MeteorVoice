@@ -5,15 +5,21 @@
 
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
-import { createClient } from '@/lib/supabase/client'
-import { parseLoginIdentifier } from '@/lib/auth/identifier'
 import { useT } from '@/components/LanguageProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { parseLoginIdentifier } from '@/lib/auth/identifier'
+import { createClient } from '@/lib/supabase/client'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
 export default function LoginPage() {
   const router = useRouter()

@@ -3,7 +3,10 @@
  * Mock 语音识别提供者。
  */
 
-import type { STTProvider, STTResult } from './types'
+import type {
+  STTProvider,
+  STTResult,
+} from './types'
 
 const mockTranscripts = [
   "I'd like to practice for my upcoming job interview.",

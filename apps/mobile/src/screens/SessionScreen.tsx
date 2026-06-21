@@ -3,14 +3,25 @@
  * 语音练习会话界面。
  */
 
-import { useMemo, useState } from 'react'
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+  useMemo,
+  useState,
+} from 'react'
+import {
+  Dimensions,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
 
+import type { WaveformMode } from '../components/VoiceWaveform'
 import { BottomSheet } from '../components/BottomSheet'
 import { VoiceWaveform } from '../components/VoiceWaveform'
-import type { WaveformMode } from '../components/VoiceWaveform'
 import { useTheme } from '../ThemeProvider'
 
 const { width: SW, height: SH } = Dimensions.get('window')

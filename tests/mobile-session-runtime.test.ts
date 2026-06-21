@@ -1,4 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
+import {
+  canApplyEndpointResult,
+  classifyRequestTerminalStage,
+  isTurnStale,
+} from '../apps/mobile/src/sessionTurnRuntime'
 import {
   canStartListening,
   getPlaybackTailPrewarmDecision,
@@ -6,11 +16,6 @@ import {
   shouldConfirmScenarioSwitch,
   shouldResumeListening,
 } from '../apps/mobile/src/sessionRuntime'
-import {
-  canApplyEndpointResult,
-  classifyRequestTerminalStage,
-  isTurnStale,
-} from '../apps/mobile/src/sessionTurnRuntime'
 
 describe('mobile session runtime selectors', () => {
   it('maps route presence from tab state', () => {

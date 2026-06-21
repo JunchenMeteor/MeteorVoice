@@ -5,9 +5,22 @@
  * 会话页面客户端组件。
  */
 
-import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import {
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
+import type { VoiceWaveformMode } from './VoiceWaveform'
+import type { ConversationResponse } from '@/lib/providers/types'
+import { VoiceWaveform } from './VoiceWaveform'
+import { Button } from '@/components/ui/button'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
 import {
   getAccentLabel,
   getAccentRegion,
@@ -15,12 +28,6 @@ import {
   getScenarioDescription,
   getScenarioLabel,
 } from '@/lib/scenarios'
-import type { ConversationResponse } from '@/lib/providers/types'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { useVoiceSession } from '@/components/VoiceSessionProvider'
-import { Button } from '@/components/ui/button'
-import { VoiceWaveform } from './VoiceWaveform'
-import type { VoiceWaveformMode } from './VoiceWaveform'
 
 type SidePanelTab = 'corrections' | 'transcript'
 

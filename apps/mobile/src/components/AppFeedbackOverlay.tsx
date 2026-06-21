@@ -4,9 +4,16 @@
  */
 
 import { useEffect } from 'react'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
-import { hideAppFeedback } from '@meteorvoice/shared'
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
 import type { AppFeedbackState } from '@meteorvoice/shared'
+import { hideAppFeedback } from '@meteorvoice/shared'
+
 import { useTheme } from '../ThemeProvider'
 
 type Props = {

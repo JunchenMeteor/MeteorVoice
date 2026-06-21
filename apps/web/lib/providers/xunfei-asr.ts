@@ -4,7 +4,12 @@
  */
 
 import crypto from 'crypto'
-import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice/shared'
+
+import type {
+  ASRSessionBootstrapResponse,
+  ASRSessionConfig,
+} from '@meteorvoice/shared'
+
 import { requireEnv } from '@/lib/server/env'
 
 const zhIatHost = 'iat.xf-yun.com'
