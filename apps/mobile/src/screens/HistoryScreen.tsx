@@ -4,11 +4,7 @@
  */
 
 import {
-  useCallback,
-  useEffect,
   useMemo,
-  useRef,
-  useState,
 } from 'react'
 import {
   FlatList,
@@ -26,11 +22,6 @@ import type {
 import type {
   HistorySession,
   MeteorVoiceApiClient,
-  SessionTurnDto,
-} from '@meteorvoice/api-client'
-import {
-  formatApiRequestError,
-  MeteorVoiceApiError,
 } from '@meteorvoice/api-client'
 import {
   accentProfiles,
@@ -39,6 +30,7 @@ import {
   scenarios,
 } from '@meteorvoice/shared'
 
+import { useHistoryScreenState } from '../hooks/useHistoryScreenState'
 import { useTheme } from '../ThemeProvider'
 
 interface Props {
@@ -62,77 +54,19 @@ function accentLabel(entry: HistorySession, locale: Locale) {
 
 export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthorized, defaultApiBaseUrl }: Props) {
   const { C } = useTheme()
-  const [expandedId, setExpandedId] = useState<string | number | null>(null)
-  const [filterScenario, setFilterScenario] = useState<string | null>(null)
-
-  // ─── State / 状态 ───
-  const [sessions, setSessions] = useState<HistorySession[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
-  const [selectedTurns, setSelectedTurns] = useState<SessionTurnDto[]>([])
-  const autoLoadRef = useRef(false)
-
-  // ─── Data Operations / 数据操作 ───
-  const loadHistory = useCallback(async () => {
-    if (loading) return
-    setLoading(true); setError(null)
-    try {
-      const result = await api.listHistory()
-      setSessions(result.sessions)
-      setSelectedHistory(result.sessions[0] ?? null)
-      setSelectedTurns([])
-    } catch (e) {
-      const reqErr = formatApiRequestError(e, { context: 'mobile_history_list', presentation: 'inline' })
-      setError(reqErr.displayMessage)
-    } finally { setLoading(false) }
-  }, [api, loading])
-
-  useEffect(() => {
-    if (autoLoadRef.current) return
-    autoLoadRef.current = true
-    void loadHistory()
-  }, [loadHistory])
-
-  const deleteSession = useCallback(async (id: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' as const } : s))
-    try {
-      await api.deleteSession(id)
-    } catch (error) {
-      if (error instanceof MeteorVoiceApiError && error.status === 401) {
-        handleUnauthorized()
-      }
-    }
-  }, [api, handleUnauthorized])
-
-  const selectHistory = useCallback(async (item: HistorySession) => {
-    setSelectedHistory(item); setSelectedTurns([])
-    try {
-      const result = await api.listSessionTurns(item.id)
-      setSelectedTurns(result.turns)
-    } catch (e) {
-      const reqErr = formatApiRequestError(e, { context: 'mobile_history_turns', presentation: 'inline' })
-      setError(reqErr.displayMessage)
-    }
-  }, [api])
-
-  function toggle(id: string | number) {
-    if (expandedId === id) {
-      setExpandedId(null)
-    } else {
-      setExpandedId(id)
-      selectHistory(sessions.find(s => s.id === id)!)
-    }
-  }
-
-  function handleDelete(id: string) {
-    deleteSession(id)
-  }
-
-  const filtered = filterScenario
-    ? sessions.filter(s => s.scenario_key === filterScenario || s.scenario === filterScenario)
-    : sessions
-
+  const {
+    deleteSession,
+    error,
+    expandedId,
+    filtered,
+    filterScenario,
+    loadHistory,
+    loading,
+    selectedHistory,
+    selectedTurns,
+    setFilterScenario,
+    toggle,
+  } = useHistoryScreenState({ api, handleUnauthorized })
 
   // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
@@ -251,7 +185,7 @@ export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthori
                       <Text style={styles.statusTxt}>{tr(`history.status.${item.status}`) || item.status}</Text>
                     </View>
                     {!isDeleted && (
-                      <Pressable onPress={() => handleDelete(item.id)} style={styles.deleteBtn} hitSlop={8}>
+                      <Pressable onPress={() => deleteSession(item.id)} style={styles.deleteBtn} hitSlop={8}>
                         <Text style={styles.deleteTxt}>✕</Text>
                       </Pressable>
                     )}
