@@ -27,12 +27,18 @@ export type ASREvaluationRun = {
 
 export type XunfeiSessionSttState = {
   socket: WebSocket | null
-  frameSubscription: { remove: () => void } | null
-  stateSubscription: { remove: () => void } | null
-  finalizeTimer: ReturnType<typeof setTimeout> | null
-  hardTimer: ReturnType<typeof setTimeout> | null
-  noFrameTimer: ReturnType<typeof setTimeout> | null
-  stoppedTimer: ReturnType<typeof setTimeout> | null
+  subscriptions: {
+    frame: { remove: () => void } | null
+    state: { remove: () => void } | null
+  }
+  timers: {
+    bootstrap: ReturnType<typeof setTimeout> | null
+    finalize: ReturnType<typeof setTimeout> | null
+    hard: ReturnType<typeof setTimeout> | null
+    noFrame: ReturnType<typeof setTimeout> | null
+    prewarmStale: ReturnType<typeof setTimeout> | null
+    stopped: ReturnType<typeof setTimeout> | null
+  }
   streamId: number
   generation: number
   prewarmed: boolean

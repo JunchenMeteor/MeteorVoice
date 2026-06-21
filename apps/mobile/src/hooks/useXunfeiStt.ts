@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * useXunfeiStt — Xunfei ASR WebSocket Engine / 讯飞流式语音识别 WebSocket 引擎
  *
@@ -29,9 +28,13 @@ import {
   useRef,
 } from 'react'
 
-import type { CreateASRSessionResponse } from '@meteorvoice/api-client'
+import type {
+  CreateASRSessionResponse,
+  MeteorVoiceApiClient,
+} from '@meteorvoice/api-client'
 
 import type { PcmCaptureFrameEvent } from '../voicePcmCapture'
+import type { XunfeiSessionSttState } from '../sessionRuntime'
 import {
   createXunfeiASRFrame,
   extractXunfeiRecognitionResult,
@@ -56,7 +59,7 @@ import {
 
 interface XunfeiSttDeps {
   network: {
-    api: any
+    api: MeteorVoiceApiClient
     auth: { state: string; refreshSession: () => Promise<boolean> }
   }
   context: {
@@ -92,6 +95,12 @@ interface XunfeiSttDeps {
   }
 }
 
+function clearXunfeiTimers(timers: XunfeiSessionSttState['timers']) {
+  Object.values(timers).forEach(timer => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
 export function useXunfeiStt(deps: XunfeiSttDeps) {
   const { network, context, refs, session, callbacks, bridge } = deps
   const { api, auth } = network
@@ -101,7 +110,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
   const { sessionActive, routePresence, canListenOnRoute, playbackActive, audioPlaying } = session
   const { nativeSpeechStart, nativeSpeechCancel, finalTranscript, endedWithoutTranscript } = bridge
 
-  const xunfeiSessionSttRef = useRef<any>(null)
+  const xunfeiSessionSttRef = useRef<XunfeiSessionSttState | null>(null)
 
   const cancelXunfeiSessionListening = useCallback(async (reason = 'cancel') => {
     await enqueueSttOperation(`stop:${reason}`, async () => {
@@ -112,12 +121,9 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         return
       }
       current.settled = true
-      if (current.finalizeTimer) clearTimeout(current.finalizeTimer)
-      if (current.hardTimer) clearTimeout(current.hardTimer)
-      if (current.noFrameTimer) clearTimeout(current.noFrameTimer)
-      if (current.stoppedTimer) clearTimeout(current.stoppedTimer)
-      current.frameSubscription?.remove()
-      current.stateSubscription?.remove()
+      clearXunfeiTimers(current.timers)
+      current.subscriptions.frame?.remove()
+      current.subscriptions.state?.remove()
       if (current.socket && current.socket.readyState === WebSocket.OPEN) current.socket.close()
       await stopPcmCapture(`session_${reason}`).catch(() => undefined)
       current.resolveStopped?.()
@@ -178,6 +184,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
       const stoppedSignal = createStoppedSignal()
       let bootstrappedSession: CreateASRSessionResponse | null = null
       let finishAudio: (() => void) | null = null
+      let startRecording: ((context: string) => Promise<void>) | undefined
 
       const isCurrentStream = () => {
         const current = xunfeiSessionSttRef.current
@@ -186,22 +193,43 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
 
       const updateCurrent = () => {
         xunfeiSessionSttRef.current = {
-          streamId, socket, frameSubscription, stateSubscription,
-          finalizeTimer, hardTimer, noFrameTimer, stoppedTimer,
+          streamId,
+          socket,
+          subscriptions: {
+            frame: frameSubscription,
+            state: stateSubscription,
+          },
+          timers: {
+            bootstrap: bootstrapTimer,
+            finalize: finalizeTimer,
+            hard: hardTimer,
+            noFrame: noFrameTimer,
+            prewarmStale: prewarmStaleTimer,
+            stopped: stoppedTimer,
+          },
           generation, prewarmed: prewarm, recordingStarted, settled,
           stopped: stoppedSignal.stopped, resolveStopped: stoppedSignal.resolveStopped,
-        } as any
+          startRecording,
+        }
       }
 
       const settle = (reason: string) => {
         if (settled) return
         settled = true; updateCurrent()
-        if (bootstrapTimer) { clearTimeout(bootstrapTimer); bootstrapTimer = null }
-        if (finalizeTimer) clearTimeout(finalizeTimer)
-        if (hardTimer) clearTimeout(hardTimer)
-        if (noFrameTimer) clearTimeout(noFrameTimer)
-        if (stoppedTimer) clearTimeout(stoppedTimer)
-        if (prewarmStaleTimer) clearTimeout(prewarmStaleTimer)
+        clearXunfeiTimers({
+          bootstrap: bootstrapTimer,
+          finalize: finalizeTimer,
+          hard: hardTimer,
+          noFrame: noFrameTimer,
+          prewarmStale: prewarmStaleTimer,
+          stopped: stoppedTimer,
+        })
+        bootstrapTimer = null
+        finalizeTimer = null
+        hardTimer = null
+        noFrameTimer = null
+        prewarmStaleTimer = null
+        stoppedTimer = null
         frameSubscription?.remove()
         void stopPcmCapture(`session_${reason}`).catch(() => undefined).finally(() => {
           stateSubscription?.remove(); stoppedSignal.resolveStopped()
@@ -289,15 +317,7 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
         socket.onopen = () => {
           if (!isCurrentStream()) return
           if (!canUseXunfeiRoute('socket_open')) { settle('route_inactive'); return }
-          if (prewarm) {
-            prewarmStaleTimer = setTimeout(() => {
-              if (settled || recordingStarted) return
-              settle('prewarm_expired')
-            }, STT_PREWARM_STALE_TIMEOUT_MS)
-            updateCurrent()
-            return
-          }
-          const startStreamingPcm = async (context: string) => {
+          startRecording = async (context: string) => {
             if (recordingStarted || settled) return
             if (!bootstrappedSession) { settle('missing_session'); return }
             if (!isCurrentStream()) return
@@ -320,7 +340,16 @@ export function useXunfeiStt(deps: XunfeiSttDeps) {
               updateCurrent()
             } catch { settle('pcm_error'); endedWithoutTranscript.current() }
           }
-          void startStreamingPcm('socket_open')
+          if (prewarm) {
+            prewarmStaleTimer = setTimeout(() => {
+              if (settled || recordingStarted) return
+              settle('prewarm_expired')
+            }, STT_PREWARM_STALE_TIMEOUT_MS)
+            updateCurrent()
+            return
+          }
+          updateCurrent()
+          void startRecording('socket_open')
           if (!hardTimer && finishAudio) hardTimer = setTimeout(finishAudio, 15_000)
           updateCurrent()
         }
