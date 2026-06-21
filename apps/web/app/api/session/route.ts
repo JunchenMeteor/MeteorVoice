@@ -14,7 +14,7 @@ import {
 } from '@/lib/server/http'
 
 async function guardSessionRequest(request: Request) {
-  const guard = guardApiRequest(request, { name: 'session', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+  const guard = await guardApiRequest(request, { name: 'session', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
   if (guard) return guard
   return requireApiUser()
 }

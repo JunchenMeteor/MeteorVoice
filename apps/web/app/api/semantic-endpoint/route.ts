@@ -36,7 +36,7 @@ async function getCheck() {
 
 export async function POST(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'semantic_endpoint', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'semantic_endpoint', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

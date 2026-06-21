@@ -8,6 +8,7 @@
 - `supabase/migrations/004_productized_preferences.sql` adds locale, default scenario/accent, and TTS speed preferences for Web/Mobile sync.
 - `supabase/migrations/005_tts_voice_preferences.sql` adds the selected TTS coach voice id.
 - `supabase/migrations/008_voice_profile_preferences.sql` adds the provider-neutral coach voice profile catalog, stores `selected_voice_profile_id`, and removes `default_accent_key`.
+- `supabase/migrations/012_persistent_rate_limits.sql` adds persistent API rate limit buckets and the `check_api_rate_limit` RPC for multi-instance deployments.
 - The app uses Supabase Auth with a MeteorTest-style username/phone account input.
 
 ## Username + Phone Login Mode

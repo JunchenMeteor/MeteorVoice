@@ -14,7 +14,7 @@ export async function GET(
   context: { params: Promise<{ sessionId: string }> },
 ) {
   try {
-    const guard = guardApiRequest(request, { name: 'session-turns', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'session-turns', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

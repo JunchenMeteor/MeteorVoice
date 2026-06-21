@@ -15,7 +15,7 @@ export const runtime = 'nodejs'
 
 export async function GET(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'asr-providers', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'asr-providers', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     return jsonApiResult({
       providers: getASRProviders(),

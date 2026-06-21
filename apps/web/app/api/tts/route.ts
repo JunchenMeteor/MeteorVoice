@@ -14,7 +14,7 @@ export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'tts', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'tts', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await getApiUser()
     if (isApiErrorResult(auth)) return jsonApiResult(auth)

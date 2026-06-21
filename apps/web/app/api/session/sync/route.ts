@@ -11,7 +11,7 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'session-sync', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'session-sync', windowMs: 60_000, maxRequests: 30, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

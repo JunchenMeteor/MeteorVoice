@@ -11,7 +11,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'history', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'history', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
