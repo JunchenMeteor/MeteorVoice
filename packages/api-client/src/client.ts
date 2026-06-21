@@ -13,6 +13,7 @@ import type {
   CreateSessionResponse,
   CreateTurnRequest,
   CreateTurnResponse,
+  DeleteSessionResponse,
   GenerateCoachReplyRequest,
   GenerateCoachReplyResponse,
   GenerateSummaryRequest,
@@ -158,6 +159,12 @@ export class MeteorVoiceApiClient {
 
   listSessionTurns(sessionId: string) {
     return this.request<ListSessionTurnsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/turns`)
+  }
+
+  deleteSession(sessionId: string) {
+    return this.request<DeleteSessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
   }
 
   createTurn(input: CreateTurnRequest) {

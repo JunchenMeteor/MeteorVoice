@@ -43,6 +43,7 @@ The current codebase is a workspace with `apps/web`, `apps/mobile`, and shared `
 
 - Page components should not hold provider logic.
 - API routes should call provider and persistence helpers, not inline heavy logic.
+- Resource-specific operations SHOULD use REST-style resource paths such as `/api/sessions/:sessionId`; broad legacy endpoints such as `/api/session?id=...` may stay only as temporary compatibility paths.
 - Keep AI orchestration in `apps/web/lib/server/*`, not inside route handlers.
 - Shared data contracts should live in `packages/shared`, `packages/api-client`, or `packages/session-core`.
 - Frontend settings should read/write through API routes, not direct database access.
@@ -59,6 +60,7 @@ Highest-priority improvements:
 - Clean remaining historical docs so only current paths guide AI work.
 - Add workspace scripts for Web lint/build, Mobile config/typecheck, and package tests.
 - Stabilize API DTOs for scenarios, accents, preferences, history, session turns, and review.
+- Remove temporary compatibility paths after the replacement has been deployed on Vercel and Tencent for at least one stable observation window.
 - Move more platform-neutral session transition rules into `packages/session-core`.
 - Harden native mobile speech input, native playback, preferences sync, and audio QA.
 - Upgrade accent support from provider labels to explicit voice profiles and capability matrix.
@@ -71,6 +73,7 @@ Highest-priority improvements:
 - **i18n**: All UI string translations live in `packages/shared/src/i18n.ts` and are shared by Web and Mobile. Do not add translation strings directly in `apps/web` or `apps/mobile`.
 - **App feedback and loading**: Shared feedback state lives in `packages/shared/src/feedback.ts`. Web renders it through `apps/web/components/AppFeedbackPresenter.tsx`; Mobile renders it through `apps/mobile/src/components/AppFeedbackOverlay.tsx`. Page-level multi-request loading should use `runAppOperationGroup()` from `packages/shared/src/operation-group.ts` instead of local overlapping loading overlays.
 - **Settings synchronization**: Settings page entry, login, foreground resume, and manual reload MAY use grouped full refresh. A single preference save MUST use the PATCH response from `/api/preferences` and apply only affected fields. Do not follow a successful single setting PATCH with a full `GET /api/preferences` unless the server contract changed and the entire settings cache must be rebuilt.
+- **Compatibility cleanup**: Track and remove legacy `theme_preferences` product-preference fallback after `user_preferences` migration is confirmed in production, both deployments have run the new code, and preference errors stay clean for about 7 days. Track and remove legacy `DELETE /api/session?id=...` after Web, Mobile, and API client consumers have all shipped `DELETE /api/sessions/:sessionId` for the same observation window.
 - **Response language routing**: Web and Mobile pass `responseLocale` in `ConversationContext` to `/api/chat`; server-side AI reply and correction generation honor that locale. ASR language mode remains a separate speech-recognition concern and MUST NOT be used as a substitute for response language.
 
 ## What Not to Do

@@ -46,6 +46,9 @@ test.describe('MeteorVoice API guard integration', () => {
 
     const historyResponse = await request.get(`${baseUrl}/api/history`, { headers })
     expect(historyResponse.status()).toBe(401)
+
+    const deleteSessionResponse = await request.delete(`${baseUrl}/api/sessions/test-session`, { headers })
+    expect(deleteSessionResponse.status()).toBe(401)
   })
 
   test('endpoints reject requests without client header', async ({ request }) => {
