@@ -9,6 +9,8 @@ import { NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request })
+  const allowE2EAuthBypass = process.env.PLAYWRIGHT_E2E_AUTH_BYPASS === '1' &&
+    request.headers.get('x-meteorvoice-e2e') === '1'
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +35,7 @@ export async function middleware(request: NextRequest) {
   const isPublic = request.nextUrl.pathname.startsWith('/_next') ||
                    request.nextUrl.pathname.startsWith('/api')
 
-  if (!user && !isAuthPage && !isPublic) {
+  if (!user && !allowE2EAuthBypass && !isAuthPage && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

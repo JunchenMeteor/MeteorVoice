@@ -29,7 +29,7 @@ test.describe('MeteorVoice home page scenarios', () => {
 
 test.describe('MeteorVoice API guard integration', () => {
   test('protected endpoints reject unauthenticated requests', async ({ request }) => {
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000'
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001'
     const headers = { 'x-meteorvoice-client': 'meteorvoice-web' }
 
     const summaryResponse = await request.post(`${baseUrl}/api/summary`, {
@@ -49,7 +49,7 @@ test.describe('MeteorVoice API guard integration', () => {
   })
 
   test('endpoints reject requests without client header', async ({ request }) => {
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000'
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001'
 
     const scenariosResponse = await request.get(`${baseUrl}/api/scenarios`)
     expect(scenariosResponse.status()).toBe(403)
@@ -59,7 +59,7 @@ test.describe('MeteorVoice API guard integration', () => {
   })
 
   test('public catalog endpoints accept valid client header', async ({ request }) => {
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000'
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001'
     const headers = { 'x-meteorvoice-client': 'meteorvoice-web' }
 
     const scenariosResponse = await request.get(`${baseUrl}/api/scenarios`, { headers })
