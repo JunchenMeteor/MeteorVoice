@@ -1,9 +1,22 @@
-name: Deploy Tencent
+name: Deploy Tencent Docker
 
 permissions:
   contents: read
+  packages: write
 
 on:
+  pull_request:
+    paths:
+      - .dockerignore
+      - Dockerfile
+      - deploy/**
+      - apps/web/next.config.ts
+      - apps/web/app/api/health/**
+      - package.json
+      - package-lock.json
+      - apps/web/package.json
+      - packages/**
+      - .github/workflows/deploy-tencent.yml
   push:
     branches:
       - main
@@ -11,62 +24,98 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-tencent-${{ github.ref }}
+  group: deploy-tencent-docker-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  IMAGE_NAME: ghcr.io/junchenmeteor/meteorvoice-web
+
 jobs:
+  build:
+    name: Build Web/API image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload deployment manifest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: meteorvoice-deployment-${{ github.sha }}
+          path: deploy
+          retention-days: 7
+
   deploy:
-    name: Deploy Web/API
+    name: Deploy Web/API container
+    if: github.event_name != 'pull_request'
+    needs: build
     runs-on: [self-hosted, linux, x64, tencent, meteorvoice]
     environment: tencent
     steps:
+      - name: Download deployment manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: meteorvoice-deployment-${{ github.sha }}
+          path: deployment
+
       - name: Resolve target
         id: target
         shell: bash
         run: |
           if [ "${GITHUB_REF_NAME}" = "release" ]; then
-            echo "app_dir=/srv/meteorvoice-release" >> "$GITHUB_OUTPUT"
-            echo "pm2_name=meteorvoice-release" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
             echo "port=3100" >> "$GITHUB_OUTPUT"
+            echo "shadow_port=3110" >> "$GITHUB_OUTPUT"
+            echo "pm2_name=meteorvoice-release" >> "$GITHUB_OUTPUT"
+            echo "public_url=https://meteorvoice.jcmeteor.com/" >> "$GITHUB_OUTPUT"
           else
-            echo "app_dir=/srv/meteorvoice" >> "$GITHUB_OUTPUT"
-            echo "pm2_name=meteorvoice" >> "$GITHUB_OUTPUT"
+            echo "environment=preview" >> "$GITHUB_OUTPUT"
             echo "port=3101" >> "$GITHUB_OUTPUT"
+            echo "shadow_port=3111" >> "$GITHUB_OUTPUT"
+            echo "pm2_name=meteorvoice" >> "$GITHUB_OUTPUT"
+            echo "public_url=https://mv-pre.jcmeteor.com/" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy
-        shell: bash
+        env:
+          APP_NAME: meteorvoice
+          ENVIRONMENT: ${{ steps.target.outputs.environment }}
+          HOST_PORT: ${{ steps.target.outputs.port }}
+          IMAGE_URI: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          PM2_NAME: ${{ steps.target.outputs.pm2_name }}
+          PUBLIC_URL: ${{ steps.target.outputs.public_url }}
+          RUNTIME_ENV_FILE: /etc/meteorvoice/meteorvoice.env
+          SHADOW_PORT: ${{ steps.target.outputs.shadow_port }}
         run: |
-          retry() {
-            local attempts="$1"
-            local delay="$2"
-            shift 2
-
-            local attempt=1
-            until "$@"; do
-              if [ "$attempt" -ge "$attempts" ]; then
-                return 1
-              fi
-
-              echo "Command failed. Retrying in ${delay}s (${attempt}/${attempts})..."
-              sleep "$delay"
-              attempt=$((attempt + 1))
-            done
-          }
-
-          cd '${{ steps.target.outputs.app_dir }}'
-          retry 5 15 timeout 180s git fetch origin "$GITHUB_REF_NAME"
-          git checkout "$GITHUB_REF_NAME"
-          git reset --hard "origin/$GITHUB_REF_NAME"
-          retry 3 15 npm ci
-          set -a
-          . /etc/meteorvoice/meteorvoice.env
-          set +a
-          retry 2 15 npm run build
-          unset RUNNER_TRACKING_ID
-          PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
-            pm2 restart '${{ steps.target.outputs.pm2_name }}' --update-env || \
-          PORT='${{ steps.target.outputs.port }}' HOSTNAME=127.0.0.1 \
-            pm2 start npm --name '${{ steps.target.outputs.pm2_name }}' -- run start --workspace @meteorvoice/web -- --hostname 127.0.0.1 --port '${{ steps.target.outputs.port }}'
-          pm2 save
-          retry 12 5 curl -fsS 'http://127.0.0.1:${{ steps.target.outputs.port }}/' >/dev/null
+          chmod +x deployment/deploy-container.sh
+          deployment/deploy-container.sh
