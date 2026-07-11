@@ -17,7 +17,7 @@ Nginx MUST 继续监听公网 80/443 端口。容器 MUST 只发布到 `127.0.0.
 
 1. GitHub 托管 Runner 检出目标提交。
 2. CI 执行 lint、测试、Mobile typecheck 和 Web 生产构建。
-3. CI 构建多阶段 Next.js standalone 镜像并推送到腾讯云容器镜像服务（TCR）。
+3. CI 构建多阶段 Next.js standalone 镜像并推送到 GitHub Container Registry（GHCR）。
 4. 镜像使用不可变 commit SHA 标签；分支和版本号 MAY 作为别名，但部署 MUST 最终解析到 SHA 标签。
 5. MeteorVoice 专属腾讯 Runner 拉取镜像，只更新对应 Compose 项目。
 6. Runner 等待容器健康检查并验证公网域名。
@@ -27,7 +27,7 @@ Nginx MUST 继续监听公网 80/443 端口。容器 MUST 只发布到 `127.0.0.
 
 ## 镜像契约
 
-- 建议镜像名：`<tcr-registry>/<namespace>/meteorvoice-web`。
+- 镜像名：`ghcr.io/junchenmeteor/meteorvoice-web:<commit-sha>`。
 - 构建上下文：仓库根目录，因为 Web 依赖 `packages/*` npm workspaces。
 - Next.js MUST 使用 `output: 'standalone'`。
 - 运行阶段 MUST 只包含 standalone server、静态资源和必要 public 文件。
@@ -39,11 +39,7 @@ Nginx MUST 继续监听公网 80/443 端口。容器 MUST 只发布到 `127.0.0.
 
 真实 provider 凭据继续保存在 `/etc/meteorvoice/meteorvoice.env`，由 root 持有，并按部署和运行所需设置最小读取权限。Compose 在容器启动时注入该文件。
 
-GitHub 只保存镜像仓库访问凭据和非敏感部署元数据：
-
-- Variables：TCR registry、namespace、image repository；
-- Secrets：TCR 用户名/Token 或等价的短期凭据；
-- 讯飞、DeepSeek、Supabase service-role 等应用密钥不得进入镜像。
+GitHub Actions 使用仓库范围的 `GITHUB_TOKEN` 推送和拉取 GHCR 镜像，不需要长期镜像仓库密码。讯飞、DeepSeek、Supabase service-role 等应用密钥不得进入镜像。
 
 ## Compose 要求
 
@@ -78,7 +74,7 @@ GitHub 只保存镜像仓库访问凭据和非敏感部署元数据：
 
 1. 解析新的不可变镜像 SHA；
 2. 记录当前运行 SHA；
-3. 登录 TCR 并拉取镜像；
+3. 使用 workflow token 登录 GHCR 并拉取镜像；
 4. 更新对应 Compose 项目；
 5. 等待容器健康；
 6. 验证 localhost 端口和公网域名；
@@ -98,7 +94,7 @@ GitHub 只保存镜像仓库访问凭据和非敏感部署元数据：
 ## 验收清单
 
 - CI 构建、标记和部署的是同一个 commit。
-- 镜像历史、构建日志和 TCR 元数据中不存在应用密钥。
+- 镜像历史、构建日志和 GHCR 元数据中不存在应用密钥。
 - 预览与生产可独立部署、独立回滚。
 - 容器只绑定 localhost。
 - reload 前 Nginx 配置通过 `nginx -t`。
