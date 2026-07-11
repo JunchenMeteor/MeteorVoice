@@ -2,6 +2,8 @@ FROM node:24-bookworm-slim AS dependencies
 
 WORKDIR /app
 
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
@@ -9,7 +11,7 @@ COPY packages/api-client/package.json packages/api-client/package.json
 COPY packages/session-core/package.json packages/session-core/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
-RUN npm ci
+RUN npm ci --registry="${NPM_REGISTRY}"
 
 FROM dependencies AS builder
 

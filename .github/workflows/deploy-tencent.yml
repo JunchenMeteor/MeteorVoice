@@ -97,7 +97,12 @@ jobs:
           fi
 
       - name: Build image from artifact
-        run: docker build --tag "meteorvoice-web:${GITHUB_SHA}" --file source/Dockerfile source
+        run: >-
+          docker build
+          --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+          --tag "meteorvoice-web:${GITHUB_SHA}"
+          --file source/Dockerfile
+          source
 
       - name: Deploy
         env:
