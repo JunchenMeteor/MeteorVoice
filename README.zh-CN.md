@@ -192,8 +192,9 @@ ASR/TTS 服务商密钥（均可选，不填则使用 mock/native 兜底）：
 ASR_PROVIDER=native
 TTS_PROVIDER=mock
 XUNFEI_APP_ID=
+XUNFEI_API_PASSWORD=              # 推荐；仅由服务端通过 x-api-key 请求头发送
 XUNFEI_API_KEY=
-XUNFEI_API_SECRET=
+XUNFEI_API_SECRET=                # 仍兼容 APIKey + APISecret 作为兜底鉴权
 XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # 默认兜底 vcn；具体教练声音在设置页选择
 VOLCENGINE_ACCESS_KEY=

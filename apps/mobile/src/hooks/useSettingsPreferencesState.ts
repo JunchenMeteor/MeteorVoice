@@ -45,6 +45,7 @@ interface UseSettingsPreferencesStateInput {
   locale: Locale
   logMetric: (name: string, data?: Record<string, unknown>) => void
   onLocaleChange: (locale: Locale) => void
+  onTtsPreferencesChange: (preferences: PreferencesResponse) => void
   setThemeLocal: (theme: ThemeKey) => void
   tr: TranslateFn
 }
@@ -62,6 +63,7 @@ export function useSettingsPreferencesState({
   locale,
   logMetric,
   onLocaleChange,
+  onTtsPreferencesChange,
   setThemeLocal,
   tr,
 }: UseSettingsPreferencesStateInput) {
@@ -137,21 +139,24 @@ export function useSettingsPreferencesState({
     const profiles = prefs.voice_profiles ?? voiceProfiles
     const profile = profiles.find(p => p.id === prefs.selected_voice_profile_id)
     if (profile && !ctxAccentKey) { /* accentKey managed by SessionContext */ }
+    onTtsPreferencesChange(prefs)
     setSettingsMessage(msg)
-  }, [tr, voiceProfiles, ctxAccentKey])
+  }, [tr, voiceProfiles, ctxAccentKey, onTtsPreferencesChange])
 
   const applyPracticePreferences = useCallback((prefs: PreferencesResponse, msg = tr('session.status.practice_defaults_saved')) => {
     setTtsProvider(prefs.tts_provider ?? 'mock')
     setTtsSpeedLocal(prefs.tts_speed ?? 1)
+    onTtsPreferencesChange(prefs)
     setSettingsMessage(msg)
-  }, [tr])
+  }, [tr, onTtsPreferencesChange])
 
   const applyVoiceProfilePreferences = useCallback((prefs: PreferencesResponse, msg = tr('session.status.preferences_saved')) => {
     setTtsProvider(prefs.tts_provider ?? 'mock')
     if (prefs.tts_voice_id !== undefined) setTtsVoiceId(prefs.tts_voice_id)
     if (prefs.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(prefs.selected_voice_profile_id)
+    onTtsPreferencesChange(prefs)
     setSettingsMessage(msg)
-  }, [tr])
+  }, [tr, onTtsPreferencesChange])
 
   const applySessionSttProviders = useCallback((providers: ('native' | 'xunfei')[]) => {
     setAvailableSessionSttProviders(providers)
@@ -178,6 +183,7 @@ export function useSettingsPreferencesState({
       if (prefs.tts_voice_id !== undefined) setTtsVoiceId(prefs.tts_voice_id)
       if (prefs.voice_profiles) setVoiceProfiles(prefs.voice_profiles)
       if (prefs.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(prefs.selected_voice_profile_id)
+      onTtsPreferencesChange(prefs)
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ext = prefs as Record<string, any>
@@ -197,7 +203,7 @@ export function useSettingsPreferencesState({
     } finally {
       if (requestId === settingsRequestRef.current) setSettingsLoadingFlag(false)
     }
-  }, [api, auth.state, setSettingsLoadingFlag, setLocale, setThemeLocal, tr])
+  }, [api, auth.state, onTtsPreferencesChange, setSettingsLoadingFlag, setLocale, setThemeLocal, tr])
 
   const loadSettingsDataGroup = useCallback(() => {
     if (settingsLoadingRef.current) return () => undefined
@@ -219,6 +225,7 @@ export function useSettingsPreferencesState({
         if (prefs.tts_voice_id !== undefined) setTtsVoiceId(prefs.tts_voice_id)
         if (prefs.voice_profiles) setVoiceProfiles(prefs.voice_profiles)
         if (prefs.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(prefs.selected_voice_profile_id)
+        onTtsPreferencesChange(prefs)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const extPrefs = prefs as Record<string, any>
         if (extPrefs.xunfei_voices?.configured) setXunfeiVoices(extPrefs.xunfei_voices.configured)
@@ -243,12 +250,13 @@ export function useSettingsPreferencesState({
       }
     }).finally(() => { if (!cancelled && requestId === settingsRequestRef.current) setSettingsLoadingFlag(false) })
     return () => { cancelled = true }
-  }, [api, auth.state, setSettingsLoadingFlag, setLocale, setThemeLocal, applySessionSttProviders, tr])
+  }, [api, auth.state, onTtsPreferencesChange, setSettingsLoadingFlag, setLocale, setThemeLocal, applySessionSttProviders, tr])
 
   // ─── Save Operations / 保存操作 ───
   const saveProvider = useCallback(async (provider: string) => {
     settingsRequestRef.current += 1
     setTtsProvider(provider)
+    onTtsPreferencesChange({ tts_provider: provider, tts_speed: ttsSpeed })
     clearAudio()
     setSettingsLoadingFlag(true); setSettingsMessage(null)
     if (auth.state !== 'signed-in') { setSettingsMessage(tr('session.status.preferences_saved')); setSettingsLoadingFlag(false); return }
@@ -259,7 +267,7 @@ export function useSettingsPreferencesState({
       const reqErr = formatApiRequestError(error, { context: 'mobile_preferences_save_provider', presentation: 'inline' })
       setSettingsMessage(reqErr.displayMessage)
     } finally { setSettingsLoadingFlag(false) }
-  }, [api, auth.state, ttsSpeed, applyTtsPreferences, setSettingsLoadingFlag, tr])
+  }, [api, auth.state, clearAudio, ttsSpeed, applyTtsPreferences, onTtsPreferencesChange, setSettingsLoadingFlag, tr])
 
   const savePracticePreferences = useCallback(async () => {
     settingsRequestRef.current += 1
@@ -295,6 +303,11 @@ export function useSettingsPreferencesState({
     setSelectedVoiceProfileId(profile.id)
     setTtsProvider(profile.provider)
     setTtsVoiceId(profile.providerVoiceId)
+    onTtsPreferencesChange({
+      selected_voice_profile_id: profile.id,
+      tts_provider: profile.provider,
+      tts_voice_id: profile.providerVoiceId,
+    })
     setSettingsMessage(null)
     if (auth.state !== 'signed-in') return
     try {
@@ -304,7 +317,7 @@ export function useSettingsPreferencesState({
       const reqErr = formatApiRequestError(error, { context: 'mobile_preferences_select_voice_profile', presentation: 'silent' })
       logMetric('mobile_silent_request_error', reqErr.logData)
     }
-  }, [api, auth.state, applyVoiceProfilePreferences, logMetric])
+  }, [api, auth.state, applyVoiceProfilePreferences, clearAudio, logMetric, onTtsPreferencesChange])
 
   const saveLocalePreference = useCallback(async (nextLocale: Locale) => {
     if (nextLocale === locale) return

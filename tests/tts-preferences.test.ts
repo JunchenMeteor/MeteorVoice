@@ -12,6 +12,7 @@ describe('resolveTTSProviderPreference', () => {
   const originalXunfeiAppId = process.env.XUNFEI_APP_ID
   const originalXunfeiApiKey = process.env.XUNFEI_API_KEY
   const originalXunfeiApiSecret = process.env.XUNFEI_API_SECRET
+  const originalXunfeiApiPassword = process.env.XUNFEI_API_PASSWORD
   const originalXunfeiVoice = process.env.XUNFEI_TTS_VOICE
   const originalTencentSecretId = process.env.TENCENT_SECRET_ID
   const originalTencentSecretKey = process.env.TENCENT_SECRET_KEY
@@ -21,6 +22,7 @@ describe('resolveTTSProviderPreference', () => {
     process.env.XUNFEI_APP_ID = originalXunfeiAppId
     process.env.XUNFEI_API_KEY = originalXunfeiApiKey
     process.env.XUNFEI_API_SECRET = originalXunfeiApiSecret
+    process.env.XUNFEI_API_PASSWORD = originalXunfeiApiPassword
     process.env.XUNFEI_TTS_VOICE = originalXunfeiVoice
     process.env.TENCENT_SECRET_ID = originalTencentSecretId
     process.env.TENCENT_SECRET_KEY = originalTencentSecretKey
@@ -58,6 +60,17 @@ describe('resolveTTSProviderPreference', () => {
     process.env.XUNFEI_API_KEY = 'key'
     process.env.XUNFEI_API_SECRET = 'secret'
     delete process.env.XUNFEI_TTS_VOICE
+    expect(resolveTTSProviderPreference('xunfei')).toBe('xunfei')
+  })
+
+  it('keeps xunfei available with API password authentication', () => {
+    process.env.TTS_PROVIDER = 'xunfei'
+    process.env.XUNFEI_APP_ID = 'app'
+    process.env.XUNFEI_API_PASSWORD = 'ak_password'
+    delete process.env.XUNFEI_API_KEY
+    delete process.env.XUNFEI_API_SECRET
+    process.env.XUNFEI_TTS_VOICE = 'x5_example_v3_voice'
+
     expect(resolveTTSProviderPreference('xunfei')).toBe('xunfei')
   })
 

@@ -6,6 +6,10 @@
 import type { AppStateStatus } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
 import {
+  File,
+  Paths,
+} from 'expo-file-system'
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -28,6 +32,8 @@ import type {
   Locale,
   TranslateFn,
 } from '@meteorvoice/shared'
+import type { SyncSessionRequest } from '@meteorvoice/api-client'
+import type { PreferencesResponse } from '@meteorvoice/api-client'
 import {
   createMeteorVoiceApiClient,
   fetchWithTimeout,
@@ -65,7 +71,10 @@ import {
   startPlaybackQueue,
 } from '@meteorvoice/session-core'
 
-import type { SessionContextValue } from './SessionContext'
+import {
+  SessionContext,
+  type SessionContextValue,
+} from './SessionContext'
 import type {
   SessionRoutePresence,
   SessionSttProvider,
@@ -91,6 +100,11 @@ import {
   classifyRequestTerminalStage,
   isTurnStale,
 } from './sessionTurnRuntime'
+import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
+import {
+  enqueueSessionSync,
+  flushSessionSyncOutbox,
+} from './sessionSyncOutbox'
 import {
   canStartListening,
   enqueueRuntimeOperation,
@@ -104,6 +118,25 @@ import {
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
 const sessionSttProviderStorageKey = 'session_stt_provider'
+const sessionSyncOutboxStorage = {
+  getItem: async (key: string) => {
+    const file = sessionSyncOutboxFile(key)
+    return file.exists ? file.text() : null
+  },
+  setItem: async (key: string, value: string) => {
+    const file = sessionSyncOutboxFile(key)
+    if (!file.exists) file.create({ intermediates: true })
+    file.write(value)
+  },
+  removeItem: async (key: string) => {
+    const file = sessionSyncOutboxFile(key)
+    if (file.exists) file.delete()
+  },
+}
+
+function sessionSyncOutboxFile(key: string) {
+  return new File(Paths.document, `${key.replace(/[^a-z0-9._-]/gi, '_')}.json`)
+}
 
 // ─── Main Entry / 入口 ───
 
@@ -111,7 +144,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
   return (
     <ThemeProvider>
       <LogProvider>
-        {children ?? <AppInner />}
+        <AppInner>{children}</AppInner>
       </LogProvider>
     </ThemeProvider>
   )
@@ -119,7 +152,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
 
 // ─── AppInner / 编排层 ───
 
-function AppInner() {
+function AppInner({ children }: { children?: React.ReactNode }) {
   /* eslint-disable react-hooks/exhaustive-deps */
   const { logMetric, logUserAction, setEnrichment } = useLog()
 
@@ -180,6 +213,25 @@ function AppInner() {
     onUnauthorized: handleUnauthorized,
   }), [getAuthHeaders, handleUnauthorized])
 
+  const applyTtsPreferences = useCallback((preferences: PreferencesResponse) => {
+    if (preferences.tts_provider) setTtsProvider(preferences.tts_provider)
+    if (typeof preferences.tts_speed === 'number') setTtsSpeed(preferences.tts_speed)
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+  }, [])
+
+  useEffect(() => {
+    if (auth.state !== 'signed-in') return
+    let cancelled = false
+    void api.getPreferences()
+      .then(preferences => { if (!cancelled) applyTtsPreferences(preferences) })
+      .catch(error => {
+        logMetric('mobile_preferences_startup_error', {
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      })
+    return () => { cancelled = true }
+  }, [api, applyTtsPreferences, auth.state, logMetric])
+
   // ─── Derived Values / 派生值 ───
   const scenario = useMemo(() => scenarios.find(s => s.key === selectedScenarioKey) ?? scenarios[0], [selectedScenarioKey])
   const accent = useMemo(() => accentProfiles.find(a => a.key === selectedAccentKey) ?? accentProfiles[0], [selectedAccentKey])
@@ -213,6 +265,12 @@ function AppInner() {
   const sttStreamIdRef = useRef(0)
   const sttOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve())
   const sttPrewarmAudioUrlRef = useRef<string | null>(null)
+  const sessionSyncFlushRef = useRef<Promise<void> | null>(null)
+
+  const clearAudio = useCallback(() => {
+    setAudioUrl(null)
+    playbackEndedAtMsRef.current = null
+  }, [])
 
   // STT provider refs
   const sessionSttProviderRef = useRef(sessionSttProvider)
@@ -230,6 +288,32 @@ function AppInner() {
   useEffect(() => { sessionSttProviderRef.current = sessionSttProvider }, [sessionSttProvider])
   useEffect(() => { busyRef.current = busy }, [busy])
   useEffect(() => { sessionActiveRef.current = isSessionActive }, [isSessionActive])
+
+  const flushPendingSessionSyncs = useCallback(() => {
+    if (auth.state !== 'signed-in') return Promise.resolve()
+    if (sessionSyncFlushRef.current) return sessionSyncFlushRef.current
+    const run = flushSessionSyncOutbox(sessionSyncOutboxStorage, payload => api.syncSession(payload))
+      .then(result => {
+        if (result.synced > 0) logMetric('session_sync_outbox_flushed', result)
+        if (result.remaining > 0) logMetric('session_sync_outbox_pending', result)
+        if (result.synced > 0 && result.remaining === 0 && !sessionActiveRef.current && statusRef.current === 'session.sync_pending') {
+          statusRef.current = 'session.ended'
+          setStatusState('session.ended')
+        }
+      })
+      .catch(error => {
+        logMetric('session_sync_outbox_error', {
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      })
+      .finally(() => { sessionSyncFlushRef.current = null })
+    sessionSyncFlushRef.current = run
+    return run
+  }, [api, auth.state, logMetric])
+
+  useEffect(() => {
+    if (auth.state === 'signed-in') void flushPendingSessionSyncs()
+  }, [auth.state, flushPendingSessionSyncs])
 
   // ─── STT Provider / 语音识别提供者 ───
   const setSessionSttProvider = useCallback((provider: SessionSttProvider) => {
@@ -595,12 +679,40 @@ function AppInner() {
     const ended = endActiveSession(snapshot).snapshot
     setSnapshot(ended); setIsSessionActive(false); setStatus('session.ended'); setBusy(false)
     const userTurns = messagesRef.current.filter(m => m.role === 'user').length
+    const syncPayload: SyncSessionRequest = {
+      session_id: snapshot.sessionId,
+      scenario: scenario.name,
+      accent: accent.name,
+      turns: userTurns,
+      messages: messagesRef.current,
+      corrections: correctionHistory,
+    }
     try {
       const result = await api.generateSummary({ sessionId: snapshot.sessionId, scenario: scenario.name, messages: messagesRef.current, turnNumber: userTurns })
       setSummary(result.summary)
-      await api.syncSession({ session_id: snapshot.sessionId, scenario: scenario.name, accent: accent.name, turns: userTurns, messages: messagesRef.current, corrections: correctionHistory }).catch(() => undefined)
-    } catch { /* summary failure is non-fatal */ }
-  }, [accent.name, api, audio, cancelListeningForReason, clearResumeListeningTimer, correctionHistory, isSessionActive, logUserAction, scenario, setBusy, setRoutePresence, setStatus, snapshot])
+    } catch {
+      logMetric('session_summary_failed')
+    }
+    try {
+      await api.syncSession(syncPayload)
+      logMetric('session_sync_done', { sessionId: snapshot.sessionId })
+    } catch (error) {
+      try {
+        await enqueueSessionSync(sessionSyncOutboxStorage, syncPayload)
+        setStatus('session.sync_pending')
+        logMetric('session_sync_queued', {
+          sessionId: snapshot.sessionId,
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      } catch (storageError) {
+        setStatus('session.sync_failed')
+        logMetric('session_sync_outbox_error', {
+          sessionId: snapshot.sessionId,
+          message: storageError instanceof Error ? storageError.message : 'unknown',
+        })
+      }
+    }
+  }, [accent.name, api, audio, cancelListeningForReason, clearResumeListeningTimer, correctionHistory, isSessionActive, logMetric, logUserAction, scenario, setBusy, setRoutePresence, setStatus, snapshot])
 
   const selectScenario = useCallback(async (key: string) => {
     if (scenarioSwitching) return false
@@ -698,6 +810,7 @@ function AppInner() {
         return
       }
       setRoutePresence(routePresenceForTab(activeTab), 'app_state:active')
+      void flushPendingSessionSyncs()
       if (canStartSessionListening('app_state_active')) {
         listeningStartMsRef.current = Date.now()
         if (sessionSttProviderRef.current === 'xunfei') setStatus('session.status.preparing_listening')
@@ -706,7 +819,7 @@ function AppInner() {
       }
     })
     return () => sub.remove()
-  }, [activeTab, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer, setRoutePresence, setStatus])
+  }, [activeTab, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer, flushPendingSessionSyncs, setRoutePresence, setStatus])
 
   // ─── Log Enrichment / 日志上下文注入 ───
   useEffect(() => {
@@ -754,6 +867,7 @@ function AppInner() {
 
   // ─── SessionContext Value / 会话上下文值 ───
   const sessionContext = useMemo<SessionContextValue>(() => ({
+    appVersion, applyTtsPreferences, auth, defaultApiBaseUrl, getAuthHeaders, handleUnauthorized, signOut,
     snapshot, messages, corrections: correctionHistory, summary,
     isSessionActive, status, busy, scenarioSwitching,
     locale, tr,
@@ -762,8 +876,8 @@ function AppInner() {
     voiceProfileAccentLabel, voiceProfileAccentRegion,
     audioUrl, api,
     startSession, endSession, playCorrection, selectScenario, setLocale, submitText: submitTurn,
-    clearAudio: () => { setAudioUrl(null); playbackEndedAtMsRef.current = null },
-  }), [snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
+    clearAudio,
+  }), [applyTtsPreferences, auth, clearAudio, getAuthHeaders, handleUnauthorized, signOut, snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
 
   // ─── Tab Selection / 标签选择 ───
   const selectTab = useCallback((tab: Tab) => {
@@ -789,6 +903,15 @@ function AppInner() {
   // ─── Render / 渲染 ───
   const accentName = voiceProfileAccentLabel ?? getAccentLabel(accent, locale)
   const accentRegion = voiceProfileAccentRegion ?? getAccentRegion(accent, locale)
+
+  if (children !== undefined) {
+    return (
+      <SessionContext.Provider value={sessionContext}>
+        {children}
+        <AppFeedbackOverlay feedback={activeFeedback} />
+      </SessionContext.Provider>
+    )
+  }
 
   return (
     <AppShell

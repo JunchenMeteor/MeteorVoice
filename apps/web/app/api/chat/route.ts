@@ -1,10 +1,11 @@
 /**
  * AI coach chat endpoint. / AI 教练对话端点。
  */
-import type {
-  ConversationContext,
-  ConversationMessage,
-} from '@/lib/providers/types'
+import { AIProviderUnavailableError } from '@/lib/providers/ai-provider'
+import {
+  parseChatRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
 import { generateCoachReply } from '@/lib/server/chat'
 import {
   guardApiRequest,
@@ -19,13 +20,16 @@ export async function POST(request: Request) {
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
-    const body = await request.json() as {
-      messages: ConversationMessage[]
-      context: ConversationContext
-    }
-    const response = await generateCoachReply(body.messages, body.context)
+    const json = await readJsonRequest(request, 64 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseChatRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
+    const response = await generateCoachReply(body.value.messages, body.value.context)
     return jsonApiResult(response)
   } catch (e) {
+    if (e instanceof AIProviderUnavailableError) {
+      return jsonApiResult({ error: 'AI coach is temporarily unavailable', status: 503 })
+    }
     return jsonServerError(e)
   }
 }

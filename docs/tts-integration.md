@@ -51,6 +51,7 @@ https://www.xfyun.cn/
 
 ```text
 XUNFEI_APP_ID=
+XUNFEI_API_PASSWORD=
 XUNFEI_API_KEY=
 XUNFEI_API_SECRET=
 ```
@@ -60,10 +61,11 @@ XUNFEI_API_SECRET=
 ```env
 TTS_PROVIDER=xunfei
 XUNFEI_APP_ID=your_app_id
-XUNFEI_API_KEY=your_api_key
-XUNFEI_API_SECRET=your_api_secret
+XUNFEI_API_PASSWORD=your_api_password
 XUNFEI_TTS_VOICE=your_default_fallback_v3_voice_vcn
 ```
+
+`XUNFEI_API_PASSWORD` is preferred and is sent only by the server in the `x-api-key` WebSocket handshake header. The legacy `XUNFEI_API_KEY` plus `XUNFEI_API_SECRET` HMAC signature remains supported when no API password is configured. Never expose any of these values through `EXPO_PUBLIC_*` variables or mobile application code.
 
 6. In the app Settings page, select `Xunfei`, then select the coach voice from the unified coach voice list.
 

@@ -3,7 +3,7 @@
  * Mock AI 提供者（降级方案）。
  */
 
-import { sleep } from '@meteorvoice/shared/utils'
+import { sleep } from '@meteorvoice/shared'
 
 import type {
   AIProvider,
@@ -100,4 +100,3 @@ export function createMockAI(): AIProvider {
     },
   }
 }
-

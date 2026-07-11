@@ -49,9 +49,15 @@ export function SettingsScreen({
   auth, signOut, handleUnauthorized, getAuthHeaders,
   onLocaleChange,
 }: Props) {
-  /* eslint-disable react-hooks/exhaustive-deps */
   const { voiceMetricsText, asrEvaluationText, clearVoiceMetrics, logMetric } = useLog()
-  const { ttsProvider: ctxTtsProvider, ttsVoiceId: ctxTtsVoiceId, selectedAccentKey: ctxAccentKey, selectedScenarioKey: ctxScenarioKey, clearAudio } = useSession()
+  const {
+    applyTtsPreferences,
+    clearAudio,
+    selectedAccentKey: ctxAccentKey,
+    selectedScenarioKey: ctxScenarioKey,
+    ttsProvider: ctxTtsProvider,
+    ttsVoiceId: ctxTtsVoiceId,
+  } = useSession()
   const { C, setTheme: setThemeLocal, themeKey } = useTheme()
 
   const preferences = useSettingsPreferencesState({
@@ -66,6 +72,7 @@ export function SettingsScreen({
     handleUnauthorized,
     locale,
     logMetric,
+    onTtsPreferencesChange: applyTtsPreferences,
     onLocaleChange,
     setThemeLocal,
     tr,

@@ -192,8 +192,9 @@ ASR/TTS provider keys (all optional — mock/native fallback works without them)
 ASR_PROVIDER=native
 TTS_PROVIDER=mock
 XUNFEI_APP_ID=
+XUNFEI_API_PASSWORD=              # preferred; sent as the server-side x-api-key header
 XUNFEI_API_KEY=
-XUNFEI_API_SECRET=
+XUNFEI_API_SECRET=                # APIKey + APISecret remain supported as a fallback
 XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # default fallback vcn; coach voice is selectable in Settings
 VOLCENGINE_ACCESS_KEY=
