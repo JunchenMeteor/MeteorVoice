@@ -78,9 +78,10 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   const [interrupted, setInterrupted] = useState(false)
   const operationRef = useRef<Promise<unknown> | null>(null)
   const interruptedPhaseRef = useRef<NativeAudioPhase | null>(null)
+  const autoplayedUrlRef = useRef<string | null>(null)
   const playbackRate = normalizePlaybackRate(playbackRateValue)
 
-  const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
+  const player = useAudioPlayer(audioUrl, { updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
   const recorder = useAudioRecorder(
     audioExperimentFlags.useAndroidVoiceCommunicationRecorder
@@ -266,19 +267,30 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   }, [applyPlaybackRate])
 
   useEffect(() => {
-    if (!audioUrl) return
+    if (!audioUrl) {
+      autoplayedUrlRef.current = null
+      return
+    }
+    if (!playerStatus.isLoaded || autoplayedUrlRef.current === audioUrl) return
+    let cancelled = false
     void configurePlayback()
       .then(() => {
+        if (cancelled) return
         applyPlaybackRate()
         player.seekTo(0)
         player.play()
+        autoplayedUrlRef.current = audioUrl
+        setInterrupted(false)
+        setPhase('playing')
       })
       .catch(error => {
+        if (cancelled) return
         const message = error instanceof Error ? error.message : 'Coach voice failed to play'
         setErrorMessage(message)
         setPhase('error')
       })
-  }, [applyPlaybackRate, audioUrl, configurePlayback, player])
+    return () => { cancelled = true }
+  }, [applyPlaybackRate, audioUrl, configurePlayback, player, playerStatus.isLoaded])
 
   // 前后台切换：后台时暂停音频，前台时检查权限恢复
   useEffect(() => {

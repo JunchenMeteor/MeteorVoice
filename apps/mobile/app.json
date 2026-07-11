@@ -10,7 +10,7 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tzcpa.meteorvoice",
+      "bundleIdentifier": "com.jcmeteor.meteorvoice",
       "buildNumber": "2026060601",
       "deploymentTarget": "18.0",
       "infoPlist": {

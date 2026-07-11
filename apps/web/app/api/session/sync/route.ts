@@ -3,6 +3,10 @@
  */
 import { finalizeSession } from '@/lib/server/turns'
 import {
+  parseSessionSyncRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
+import {
   guardApiRequest,
   jsonApiResult,
   jsonServerError,
@@ -15,21 +19,11 @@ export async function POST(request: Request) {
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
-    const body = await request.json() as {
-      session_id: string
-      scenario: string
-      accent: string
-      turns: number
-      messages: { role: string; content: string }[]
-      corrections: {
-        type: string
-        originalText: string
-        suggestedText: string
-        explanation: string
-        severity: string
-      }[]
-    }
-    const result = await finalizeSession(body)
+    const json = await readJsonRequest(request, 512 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseSessionSyncRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
+    const result = await finalizeSession(body.value)
     return jsonApiResult(result)
   } catch (e) {
     return jsonServerError(e)

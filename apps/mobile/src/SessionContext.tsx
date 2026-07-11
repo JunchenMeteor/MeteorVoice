@@ -13,7 +13,10 @@ import {
   useContext,
 } from 'react'
 
-import type { MeteorVoiceApiClient } from '@meteorvoice/api-client'
+import type {
+  MeteorVoiceApiClient,
+  PreferencesResponse,
+} from '@meteorvoice/api-client'
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
 import type {
   ConversationMessage,
@@ -21,14 +24,21 @@ import type {
   Locale,
   TranslateFn,
 } from '@meteorvoice/shared'
+import type { MobileAuthState } from './mobileAuth'
 
 export interface SessionContextValue {
   api: MeteorVoiceApiClient
+  appVersion: string
+  applyTtsPreferences: (preferences: PreferencesResponse) => void
+  auth: MobileAuthState
   audioUrl: string | null
   busy: boolean
   clearAudio: () => void
   corrections: ConversationResponse['corrections']
   endSession: () => Promise<void>
+  defaultApiBaseUrl: string
+  getAuthHeaders: () => Promise<HeadersInit>
+  handleUnauthorized: () => void
   isSessionActive: boolean
   locale: Locale
   messages: ConversationMessage[]
@@ -38,6 +48,7 @@ export interface SessionContextValue {
   selectedAccentKey: string
   selectedScenarioKey: string
   setLocale: (l: Locale) => void
+  signOut: (nextMessage?: string | null) => Promise<void>
   snapshot: WorkflowSnapshot
   startSession: () => Promise<void>
   status: string

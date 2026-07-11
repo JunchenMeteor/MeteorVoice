@@ -75,6 +75,18 @@ Use this checklist for native mobile development builds. Expo config validation 
 
 ## Execution Record Template
 
+### Execution Record — 2026-07-11
+
+- Build: signed iOS Release build installed and launched successfully.
+- Device and OS: Meteor's iPhone 15 Pro, iOS 26.5.2.
+- Signing: Team `VY69DPYH3T`, bundle ID `com.jcmeteor.meteorvoice`, automatic development provisioning.
+- API base URL: app-configured production endpoint.
+- Automated verification: native build, code signing, installation, launch, and post-launch process check passed.
+- Native speech short sentence: manual check pending.
+- TTS full-reply speaker playback: manual check pending.
+- Headphone/Bluetooth route: manual check pending.
+- Note: first launch required explicitly trusting the development profile on the device; trust was completed and the app then launched normally.
+
 Copy this block into PR notes after a real-device run:
 
 ```md

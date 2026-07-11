@@ -52,7 +52,7 @@ function accentLabel(entry: HistorySession, locale: Locale) {
   return a ? getAccentLabel(a, locale) : entry.accent
 }
 
-export function HistoryScreen({ tr, locale, api, getAuthHeaders, handleUnauthorized, defaultApiBaseUrl }: Props) {
+export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
   const { C } = useTheme()
   const {
     deleteSession,

@@ -3,6 +3,10 @@
  */
 import { createTurn } from '@/lib/server/turns'
 import {
+  parseTurnRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
+import {
   guardApiRequest,
   jsonApiResult,
   jsonServerError,
@@ -15,19 +19,11 @@ export async function POST(request: Request) {
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
-    const body = await request.json() as {
-      session_id: string
-      speaker: string
-      transcript: string
-      corrections?: {
-        type: string
-        originalText: string
-        suggestedText: string
-        explanation: string
-        severity: string
-      }[]
-    }
-    const result = await createTurn(body)
+    const json = await readJsonRequest(request, 64 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseTurnRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
+    const result = await createTurn(body.value)
     return jsonApiResult(result)
   } catch (e) {
     return jsonServerError(e)

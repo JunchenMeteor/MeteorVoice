@@ -15,6 +15,7 @@ import type {
   XunfeiVoiceInfo,
 } from '@/lib/providers/xunfei-voices'
 import { getAzureVoiceProfiles } from '@/lib/providers/azure-voices'
+import { hasXunfeiTTSCredentials } from '@/lib/providers/xunfei-tts'
 import { createClient } from '@/lib/supabase/server'
 import {
   getConfiguredXunfeiVoices,
@@ -96,7 +97,7 @@ export function resolveTTSProviderPreference(storedValue?: string | null) {
 
 export function getAvailableProviders(): TTSProviderPreference[] {
   const providers: TTSProviderPreference[] = ['mock']
-  if (process.env.XUNFEI_APP_ID && process.env.XUNFEI_API_KEY && process.env.XUNFEI_API_SECRET && hasXunfeiVoiceConfig()) {
+  if (hasXunfeiTTSCredentials() && hasXunfeiVoiceConfig()) {
     providers.push('xunfei')
   }
   if (process.env.VOLCENGINE_TTS_APP_ID && process.env.VOLCENGINE_TTS_ACCESS_TOKEN) {

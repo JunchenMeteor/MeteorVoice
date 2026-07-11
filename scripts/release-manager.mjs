@@ -12,10 +12,12 @@ const config = {
   branchPrefix: 'dev/release/',
   issuePrefix: '[Feature]',
   issueLabel: 'enhancement',
+  mobileAppConfig: 'apps/mobile/app.json',
   versionFiles: [
     'package.json',
     'apps/web/package.json',
     'apps/mobile/package.json',
+    'apps/mobile/app.json',
     'package-lock.json',
   ],
   releaseDoc: (version) => `docs/releases/v${version}.md`,
@@ -166,14 +168,21 @@ function mainAlreadyPrepared(targetVersion) {
   run('git', ['checkout', 'origin/main'])
   return config.versionFiles
     .filter((file) => file.endsWith('package.json'))
-    .every((file) => readJson(file).version === targetVersion) && existsSync(config.releaseDoc(targetVersion))
+    .every((file) => readJson(file).version === targetVersion) &&
+    readJson(config.mobileAppConfig).expo?.version === targetVersion &&
+    existsSync(config.releaseDoc(targetVersion))
 }
 
 function updateVersionFiles(targetVersion) {
+  const mobileBuildNumber = nextMobileBuildNumber(readJson(config.mobileAppConfig))
   for (const file of config.versionFiles) {
     if (!existsSync(file)) continue
     const json = readJson(file)
-    if (file.endsWith('package-lock.json')) {
+    if (file === config.mobileAppConfig) {
+      json.expo.version = targetVersion
+      json.expo.ios.buildNumber = String(mobileBuildNumber)
+      json.expo.android.versionCode = mobileBuildNumber
+    } else if (file.endsWith('package-lock.json')) {
       json.version = targetVersion
       if (json.packages?.['']) json.packages[''].version = targetVersion
       for (const packagePath of ['apps/web', 'apps/mobile']) {
@@ -186,9 +195,26 @@ function updateVersionFiles(targetVersion) {
   }
 }
 
+function nextMobileBuildNumber(appConfig, now = new Date()) {
+  const datePrefix = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('')
+  const datedBuildNumber = Number(`${datePrefix}01`)
+  const currentBuildNumbers = [
+    Number(appConfig.expo?.ios?.buildNumber),
+    Number(appConfig.expo?.android?.versionCode),
+  ].filter(Number.isFinite)
+  return Math.max(datedBuildNumber, ...currentBuildNumbers.map(value => value + 1))
+}
+
 function writeReleaseDoc(targetVersion) {
   const file = config.releaseDoc(targetVersion)
   if (existsSync(file)) return
+  const appConfig = readJson(config.mobileAppConfig)
+  const iosBuildNumber = appConfig.expo?.ios?.buildNumber ?? 'unknown'
+  const androidVersionCode = appConfig.expo?.android?.versionCode ?? 'unknown'
   writeFileSync(
     file,
     `# Release Notes
@@ -212,6 +238,8 @@ Release focus: production promotion for ${config.projectName} ${targetVersion}.
 
 - Web version: \`${targetVersion}\`
 - Mobile version: \`${targetVersion}\`
+- iOS build number: \`${iosBuildNumber}\`
+- Android version code: \`${androidVersionCode}\`
 - Release tag: \`v${targetVersion}\`
 
 ## Validation

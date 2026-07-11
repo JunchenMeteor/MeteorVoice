@@ -14,6 +14,7 @@ import {
   XUNFEI_TRIAL_VOICE_RYAN,
   XUNFEI_TRIAL_VOICE_YEZI,
 } from '@/lib/providers/xunfei-voices'
+import { resolveXunfeiTTSConnection } from '@/lib/providers/xunfei-tts'
 
 const beforeTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT) - 1
 const afterTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT)
@@ -94,5 +95,32 @@ describe('Xunfei TTS voice config', () => {
       beforeTrialExpiry,
       XUNFEI_TRIAL_VOICE_RYAN,
     )).toBe(XUNFEI_TRIAL_VOICE_RYAN)
+  })
+})
+
+describe('Xunfei TTS authentication', () => {
+  it('prefers API password authentication when configured', () => {
+    expect(resolveXunfeiTTSConnection({
+      XUNFEI_APP_ID: 'app-id',
+      XUNFEI_API_PASSWORD: 'ak_password',
+      XUNFEI_API_KEY: 'legacy-key',
+      XUNFEI_API_SECRET: 'legacy-secret',
+    })).toEqual({
+      appId: 'app-id',
+      headers: { 'x-api-key': 'ak_password' },
+      url: 'wss://tts-api.xfyun.cn/v2/tts',
+    })
+  })
+
+  it('falls back to signed URL authentication', () => {
+    const connection = resolveXunfeiTTSConnection({
+      XUNFEI_APP_ID: 'app-id',
+      XUNFEI_API_KEY: 'legacy-key',
+      XUNFEI_API_SECRET: 'legacy-secret',
+    }, new Date('2026-07-11T05:00:00.000Z'))
+
+    expect(connection.appId).toBe('app-id')
+    expect(connection.headers).toBeUndefined()
+    expect(connection.url).toContain('wss://tts-api.xfyun.cn/v2/tts?authorization=')
   })
 })

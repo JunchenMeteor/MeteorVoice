@@ -6,6 +6,10 @@ import {
   generateSessionSummary,
 } from '@/lib/server/summary'
 import {
+  parseSummaryRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
+import {
   guardApiRequest,
   jsonApiResult,
   requireApiUser,
@@ -17,13 +21,11 @@ export async function POST(request: Request) {
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)
-    const body = await request.json() as {
-      sessionId: string
-      scenario: string
-      messages: { role: string; content: string }[]
-      turnNumber: number
-    }
-    const summary = await generateSessionSummary(body)
+    const json = await readJsonRequest(request, 256 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseSummaryRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
+    const summary = await generateSessionSummary(body.value)
     return jsonApiResult({ summary })
   } catch {
     return jsonApiResult({ summary: FALLBACK_SESSION_SUMMARY })

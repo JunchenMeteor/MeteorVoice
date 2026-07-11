@@ -3,6 +3,10 @@
  */
 import { synthesizeSpeechFromRequest } from '@/lib/server/tts'
 import {
+  parseTTSRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
+import {
   getApiUser,
   guardApiRequest,
   isApiErrorResult,
@@ -18,16 +22,13 @@ export async function POST(request: Request) {
     if (guard) return jsonApiResult(guard)
     const auth = await getApiUser()
     if (isApiErrorResult(auth)) return jsonApiResult(auth)
-    const body = await request.json() as {
-      text?: string
-      accent?: string
-      speed?: number
-      provider?: string
-      voiceId?: string
-    }
+    const json = await readJsonRequest(request, 16 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseTTSRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
 
     const result = await synthesizeSpeechFromRequest({
-      ...body,
+      ...body.value,
       userId: auth.user.id,
       audioBaseUrl: getRequestBaseUrl(request),
     })
