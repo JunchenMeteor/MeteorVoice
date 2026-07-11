@@ -63,6 +63,8 @@
   - v1.3.0 release notes，覆盖 ASR provider 层、mobile 语音稳定性、运行时反馈、API 防护和验证命令。
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
+- `docs/tencent-docker-deployment.md` / `docs/tencent-docker-deployment.zh-CN.md`
+  - 腾讯云 Web/API Docker + TCR 目标架构、PM2 平滑迁移、健康检查和回滚手册。
 
 ## 已完成计划
 
