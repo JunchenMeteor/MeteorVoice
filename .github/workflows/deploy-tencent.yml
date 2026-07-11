@@ -31,9 +31,8 @@ env:
 
 jobs:
   build:
-    name: Build Web/API image
+    name: Validate deployment image
     runs-on: ubuntu-latest
-    environment: tencent
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,47 +41,28 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
+        if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64
-          outputs: type=docker,dest=${{ runner.temp }}/meteorvoice-image.tar
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Compress image artifact
-        if: github.event_name != 'pull_request'
-        run: gzip -1 < "${RUNNER_TEMP}/meteorvoice-image.tar" > deploy/meteorvoice-image.tar.gz
-
-      - name: Upload image artifact to Tencent
-        if: github.event_name != 'pull_request'
-        env:
-          DEPLOY_KEY: ${{ secrets.TENCENT_ARTIFACT_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.TENCENT_ARTIFACT_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ vars.TENCENT_ARTIFACT_HOST }}
-          DEPLOY_USER: ${{ vars.TENCENT_ARTIFACT_USER }}
-        run: |
-          key_file="${RUNNER_TEMP}/artifact-upload-key"
-          known_hosts_file="${RUNNER_TEMP}/artifact-known-hosts"
-          printf '%s\n' "${DEPLOY_KEY}" > "${key_file}"
-          printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > "${known_hosts_file}"
-          chmod 0600 "${key_file}" "${known_hosts_file}"
-          ssh -i "${key_file}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="${known_hosts_file}" \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" "${GITHUB_SHA}" \
-            < deploy/meteorvoice-image.tar.gz
-          rm -f deploy/meteorvoice-image.tar.gz "${key_file}" "${known_hosts_file}"
-
-      - name: Upload deployment manifest
+      - name: Upload validated source artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: meteorvoice-deployment-${{ github.sha }}
+          name: meteorvoice-source-${{ github.sha }}
           path: |
-            deploy/docker-compose.yml
-            deploy/deploy-container.sh
+            .
+            !.git
+            !node_modules
+            !apps/**/node_modules
+            !packages/**/node_modules
+            !apps/**/.next
           retention-days: 7
 
   deploy:
@@ -92,11 +72,11 @@ jobs:
     runs-on: [self-hosted, linux, x64, tencent, meteorvoice]
     environment: tencent
     steps:
-      - name: Download deployment manifest
+      - name: Download validated source artifact
         uses: actions/download-artifact@v4
         with:
-          name: meteorvoice-deployment-${{ github.sha }}
-          path: deployment
+          name: meteorvoice-source-${{ github.sha }}
+          path: source
 
       - name: Resolve target
         id: target
@@ -116,8 +96,8 @@ jobs:
             echo "public_url=https://mv-pre.jcmeteor.com/" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Load image artifact
-        run: gzip -dc "/srv/deploy-inbox/meteorvoice/${GITHUB_SHA}.tar.gz" | docker load
+      - name: Build image from artifact
+        run: docker build --tag "meteorvoice-web:${GITHUB_SHA}" --file source/Dockerfile source
 
       - name: Deploy
         env:
@@ -130,9 +110,5 @@ jobs:
           RUNTIME_ENV_FILE: /etc/meteorvoice/meteorvoice.env
           SHADOW_PORT: ${{ steps.target.outputs.shadow_port }}
         run: |
-          chmod +x deployment/deploy-container.sh
-          deployment/deploy-container.sh
-
-      - name: Remove uploaded image artifact
-        if: success()
-        run: rm -f "/srv/deploy-inbox/meteorvoice/${GITHUB_SHA}.tar.gz"
+          chmod +x source/deploy/deploy-container.sh
+          source/deploy/deploy-container.sh
