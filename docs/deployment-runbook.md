@@ -2,6 +2,8 @@
 
 本文档记录 MeteorVoice monorepo 迁移后的 Web 部署方式。当前 Web app 位于 `apps/web`，Mobile 位于 `apps/mobile`，共享包位于 `packages/*`。
 
+腾讯云 Web/API 的 Docker + TCR 目标部署及 PM2 迁移步骤见 `docs/tencent-docker-deployment.md` 和 `docs/tencent-docker-deployment.zh-CN.md`。该文档在迁移验收完成前属于目标设计，不代表服务器已经切换到 Docker。
+
 ## Vercel 推荐配置
 
 当前推荐让 Vercel 仍从仓库根目录安装和构建，因为 npm workspaces、`file:` 本地包和 lockfile 都在根目录。
