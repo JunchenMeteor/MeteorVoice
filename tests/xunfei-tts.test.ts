@@ -14,12 +14,21 @@ import {
   XUNFEI_TRIAL_VOICE_RYAN,
   XUNFEI_TRIAL_VOICE_YEZI,
 } from '@/lib/providers/xunfei-voices'
-import { resolveXunfeiTTSConnection } from '@/lib/providers/xunfei-tts'
+import {
+  mapXunfeiSpeedMultiplier,
+  resolveXunfeiTTSConnection,
+} from '@/lib/providers/xunfei-tts'
 
 const beforeTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT) - 1
 const afterTrialExpiry = Date.parse(XUNFEI_TRIAL_VOICE_EXPIRES_AT)
 
 describe('Xunfei TTS voice config', () => {
+  it('maps normalized product speed multipliers to Xunfei native values', () => {
+    expect(mapXunfeiSpeedMultiplier(0.75)).toBe(50)
+    expect(mapXunfeiSpeedMultiplier(1)).toBe(55)
+    expect(mapXunfeiSpeedMultiplier(1.5)).toBe(80)
+  })
+
   it('uses the active catalog default when no fallback env is configured', () => {
     expect(resolveXunfeiVoiceForAccent('American', {}, beforeTrialExpiry, XUNFEI_TRIAL_VOICE_RYAN)).toBe(XUNFEI_TRIAL_VOICE_RYAN)
     expect(hasXunfeiVoiceConfig({}, beforeTrialExpiry)).toBe(true)

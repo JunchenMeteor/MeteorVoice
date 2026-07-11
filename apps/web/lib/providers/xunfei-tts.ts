@@ -14,6 +14,9 @@ import { resolveXunfeiVoiceForText } from './xunfei-voices'
 
 const host = 'tts-api.xfyun.cn'
 const path = '/v2/tts'
+const xunfeiMinSpeed = 50
+const xunfeiNormalSpeed = 55
+const xunfeiMaxSpeed = 80
 
 type XunfeiTTSEnvironment = Record<string, string | undefined>
 
@@ -25,6 +28,17 @@ type XunfeiTTSConnection = {
 
 function readCredential(value?: string) {
   return value?.trim() || null
+}
+
+export function mapXunfeiSpeedMultiplier(speed = 1) {
+  const normalized = Math.min(1.5, Math.max(0.75, Number.isFinite(speed) ? speed : 1))
+  if (normalized <= 1) {
+    const progress = (normalized - 0.75) / 0.25
+    return Math.round(xunfeiMinSpeed + ((xunfeiNormalSpeed - xunfeiMinSpeed) * progress))
+  }
+
+  const progress = (normalized - 1) / 0.5
+  return Math.round(xunfeiNormalSpeed + ((xunfeiMaxSpeed - xunfeiNormalSpeed) * progress))
 }
 
 export function hasXunfeiTTSCredentials(env: XunfeiTTSEnvironment = process.env) {
@@ -97,7 +111,7 @@ export function createXunfeiTTS(): TTSProvider {
               aue: 'lame',
               sfl: 1,
               vcn: resolveXunfeiVoiceForText(text, options?.accent, process.env, Date.now(), options?.voiceId),
-              speed: Math.round(Math.min(100, Math.max(0, options?.speed ?? 70))),
+              speed: mapXunfeiSpeedMultiplier(options?.speed),
               volume: 50,
               pitch: 50,
               bgs: 0,

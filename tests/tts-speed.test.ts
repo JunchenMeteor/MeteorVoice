@@ -29,8 +29,8 @@ describe('tts speed preferences', () => {
   })
 
   it('maps Xunfei speeds conservatively to avoid clipped starts', () => {
-    expect(getTTSSpeedRouting('xunfei', 0.75)).toEqual({ serverSpeed: 50, playbackRate: 1 })
-    expect(getTTSSpeedRouting('xunfei', 1)).toEqual({ serverSpeed: 55, playbackRate: 1 })
-    expect(getTTSSpeedRouting('xunfei', 1.5)).toEqual({ serverSpeed: 80, playbackRate: 1 })
+    expect(getTTSSpeedRouting('xunfei', 0.75)).toEqual({ requestSpeed: 0.75, playbackRate: 1 })
+    expect(getTTSSpeedRouting('xunfei', 1)).toEqual({ requestSpeed: 1, playbackRate: 1 })
+    expect(getTTSSpeedRouting('xunfei', 1.5)).toEqual({ requestSpeed: 1.5, playbackRate: 1 })
   })
 })

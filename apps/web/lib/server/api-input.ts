@@ -83,10 +83,13 @@ export function parseChatRequest(input: unknown): ApiInputResult<{
 export function parseTTSRequest(input: unknown): ApiInputResult<TTSRequest> {
   if (!isRecord(input) || typeof input.text !== 'string' || !input.text.trim()) return invalid('Text is required')
   if (input.text.length > 4000) return invalid('Text is too long')
+  const speedIsValid = input.speed === undefined || (
+    isFiniteNumber(input.speed) && input.speed >= 0.5 && input.speed <= 2
+  )
   if (!isOptionalBoundedString(input.accent, 100) ||
       !isOptionalBoundedString(input.provider, 50) ||
       !isOptionalBoundedString(input.voiceId, 200) ||
-      (input.speed !== undefined && (!isFiniteNumber(input.speed) || input.speed < 0.5 || input.speed > 2))) {
+      !speedIsValid) {
     return invalid('Invalid TTS options')
   }
   return {

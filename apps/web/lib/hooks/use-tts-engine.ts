@@ -86,7 +86,7 @@ export function useTTSEngine(ctx: TTSEngineContext): TTSEngine {
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
+          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.requestSpeed, voiceId: ttsVoiceIdRef.current }),
         })
         const result = await readApiJsonResponse<{ audioUrl?: string }>(res, 'TTS request failed')
         if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')

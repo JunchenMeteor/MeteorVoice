@@ -13,6 +13,7 @@ const config = {
   issuePrefix: '[Feature]',
   issueLabel: 'enhancement',
   mobileAppConfig: 'apps/mobile/app.json',
+  mobileXcodeProject: 'apps/mobile/ios/MeteorVoice.xcodeproj/project.pbxproj',
   versionFiles: [
     'package.json',
     'apps/web/package.json',
@@ -82,7 +83,7 @@ async function prepareRelease() {
   updateVersionFiles(version)
   writeReleaseDoc(version)
 
-  run('git', ['add', ...config.versionFiles.filter(exists), config.releaseDoc(version)])
+  run('git', ['add', ...config.versionFiles.filter(exists), config.mobileXcodeProject, config.releaseDoc(version)])
   run('git', ['commit', '-m', `Prepare ${tag} release`])
   run('git', ['push', '-u', 'origin', branch])
 
@@ -170,6 +171,7 @@ function mainAlreadyPrepared(targetVersion) {
     .filter((file) => file.endsWith('package.json'))
     .every((file) => readJson(file).version === targetVersion) &&
     readJson(config.mobileAppConfig).expo?.version === targetVersion &&
+    xcodeProjectAlreadyPrepared(targetVersion, readJson(config.mobileAppConfig).expo?.ios?.buildNumber) &&
     existsSync(config.releaseDoc(targetVersion))
 }
 
@@ -193,6 +195,26 @@ function updateVersionFiles(targetVersion) {
     }
     writeJson(file, json)
   }
+  updateXcodeProjectVersion(targetVersion, mobileBuildNumber)
+}
+
+function xcodeProjectAlreadyPrepared(targetVersion, buildNumber) {
+  if (!existsSync(config.mobileXcodeProject) || !buildNumber) return false
+  const project = readFileSync(config.mobileXcodeProject, 'utf8')
+  const marketingVersions = [...project.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(match => match[1])
+  const buildNumbers = [...project.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(match => match[1])
+  return marketingVersions.length > 0 &&
+    buildNumbers.length > 0 &&
+    marketingVersions.every(value => value === targetVersion) &&
+    buildNumbers.every(value => value === String(buildNumber))
+}
+
+function updateXcodeProjectVersion(targetVersion, buildNumber) {
+  if (!existsSync(config.mobileXcodeProject)) return
+  const project = readFileSync(config.mobileXcodeProject, 'utf8')
+    .replace(/MARKETING_VERSION = [^;]+;/g, `MARKETING_VERSION = ${targetVersion};`)
+    .replace(/CURRENT_PROJECT_VERSION = [^;]+;/g, `CURRENT_PROJECT_VERSION = ${buildNumber};`)
+  writeFileSync(config.mobileXcodeProject, project)
 }
 
 function nextMobileBuildNumber(appConfig, now = new Date()) {
