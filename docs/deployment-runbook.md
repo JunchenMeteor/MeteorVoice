@@ -2,7 +2,7 @@
 
 本文档记录 MeteorVoice monorepo 迁移后的 Web 部署方式。当前 Web app 位于 `apps/web`，Mobile 位于 `apps/mobile`，共享包位于 `packages/*`。
 
-腾讯云 Web/API 的 Docker + 源码 Artifact 部署及 PM2 迁移步骤见 `docs/tencent-docker-deployment.md` 和 `docs/tencent-docker-deployment.zh-CN.md`。该文档在迁移验收完成前属于目标设计，不代表服务器已经切换到 Docker。
+腾讯云 Web/API 已使用 Docker + 源码 Artifact 部署；架构、PM2 回滚保留策略和操作步骤见 `docs/tencent-docker-deployment.md` 与 `docs/tencent-docker-deployment.zh-CN.md`。
 
 ## Vercel 推荐配置
 

@@ -1,8 +1,8 @@
 # Tencent Docker Deployment
 
-This runbook defines the target Docker deployment for the MeteorVoice Web/API on the existing Tencent server. It covers the server component only; the iOS app, hosted Supabase project, and host Nginx remain outside Docker.
+This runbook defines the active Docker deployment for the MeteorVoice Web/API on the existing Tencent server. It covers the server component only; the iOS app, hosted Supabase project, and host Nginx remain outside Docker.
 
-> Status: target design. The active Tencent deployment still uses PM2 until the migration acceptance checklist in this document is complete.
+> Status: active since v1.4.2. Preview and production run in Docker; the stopped PM2 definitions are retained only for emergency rollback.
 
 ## Environment mapping
 
@@ -13,7 +13,7 @@ This runbook defines the target Docker deployment for the MeteorVoice Web/API on
 
 Nginx MUST continue binding public ports 80/443. Containers MUST publish only to `127.0.0.1`.
 
-## Target delivery flow
+## Active delivery flow
 
 1. A GitHub-hosted runner checks out the requested commit.
 2. CI runs lint, tests, mobile typecheck, and the Web production build.
@@ -59,12 +59,11 @@ Deployment metadata MAY live under `/srv/containers/meteorvoice/{preview,product
 Migrate one environment at a time, preview before production.
 
 1. Record the current Git commit, PM2 process, Nginx configuration, and public health result.
-2. Build and push the candidate image without changing the server runtime.
+2. Upload the validated source artifact and build the candidate image without changing the active runtime.
 3. Start a shadow container on an unused localhost port and verify Web pages plus `/api/scenarios`, `/api/chat` request validation, and TTS request validation.
-4. Switch only the relevant Nginx upstream to the shadow container and run public-domain checks.
-5. Stop only the matching PM2 process.
-6. Start the final Compose project on the existing `3101` or `3100` port and return Nginx to that port.
-7. Observe logs and health before migrating the next environment.
+4. Stop only the matching PM2 process after the shadow health check succeeds.
+5. Start the final Compose project on the existing `3101` or `3100` port; Nginx continues targeting that unchanged port.
+6. Observe logs and health before migrating the next environment.
 
 Do not run `pm2 kill`. Keep the PM2 definitions and source checkout until both environments have passed the observation window.
 

@@ -1,8 +1,8 @@
 # 腾讯云 Docker 部署
 
-本文定义 MeteorVoice Web/API 在现有腾讯云服务器上的目标 Docker 部署方式。容器化范围只包括服务端 Web/API；iOS App、托管 Supabase 和宿主机 Nginx 不进入 Docker。
+本文定义 MeteorVoice Web/API 在现有腾讯云服务器上的现行 Docker 部署方式。容器化范围只包括服务端 Web/API；iOS App、托管 Supabase 和宿主机 Nginx 不进入 Docker。
 
-> 状态：目标设计。完成本文验收清单之前，腾讯云当前仍使用 PM2 部署。
+> 状态：自 v1.4.2 起正式启用。预览与生产均由 Docker 运行；已停止的 PM2 定义仅用于紧急回滚。
 
 ## 环境映射
 
@@ -13,7 +13,7 @@
 
 Nginx MUST 继续监听公网 80/443 端口。容器 MUST 只发布到 `127.0.0.1`。
 
-## 目标交付流程
+## 现行交付流程
 
 1. GitHub 托管 Runner 检出目标提交。
 2. CI 执行 lint、测试、Mobile typecheck 和 Web 生产构建。
@@ -59,12 +59,11 @@ Nginx MUST 继续监听公网 80/443 端口。容器 MUST 只发布到 `127.0.0.
 每次只迁移一个环境，必须先预览后生产。
 
 1. 记录当前 Git commit、PM2 进程、Nginx 配置和公网健康结果。
-2. 构建并推送候选镜像，不改变服务器运行状态。
+2. 上传已验证的源码 Artifact 并构建候选镜像，不改变当前运行状态。
 3. 在未使用的 localhost 端口启动影子容器，验证 Web 页面以及 `/api/scenarios`、`/api/chat` 参数校验和 TTS 参数校验。
-4. 只将当前环境的 Nginx upstream 切到影子容器并执行公网检查。
-5. 只停止对应 PM2 进程。
-6. 在原 `3101` 或 `3100` 端口启动最终 Compose 项目，并将 Nginx 恢复指向该端口。
-7. 观察日志和健康状态后，再迁移下一个环境。
+4. 影子健康检查通过后，只停止对应 PM2 进程。
+5. 在原 `3101` 或 `3100` 端口启动最终 Compose 项目；Nginx 始终指向这个未变化的端口。
+6. 观察日志和健康状态后，再迁移下一个环境。
 
 禁止执行 `pm2 kill`。两个环境完成观察期之前，保留 PM2 定义和服务器源码目录。
 
