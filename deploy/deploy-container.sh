@@ -34,7 +34,8 @@ compose() {
   local project="$1"
   local env_file="$2"
   shift 2
-  docker compose --project-name "${project}" --env-file "${env_file}" --file "${compose_file}" "$@"
+  env -u IMAGE_URI -u HOST_PORT -u RUNTIME_ENV_FILE \
+    docker compose --project-name "${project}" --env-file "${env_file}" --file "${compose_file}" "$@"
 }
 
 wait_for_health() {
