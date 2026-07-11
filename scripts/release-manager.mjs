@@ -312,7 +312,7 @@ function waitForDeploy(branch, headSha) {
   const startedAt = Date.now()
   for (;;) {
     const runs = JSON.parse(capture('gh', ['run', 'list', '--repo', config.repo, '--branch', branch, '--workflow', config.deployWorkflow, '--json', 'databaseId,status,conclusion,headSha,createdAt', '--limit', '10']))
-    const runInfo = runs.find((item) => item.headSha === headSha) ?? runs[0]
+    const runInfo = runs.find((item) => item.headSha === headSha)
     if (runInfo?.status === 'completed') {
       if (runInfo.conclusion !== 'success') fail(`${config.deployWorkflow} failed with conclusion: ${runInfo.conclusion}`)
       return
