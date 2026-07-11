@@ -3,7 +3,7 @@
     "name": "MeteorVoice",
     "slug": "meteorvoice-mobile",
     "owner": "junchenmeteors-team",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "scheme": "meteorvoice",
     "userInterfaceStyle": "automatic",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jcmeteor.meteorvoice",
-      "buildNumber": "2026071101",
+      "buildNumber": "2026071102",
       "deploymentTarget": "18.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "MeteorVoice uses the microphone for voice practice sessions.",
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.jcmeteor.meteorvoice",
-      "versionCode": 2026071101,
+      "versionCode": 2026071102,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
