@@ -59,6 +59,34 @@ describe('API input validation', () => {
     })
   })
 
+  it('accepts only normalized TTS speed multipliers for every provider', () => {
+    expect(parseTTSRequest({
+      text: 'Hello',
+      provider: 'xunfei',
+      speed: 1.5,
+    })).toEqual({
+      value: {
+        text: 'Hello',
+        accent: undefined,
+        provider: 'xunfei',
+        speed: 1.5,
+        voiceId: undefined,
+      },
+    })
+
+    expect(parseTTSRequest({
+      text: 'Hello',
+      provider: 'xunfei',
+      speed: 55,
+    })).toEqual({ error: 'Invalid TTS options', status: 400 })
+
+    expect(parseTTSRequest({
+      text: 'Hello',
+      provider: 'mock',
+      speed: 55,
+    })).toEqual({ error: 'Invalid TTS options', status: 400 })
+  })
+
   it('validates summary, turn, and session-sync payloads', () => {
     expect(parseSummaryRequest({
       sessionId: 'session-1',

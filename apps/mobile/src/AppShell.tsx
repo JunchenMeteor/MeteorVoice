@@ -134,7 +134,7 @@ export function AppShell({
         <SessionContext.Provider value={sessionContext}>
           {activeTab === 'home' && <HomeScreen tr={tr} locale={locale} scenarios={scenarios} onGoToSession={() => setActiveTab('session')} />}
           {activeTab === 'session' && <SessionScreen tr={tr} accentName={accentName} accentRegion={accentRegion} scenarioName={scenarioName} scenarioIcon={scenarioIcon} scenarioDifficulty={scenarioDifficulty} scenarioDescription={scenarioDescription} />}
-          {activeTab === 'history' && <HistoryScreen tr={tr} locale={locale} api={api} getAuthHeaders={getAuthHeaders} handleUnauthorized={handleUnauthorized} defaultApiBaseUrl={defaultApiBaseUrl} />}
+          {activeTab === 'history' && <HistoryScreen tr={tr} locale={locale} api={api} authState={auth.state} authUserId={auth.user?.id ?? null} handleUnauthorized={handleUnauthorized} refreshKey={0} />}
           {activeTab === 'settings' && <SettingsScreen tr={tr} locale={locale} appVersion={appVersion} defaultApiBaseUrl={defaultApiBaseUrl} auth={auth} signOut={signOut} handleUnauthorized={handleUnauthorized} getAuthHeaders={getAuthHeaders} onLocaleChange={setLocale} />}
         </SessionContext.Provider>
         <AppFeedbackOverlay feedback={activeFeedback} />

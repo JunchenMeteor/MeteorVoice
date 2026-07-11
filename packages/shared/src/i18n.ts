@@ -14,6 +14,7 @@ export const t: Record<Locale, Record<string, string>> = {
   en: {
     'common.cancel': 'Cancel',
     'common.confirm': 'Confirm',
+    'common.retry': 'Try again',
     'nav.home': 'Home',
     'nav.practice': 'Practice',
     'nav.history': 'History',
@@ -166,6 +167,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'history.deleted': 'Session deleted.',
     'history.load_error': 'Failed to load sessions.',
     'history.auth_required': 'Please sign in to view history.',
+    'history.auth_hint': 'Your sessions will load automatically after you sign in.',
     'settings.title': 'Settings',
     'settings.subtitle': 'Customize your practice environment.',
     'settings.auth_expired': 'Your login has expired. Please sign in again.',
@@ -281,6 +283,7 @@ export const t: Record<Locale, Record<string, string>> = {
   zh: {
     'common.cancel': '取消',
     'common.confirm': '确认',
+    'common.retry': '重试',
     'nav.home': '首页',
     'nav.practice': '练习',
     'nav.history': '历史',
@@ -433,6 +436,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'history.deleted': '记录已删除。',
     'history.load_error': '加载失败。',
     'history.auth_required': '请先登录后再查看历史记录。',
+    'history.auth_hint': '登录成功后，练习记录会自动加载。',
     'settings.title': '设置',
     'settings.subtitle': '自定义你的练习环境。',
     'settings.auth_expired': '登录已过期，请重新登录。',

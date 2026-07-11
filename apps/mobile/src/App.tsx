@@ -471,8 +471,8 @@ function AppInner({ children }: { children?: React.ReactNode }) {
   // ─── Orchestration / 编排函数 ───
 
   const synthesizeCoachSpeech = useCallback(async (text: string) => {
-    return api.synthesizeSpeech({ text, accent: accent.name, provider: ttsProvider, speed: ttsSpeedRouting.serverSpeed, voiceId: ttsVoiceId ?? undefined })
-  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
+    return api.synthesizeSpeech({ text, accent: accent.name, provider: ttsProvider, speed: ttsSpeedRouting.requestSpeed, voiceId: ttsVoiceId ?? undefined })
+  }, [accent.name, api, ttsProvider, ttsSpeedRouting.requestSpeed, ttsVoiceId])
 
   const submitTurn = useCallback(async (sourceTranscript: string) => {
     const submitStartedAt = Date.now()

@@ -17,50 +17,72 @@ import type {
   SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
+  getHistoryLoadRequestKey,
+  type HistoryAuthState,
+} from '../historyRefresh'
+
+import {
   formatApiRequestError,
   MeteorVoiceApiError,
 } from '@meteorvoice/api-client'
 
 interface UseHistoryScreenStateInput {
   api: MeteorVoiceApiClient
+  authState: HistoryAuthState
+  authUserId: string | null
   handleUnauthorized: () => void
+  refreshKey: number
 }
 
 export function useHistoryScreenState({
   api,
+  authState,
+  authUserId,
   handleUnauthorized,
+  refreshKey,
 }: UseHistoryScreenStateInput) {
   const [expandedId, setExpandedId] = useState<string | number | null>(null)
   const [filterScenario, setFilterScenario] = useState<string | null>(null)
   const [sessions, setSessions] = useState<HistorySession[]>([])
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
   const [selectedTurns, setSelectedTurns] = useState<SessionTurnDto[]>([])
-  const autoLoadRef = useRef(false)
+  const lastLoadKeyRef = useRef<string | null>(null)
+  const loadingRef = useRef(false)
 
   const loadHistory = useCallback(async () => {
-    if (loading) return
+    if (loadingRef.current || authState !== 'signed-in' || !authUserId) return
+    loadingRef.current = true
     setLoading(true)
     setError(null)
     try {
       const result = await api.listHistory()
       setSessions(result.sessions)
+      setLoadedUserId(authUserId)
       setSelectedHistory(result.sessions[0] ?? null)
       setSelectedTurns([])
     } catch (error) {
+      if (error instanceof MeteorVoiceApiError && error.status === 401) handleUnauthorized()
       const requestError = formatApiRequestError(error, { context: 'mobile_history_list', presentation: 'inline' })
       setError(requestError.displayMessage)
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
-  }, [api, loading])
+  }, [api, authState, authUserId, handleUnauthorized])
 
   useEffect(() => {
-    if (autoLoadRef.current) return
-    autoLoadRef.current = true
+    const loadKey = getHistoryLoadRequestKey(authState, authUserId, refreshKey)
+    if (!loadKey) {
+      lastLoadKeyRef.current = null
+      return
+    }
+    if (lastLoadKeyRef.current === loadKey) return
+    lastLoadKeyRef.current = loadKey
     void loadHistory()
-  }, [loadHistory])
+  }, [authState, authUserId, loadHistory, refreshKey])
 
   const deleteSession = useCallback(async (id: string) => {
     setSessions(prev => prev.map(session => session.id === id ? { ...session, status: 'deleted' as const } : session))
@@ -85,22 +107,27 @@ export function useHistoryScreenState({
     }
   }, [api])
 
+  const visibleSessions = useMemo(
+    () => authUserId && loadedUserId === authUserId ? sessions : [],
+    [authUserId, loadedUserId, sessions],
+  )
+
   const toggle = useCallback((id: string | number) => {
     if (expandedId === id) {
       setExpandedId(null)
       return
     }
-    const nextSession = sessions.find(session => session.id === id)
+    const nextSession = visibleSessions.find(session => session.id === id)
     if (!nextSession) return
     setExpandedId(id)
     void selectHistory(nextSession)
-  }, [expandedId, selectHistory, sessions])
+  }, [expandedId, selectHistory, visibleSessions])
 
   const filtered = useMemo(() => (
     filterScenario
-      ? sessions.filter(session => session.scenario_key === filterScenario || session.scenario === filterScenario)
-      : sessions
-  ), [filterScenario, sessions])
+      ? visibleSessions.filter(session => session.scenario_key === filterScenario || session.scenario === filterScenario)
+      : visibleSessions
+  ), [filterScenario, visibleSessions])
 
   return {
     deleteSession,
@@ -108,6 +135,7 @@ export function useHistoryScreenState({
     expandedId,
     filtered,
     filterScenario,
+    hasSessions: visibleSessions.length > 0,
     loadHistory,
     loading,
     selectedHistory,
