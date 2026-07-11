@@ -30,6 +30,7 @@ import type {
   ConversationMessage,
   ConversationResponse,
   Locale,
+  Scenario,
   TranslateFn,
 } from '@meteorvoice/shared'
 import type { SyncSessionRequest } from '@meteorvoice/api-client'
@@ -114,6 +115,7 @@ import {
   STT_MAX_CONSECUTIVE_RESTARTS,
   withTimeout,
 } from './sessionRuntime'
+import { resolveRuntimeScenarios } from './runtimeScenarios'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
@@ -172,6 +174,7 @@ function AppInner({ children }: { children?: React.ReactNode }) {
 
   // ─── Scenario & Accent / 场景与口音 ───
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
+  const [availableScenarios, setAvailableScenarios] = useState<Scenario[]>(scenarios)
   const [selectedAccentKey, setSelectedAccentKey] = useState('american')
   const [scenarioSwitching, setScenarioSwitching] = useState(false)
   const [apiSessionId] = useState<string | null>(null)
@@ -232,8 +235,29 @@ function AppInner({ children }: { children?: React.ReactNode }) {
     return () => { cancelled = true }
   }, [api, applyTtsPreferences, auth.state, logMetric])
 
+  useEffect(() => {
+    let cancelled = false
+    void api.listScenarios(locale)
+      .then(result => {
+        if (!cancelled) setAvailableScenarios(resolveRuntimeScenarios(result.scenarios))
+      })
+      .catch(error => {
+        if (!cancelled) setAvailableScenarios(scenarios)
+        logMetric('mobile_scenarios_load_error', {
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      })
+    return () => { cancelled = true }
+  }, [api, auth.state, locale, logMetric])
+
   // ─── Derived Values / 派生值 ───
-  const scenario = useMemo(() => scenarios.find(s => s.key === selectedScenarioKey) ?? scenarios[0], [selectedScenarioKey])
+  const scenario = useMemo(
+    () => availableScenarios.find(s => s.key === selectedScenarioKey)
+      ?? scenarios.find(s => s.key === selectedScenarioKey)
+      ?? availableScenarios[0]
+      ?? scenarios[0],
+    [availableScenarios, selectedScenarioKey],
+  )
   const accent = useMemo(() => accentProfiles.find(a => a.key === selectedAccentKey) ?? accentProfiles[0], [selectedAccentKey])
 
   // Voice profile accent override (for SettingsScreen voice selection)
@@ -868,6 +892,7 @@ function AppInner({ children }: { children?: React.ReactNode }) {
   // ─── SessionContext Value / 会话上下文值 ───
   const sessionContext = useMemo<SessionContextValue>(() => ({
     appVersion, applyTtsPreferences, auth, defaultApiBaseUrl, getAuthHeaders, handleUnauthorized, signOut,
+    availableScenarios,
     snapshot, messages, corrections: correctionHistory, summary,
     isSessionActive, status, busy, scenarioSwitching,
     locale, tr,
@@ -877,7 +902,7 @@ function AppInner({ children }: { children?: React.ReactNode }) {
     audioUrl, api,
     startSession, endSession, playCorrection, selectScenario, setLocale, submitText: submitTurn,
     clearAudio,
-  }), [applyTtsPreferences, auth, clearAudio, getAuthHeaders, handleUnauthorized, signOut, snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
+  }), [applyTtsPreferences, auth, availableScenarios, clearAudio, getAuthHeaders, handleUnauthorized, signOut, snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
 
   // ─── Tab Selection / 标签选择 ───
   const selectTab = useCallback((tab: Tab) => {
