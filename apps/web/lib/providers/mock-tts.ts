@@ -1,5 +1,19 @@
-import type { TTSProvider, TTSResult } from './types'
+/**
+ * Mock TTS provider (fallback).
+ * Mock 语音合成提供者。
+ */
 
+import { sleep } from '@meteorvoice/shared/utils'
+
+import type {
+  TTSProvider,
+  TTSResult,
+} from './types'
+
+/**
+ * Create a mock Text-to-Speech provider using the browser SpeechSynthesis API when available.
+ * 创建模拟文本转语音提供者，可用时使用浏览器 SpeechSynthesis API。
+ */
 export function createMockTTS(): TTSProvider {
   return {
     async synthesize(text: string, options?: { accent?: string; speed?: number }): Promise<TTSResult> {
@@ -41,6 +55,3 @@ function speakWithBrowserTTS(text: string, speed: number) {
   })
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}

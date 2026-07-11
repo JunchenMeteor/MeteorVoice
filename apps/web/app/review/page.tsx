@@ -1,10 +1,25 @@
+/**
+ * Review corrections page.
+ * 纠错复习页面。
+ */
+
 'use client'
 
 import { useState } from 'react'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { Card, CardContent } from '@/components/ui/card'
+
 import type { ConversationResponse } from '@/lib/providers/types'
-import { findScenarioByKeyOrName, getScenarioLabel } from '@/lib/scenarios'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  Card,
+  CardContent,
+} from '@/components/ui/card'
+import {
+  findScenarioByKeyOrName,
+  getScenarioLabel,
+} from '@/lib/scenarios'
 
 interface ReviewItem {
   id: string
@@ -155,6 +170,7 @@ export default function ReviewPage() {
                 onClick={() => setRevealed(true)}
                 className="px-6 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ background: 'var(--theme-accent)' }}
+                aria-expanded={revealed}
               >
                 {t('review.reveal')}
               </button>

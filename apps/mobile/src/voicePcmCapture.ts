@@ -1,4 +1,10 @@
-import { requireOptionalNativeModule, type EventSubscription } from 'expo-modules-core'
+/**
+ * iOS PCM audio capture (Expo Module).
+ * iOS PCM 音频采集。
+ */
+
+import type { EventSubscription } from 'expo-modules-core'
+import { requireOptionalNativeModule } from 'expo-modules-core'
 import { Platform } from 'react-native'
 
 export type PcmCaptureOptions = {

@@ -1,5 +1,12 @@
+/**
+ * Button component (shadcn/ui).
+ * 按钮组件。
+ */
+
+import type { ButtonHTMLAttributes } from 'react'
+import { forwardRef } from 'react'
+
 import { cn } from '@/lib/utils'
-import { type ButtonHTMLAttributes, forwardRef } from 'react'
 
 const variants = {
   primary: 'bg-[var(--theme-accent)] text-white hover:opacity-90',

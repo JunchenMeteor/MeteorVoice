@@ -1,12 +1,42 @@
+/**
+ * Session history page (web).
+ * 会话历史页面（Web 端）。
+ */
+
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { Card, CardContent } from '@/components/ui/card'
-import { scenarios, findAccentByKeyOrName, findScenarioByKeyOrName, getAccentLabel, getScenarioLabel } from '@/lib/scenarios'
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
+
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
+import {
+  displayErrorFeedback,
+  hideAppFeedback,
+  runAppOperationGroup,
+} from '@meteorvoice/shared'
+
 import { flushPendingPreferences } from '@/lib/tts-speed'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup } from '@meteorvoice/shared'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  Card,
+  CardContent,
+} from '@/components/ui/card'
+import {
+  findAccentByKeyOrName,
+  findScenarioByKeyOrName,
+  getAccentLabel,
+  getScenarioLabel,
+  scenarios,
+} from '@/lib/scenarios'
 
 interface HistorySession {
   id: string
@@ -203,7 +233,7 @@ export default function HistoryPage() {
       },
       tasks: {
         deleted: async () => {
-          const res = await fetch(`/api/session?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+          const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
           if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
           return true
         },
@@ -291,6 +321,7 @@ export default function HistoryPage() {
                           onClick={() => void handleDelete(s.id)}
                           disabled={deletingId === s.id}
                           className="text-xs text-[var(--theme-text-muted)] hover:text-[var(--theme-danger)] transition-colors"
+                          aria-label={`${t('history.delete')}: ${scenarioLabel(s)}`}
                           title={t('history.delete')}
                         >
                           {deletingId === s.id ? '...' : '✕'}
@@ -319,7 +350,7 @@ export default function HistoryPage() {
                       ) : (
                         <>
                           <p className="text-xs font-medium text-[var(--theme-text-muted)]">
-                            {t('history.turns_count').replace('{count}', String(turns.length))}
+                            {t('history.turns_count', { count: turns.length })}
                           </p>
                           {turns.map(turn => (
                             <div

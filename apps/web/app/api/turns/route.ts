@@ -1,21 +1,29 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+/**
+ * Conversation turn creation. / 对话轮次创建。
+ */
 import { createTurn } from '@/lib/server/turns'
+import {
+  parseTurnRequest,
+  readJsonRequest,
+} from '@/lib/server/api-input'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+  requireApiUser,
+} from '@/lib/server/http'
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as {
-      session_id: string
-      speaker: string
-      transcript: string
-      corrections?: {
-        type: string
-        originalText: string
-        suggestedText: string
-        explanation: string
-        severity: string
-      }[]
-    }
-    const result = await createTurn(body)
+    const guard = await guardApiRequest(request, { name: 'turns', windowMs: 60_000, maxRequests: 60, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
+    const auth = await requireApiUser()
+    if (auth) return jsonApiResult(auth)
+    const json = await readJsonRequest(request, 64 * 1024)
+    if ('error' in json) return jsonApiResult(json)
+    const body = parseTurnRequest(json.value)
+    if ('error' in body) return jsonApiResult(body)
+    const result = await createTurn(body.value)
     return jsonApiResult(result)
   } catch (e) {
     return jsonServerError(e)

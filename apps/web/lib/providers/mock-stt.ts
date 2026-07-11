@@ -1,4 +1,12 @@
-import type { STTProvider, STTResult } from './types'
+/**
+ * Mock STT provider (fallback).
+ * Mock 语音识别提供者。
+ */
+
+import type {
+  STTProvider,
+  STTResult,
+} from './types'
 
 const mockTranscripts = [
   "I'd like to practice for my upcoming job interview.",
@@ -8,6 +16,10 @@ const mockTranscripts = [
   'Could you help me improve my English pronunciation?',
 ]
 
+/**
+ * Create a mock Speech-to-Text provider returning canned transcripts for development and testing.
+ * 创建返回预设文本的模拟语音识别提供者，用于开发和测试。
+ */
 export function createMockSTT(): STTProvider {
   return {
     async transcribe(audioBlob: Blob, options?: { signal?: AbortSignal }): Promise<STTResult> {

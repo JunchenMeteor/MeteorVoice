@@ -1,10 +1,29 @@
-import { useMemo, useState } from 'react'
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { useTheme } from '../ThemeProvider'
-import { VoiceWaveform, type WaveformMode } from '../components/VoiceWaveform'
-import { BottomSheet } from '../components/BottomSheet'
+/**
+ * Voice practice session screen.
+ * 语音练习会话界面。
+ */
+
+import {
+  useMemo,
+  useState,
+} from 'react'
+import {
+  Dimensions,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
+
 import type { WorkflowSnapshot } from '@meteorvoice/session-core'
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+import type { TranslateFn } from '@meteorvoice/shared'
+
+import type { WaveformMode } from '../components/VoiceWaveform'
+import { BottomSheet } from '../components/BottomSheet'
+import { VoiceWaveform } from '../components/VoiceWaveform'
+import { useTheme } from '../ThemeProvider'
 
 const { width: SW, height: SH } = Dimensions.get('window')
 
@@ -20,34 +39,30 @@ function toWaveformMode(state: WorkflowSnapshot['state'], isActive: boolean): Wa
   }
 }
 
+import { useSession } from '../SessionContext'
+
 interface Props {
-  tr: (key: string) => string
-  snapshot: WorkflowSnapshot
-  messages: ConversationMessage[]
-  corrections: ConversationResponse['corrections']
-  isSessionActive: boolean
-  status: string
-  summary: string | null
-  busy: boolean
+  tr: TranslateFn
   scenarioName: string
   scenarioIcon: string
   scenarioDifficulty: string
   scenarioDescription: string
   accentName: string
   accentRegion: string
-  onStart: () => void
-  onEnd: () => void
-  onPlayCorrection: (text: string) => void
-  onSubmitText: (text: string) => void
 }
 
 export function SessionScreen({
-  tr, snapshot, messages, corrections, isSessionActive, status, summary, busy,
+  tr,
   scenarioName, scenarioIcon, scenarioDifficulty, scenarioDescription,
   accentName, accentRegion,
-  onStart, onEnd, onPlayCorrection, onSubmitText,
 }: Props) {
+  const {
+    snapshot, messages, corrections, isSessionActive, status, summary, busy,
+    startSession, endSession, playCorrection, submitText,
+  } = useSession()
   const { C } = useTheme()
+
+  // ─── State / 状态 ───
   const [sheetOpen, setSheetOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'corrections' | 'transcript'>('corrections')
   const [textDraft, setTextDraft] = useState('')
@@ -59,6 +74,7 @@ export function SessionScreen({
 
   const statusColor = isSessionActive ? C.success : C.textMuted
 
+  // ─── Callbacks / 回调 ───
   function openSheet(tab: 'corrections' | 'transcript') {
     setActiveTab(tab)
     setSheetOpen(true)
@@ -68,10 +84,11 @@ export function SessionScreen({
     const text = textDraft.trim()
     if (!text || busy || !isSessionActive) return
     setTextDraft('')
-    onSubmitText(text)
+    submitText(text)
   }
 
 
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     gradientCircle: {
@@ -160,6 +177,8 @@ export function SessionScreen({
     panelCardTitle: { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
     panelCardMeta: { color: C.textMuted, fontSize: 12 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <View style={styles.shell}>
       <View style={styles.gradientCircle} pointerEvents="none" />
@@ -225,7 +244,7 @@ export function SessionScreen({
         {!isSessionActive ? (
           <View style={styles.startRow}>
             <Pressable
-              onPress={onStart}
+              onPress={startSession}
               disabled={busy}
               style={[styles.startBtn, busy && styles.disabled]}
             >
@@ -257,7 +276,7 @@ export function SessionScreen({
               </Pressable>
             </View>
             <View style={styles.endRow}>
-              <Pressable onPress={onEnd} style={styles.endBtn}>
+              <Pressable onPress={endSession} style={styles.endBtn}>
                 <View style={styles.stopIcon} />
               </Pressable>
             </View>
@@ -268,13 +287,13 @@ export function SessionScreen({
           <Pressable style={styles.panelCard} onPress={() => openSheet('corrections')}>
             <Text style={styles.panelCardTitle}>{tr('session.corrections_tab')}</Text>
             <Text style={styles.panelCardMeta}>
-              {corrections.length === 0 ? tr('session.corrections_empty') : tr('session.corrections_count').replace('{count}', String(corrections.length))}
+              {corrections.length === 0 ? tr('session.corrections_empty') : tr('session.corrections_count', { count: corrections.length })}
             </Text>
           </Pressable>
           <Pressable style={styles.panelCard} onPress={() => openSheet('transcript')}>
             <Text style={styles.panelCardTitle}>{tr('session.transcript_tab')}</Text>
             <Text style={styles.panelCardMeta}>
-              {messages.length === 0 ? tr('session.transcript_empty') : tr('session.transcript_count').replace('{count}', String(messages.length))}
+              {messages.length === 0 ? tr('session.transcript_empty') : tr('session.transcript_count', { count: messages.length })}
             </Text>
           </Pressable>
         </View>
@@ -288,9 +307,8 @@ export function SessionScreen({
         onTabChange={setActiveTab}
         corrections={corrections}
         messages={messages}
-        onPlayCorrection={onPlayCorrection}
+        onPlayCorrection={playCorrection}
       />
     </View>
   )
 }
-

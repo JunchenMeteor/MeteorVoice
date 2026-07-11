@@ -1,4 +1,9 @@
+/**
+ * API request guard, rate limiting, and authentication helpers. / API 请求守卫、限流和鉴权工具。
+ */
 import { NextResponse } from 'next/server'
+import type { User } from '@supabase/supabase-js'
+
 import { createClient } from '@/lib/supabase/server'
 
 export type ApiErrorResult = {
@@ -16,6 +21,12 @@ type GuardOptions = {
 type RateBucket = {
   count: number
   resetAt: number
+}
+
+type RateLimitResult = {
+  allowed: boolean
+  request_count: number
+  reset_at: string
 }
 
 const rateBuckets = new Map<string, RateBucket>()
@@ -43,7 +54,7 @@ export function jsonServerError(error: unknown, fallback = 'Internal server erro
   return NextResponse.json({ error: message }, { status: 500 })
 }
 
-export function guardApiRequest(request: Request, options: GuardOptions): ApiErrorResult | null {
+export async function guardApiRequest(request: Request, options: GuardOptions): Promise<ApiErrorResult | null> {
   const country = request.headers.get('x-vercel-ip-country')?.toUpperCase()
   if (country && getBlockedApiCountries().includes(country)) {
     return { error: 'Request blocked', status: 403 }
@@ -56,31 +67,73 @@ export function guardApiRequest(request: Request, options: GuardOptions): ApiErr
     }
   }
 
-  const now = Date.now()
   const key = `${options.name}:${getRequestIp(request)}`
-  const current = rateBuckets.get(key)
-  if (!current || current.resetAt <= now) {
-    rateBuckets.set(key, { count: 1, resetAt: now + options.windowMs })
-    pruneRateBuckets(now)
-    return null
-  }
-
-  current.count += 1
-  if (current.count > options.maxRequests) {
+  const rateLimit = await checkRateLimit(key, options)
+  if (!rateLimit.allowed) {
     return { error: 'Too many requests', status: 429 }
   }
 
   return null
 }
 
+async function checkRateLimit(key: string, options: GuardOptions) {
+  if (shouldUsePersistentRateLimit()) {
+    const result = await checkPersistentRateLimit(key, options)
+    if (result) return result
+  }
+
+  return checkMemoryRateLimit(key, options)
+}
+
+async function checkPersistentRateLimit(key: string, options: GuardOptions): Promise<{ allowed: boolean } | null> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('check_api_rate_limit', {
+      p_bucket_key: key,
+      p_window_ms: options.windowMs,
+      p_max_requests: options.maxRequests,
+    })
+    if (error) throw error
+
+    const row = Array.isArray(data) ? data[0] as Partial<RateLimitResult> | undefined : null
+    if (typeof row?.allowed !== 'boolean') return null
+    return { allowed: row.allowed }
+  } catch {
+    return null
+  }
+}
+
+function checkMemoryRateLimit(key: string, options: GuardOptions) {
+  const now = Date.now()
+  const current = rateBuckets.get(key)
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + options.windowMs })
+    pruneRateBuckets(now)
+    return { allowed: true }
+  }
+
+  current.count += 1
+  if (current.count > options.maxRequests) {
+    return { allowed: false }
+  }
+
+  return { allowed: true }
+}
+
 export async function requireApiUser(): Promise<ApiErrorResult | null> {
+  const result = await getApiUser()
+  if (isApiErrorResult(result)) return result
+  return null
+}
+
+export async function getApiUser(): Promise<{ user: User } | ApiErrorResult> {
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) {
     return { error: 'Authentication required', status: 401 }
   }
 
-  return null
+  return { user }
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -105,6 +158,10 @@ function getBlockedApiCountries() {
     .split(',')
     .map(country => country.trim().toUpperCase())
     .filter(Boolean)
+}
+
+function shouldUsePersistentRateLimit() {
+  return process.env.API_RATE_LIMIT_STORE === 'supabase'
 }
 
 function getRequestIp(request: Request) {

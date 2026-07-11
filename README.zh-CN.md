@@ -192,8 +192,9 @@ ASR/TTS 服务商密钥（均可选，不填则使用 mock/native 兜底）：
 ASR_PROVIDER=native
 TTS_PROVIDER=mock
 XUNFEI_APP_ID=
+XUNFEI_API_PASSWORD=              # 推荐；仅由服务端通过 x-api-key 请求头发送
 XUNFEI_API_KEY=
-XUNFEI_API_SECRET=
+XUNFEI_API_SECRET=                # 仍兼容 APIKey + APISecret 作为兜底鉴权
 XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # 默认兜底 vcn；具体教练声音在设置页选择
 VOLCENGINE_ACCESS_KEY=
@@ -254,6 +255,18 @@ eas build --platform ios --profile preview
   "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com"
 }
 ```
+
+## 发布管理
+
+生产发布通过 GitHub Actions 的 `Release Manager` workflow 管理：
+
+```text
+GitHub -> Actions -> Release Manager -> Run workflow
+```
+
+选择 `action=full`，输入类似 `1.3.1` 的语义化版本号。workflow 会自动创建 release issue 和 PR，等待检查通过，将 `main` 提升到 `release`，等待腾讯云部署，验证公网 URL，并创建 GitHub Release。
+
+详细操作和中断恢复步骤见 `docs/release-manager.md`。
 
 ## TTS 服务商
 

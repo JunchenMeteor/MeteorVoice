@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { getUserDisplayName, getUserInitial, isInternalAliasEmail } from '@/lib/auth/display'
+import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
+import {
+  getUserDisplayName,
+  getUserInitial,
+  isInternalAliasEmail,
+} from '@/lib/auth/display'
 
 describe('auth display helpers', () => {
   it('prefers display name before username and email', () => {

@@ -1,20 +1,31 @@
+/**
+ * Voice session context provider with turn orchestration.
+ * 语音会话上下文提供者，管理对话轮次编排。
+ */
+
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import {
-  accentProfiles,
-  pickRandomAccent,
-  scenarios,
-  type AccentProfile,
-  type Scenario,
-} from '@/lib/scenarios'
-import { createInitialSnapshot, transition, type WorkflowSnapshot, type WorkflowState } from '@/lib/conversation-workflow'
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
+import type { VoiceActivitySnapshot } from '@meteorvoice/session-core'
+import { displayErrorFeedback } from '@meteorvoice/shared'
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
 import {
   acceptTranscriptTurn,
   canContinueListening as canContinueCurrentTurn,
-  canSampleListeningLevel,
-  canSamplePlaybackLevel,
   completeCoachPlayback,
   createVoiceActivitySnapshot,
   judgeEndpoint,
@@ -24,477 +35,75 @@ import {
   requestCoachReply,
   shouldPauseForRouteExit,
   shouldResumeListeningOnRoute,
-  updateVoiceActivitySnapshot,
-  type VoiceActivitySnapshot,
 } from '@meteorvoice/session-core'
-import { displayErrorFeedback, getTTSSpeedRouting, t as translations } from '@meteorvoice/shared'
-import type { ConversationMessage, ConversationResponse } from '@/lib/providers/types'
-import { createMockTTS } from '@/lib/providers/mock-tts'
-import { browserSTTSupported, createBrowserSTT } from '@/lib/providers/browser-stt'
-import { normalizeTTSSpeed, readTTSSpeedPreference, ttsSpeedChangeEvent, flushPendingPreferences, type TTSSpeed } from '@/lib/tts-speed'
-import { readTTSVoiceIdPreference, ttsVoiceIdChangeEvent, writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
 
-const mockTTS = createMockTTS()
-const activeSessionStorageKey = 'meteorvoice-active-session'
-const voiceSessionStateStorageKey = 'meteorvoice-session-state'
-const postPlaybackListenDelayMs = 900
-const silentAudioUrl = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA=='
-const sessionStatusKeys = [
-  'session.ready',
-  'session.loading_voice',
-  'session.paused',
-  'session.listening',
-  'session.transcribing',
-  'session.thinking',
-  'session.preparing_reply',
-  'session.speaking',
-  'session.playback_blocked',
-  'session.correcting',
-  'session.ended',
-  'session.tap_mic',
-  'session.no_speech',
-  'session.waiting_for_speech',
-  'session.stt_unavailable',
-] as const
-
-type AudioLevelStop = () => void
-
-type AudioLevelSource = {
-  analyser: AnalyserNode
-  audioContext: AudioContext
-  stopSource?: () => void
-  closeOnStop?: boolean
-}
-
-type PlaybackAudioNodes = {
-  audioContext: AudioContext
-  analyser: AnalyserNode
-  source: MediaElementAudioSourceNode
-}
-
-type PendingPlayback = {
-  audioUrl: string
-  onLevel?: (level: number | null) => void
-  speed?: number
-  resolve: () => void
-}
-
-class PlaybackBlockedError extends Error {
-  constructor(readonly audioUrl: string) {
-    super('Audio playback requires a user gesture')
-    this.name = 'PlaybackBlockedError'
-  }
-}
+import type { PersistedVoiceSessionState } from '@/lib/session-persistence'
+import type { TTSSpeed } from '@/lib/tts-speed'
+import type {
+  WorkflowSnapshot,
+  WorkflowState,
+} from '@/lib/conversation-workflow'
+import type {
+  ConversationMessage,
+  ConversationResponse,
+} from '@/lib/providers/types'
+import type {
+  AccentProfile,
+  Scenario,
+} from '@/lib/scenarios'
+import { useListeningEngine } from '@/lib/hooks/use-listening-engine'
+import { usePlaybackEngine } from '@/lib/hooks/use-playback-engine'
+import { useTTSEngine } from '@/lib/hooks/use-tts-engine'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  createInitialSnapshot,
+  transition,
+} from '@/lib/conversation-workflow'
+import {
+  browserSTTSupported,
+  createBrowserSTT,
+} from '@/lib/providers/browser-stt'
+import {
+  getSessionStatusKey,
+  isKnownLocalizedSessionStatus,
+} from '@/lib/session-status'
+import {
+  accentProfiles,
+  pickRandomAccent,
+  scenarios,
+} from '@/lib/scenarios'
+import {
+  readTTSVoiceIdPreference,
+  ttsVoiceIdChangeEvent,
+  writeTTSVoiceIdPreference,
+} from '@/lib/tts-voice'
+import {
+  createClientSessionId,
+  publishActiveSession,
+  readPersistedSessionState,
+  voiceSessionStateStorageKey,
+} from '@/lib/session-persistence'
+import {
+  flushPendingPreferences,
+  normalizeTTSSpeed,
+  readTTSSpeedPreference,
+  ttsSpeedChangeEvent,
+} from '@/lib/tts-speed'
 
 declare global {
   interface Window {
-    webkitAudioContext?: typeof AudioContext
+    __METEORVOICE_E2E_TRANSCRIPT__?: string
   }
 }
 
-interface PersistedVoiceSessionState {
-  scenarioKey: string
-  accentKey: string
-  snapshot: WorkflowSnapshot
-  statusText: string
-  isSessionActive: boolean
-  isRoutePaused: boolean
-  corrections: ConversationResponse['corrections']
-  summary: string | null
-}
-
-function createClientSessionId() {
-  const browserCrypto = globalThis.crypto
-  if (typeof browserCrypto?.randomUUID === 'function') return browserCrypto.randomUUID()
-
-  if (typeof browserCrypto?.getRandomValues === 'function') {
-    const bytes = new Uint8Array(16)
-    browserCrypto.getRandomValues(bytes)
-    bytes[6] = (bytes[6] & 0x0f) | 0x40
-    bytes[8] = (bytes[8] & 0x3f) | 0x80
-    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-  }
-
-  throw new Error('Web Crypto is required to create a voice session id')
-}
-
-function createDefaultPersistedState(): PersistedVoiceSessionState {
-  return {
-    scenarioKey: 'small-talk',
-    accentKey: 'american',
-    snapshot: createInitialSnapshot(createClientSessionId()),
-    statusText: '',
-    isSessionActive: false,
-    isRoutePaused: false,
-    corrections: [],
-    summary: null,
-  }
-}
-
-function readPersistedSessionState(): PersistedVoiceSessionState {
-  if (typeof window === 'undefined') return createDefaultPersistedState()
-
-  try {
-    const raw = sessionStorage.getItem(voiceSessionStateStorageKey)
-    if (!raw) return createDefaultPersistedState()
-    const parsed = JSON.parse(raw) as Partial<PersistedVoiceSessionState>
-    if (!parsed.snapshot?.sessionId) return createDefaultPersistedState()
-
-    return {
-      scenarioKey: parsed.scenarioKey ?? 'small-talk',
-      accentKey: parsed.accentKey ?? 'american',
-      snapshot: parsed.snapshot,
-      statusText: parsed.statusText ?? '',
-      isSessionActive: parsed.isSessionActive === true,
-      isRoutePaused: parsed.isRoutePaused === true,
-      corrections: parsed.corrections ?? [],
-      summary: parsed.summary ?? null,
-    }
-  } catch {
-    return createDefaultPersistedState()
-  }
-}
-
-function publishActiveSession(active: boolean) {
-  if (typeof window === 'undefined') return
-  sessionStorage.setItem(activeSessionStorageKey, active ? 'true' : 'false')
-  window.dispatchEvent(new CustomEvent('meteorvoice-active-session-change', { detail: { active } }))
-}
+/** 教练语音播放完毕后、自动进入下一轮 listening 之前的静默间隔（毫秒） */
+const postPlaybackListenDelayMs = 900
 
 function wait(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
-}
-
-function isKnownLocalizedSessionStatus(statusText: string) {
-  return Object.values(translations).some(localeTable =>
-    sessionStatusKeys.some(key => localeTable[key] === statusText),
-  )
-}
-
-function getSessionStatusKey(input: {
-  activeSession: boolean
-  routePaused: boolean
-  workflowState: WorkflowState
-}) {
-  if (input.routePaused) return 'session.paused'
-  if (input.workflowState === 'session_ended') return 'session.ended'
-  if (!input.activeSession) return 'session.ready'
-
-  switch (input.workflowState) {
-    case 'listening':
-      return 'session.listening'
-    case 'transcribing':
-      return 'session.transcribing'
-    case 'thinking':
-      return 'session.preparing_reply'
-    case 'speaking':
-      return 'session.speaking'
-    case 'correcting':
-      return 'session.correcting'
-    case 'idle':
-      return 'session.tap_mic'
-    default:
-      return 'session.ready'
-  }
-}
-
-function sampleAudioLevel(source: AudioLevelSource, onLevel: (level: number | null) => void): AudioLevelStop {
-  const data = new Uint8Array(source.analyser.fftSize)
-  let frame = 0
-  let stopped = false
-
-  function tick() {
-    if (stopped) return
-    source.analyser.getByteTimeDomainData(data)
-    let sum = 0
-    for (const value of data) {
-      const centered = (value - 128) / 128
-      sum += centered * centered
-    }
-    const rms = Math.sqrt(sum / data.length)
-    onLevel(Math.min(1, rms * 4.2))
-    frame = window.requestAnimationFrame(tick)
-  }
-
-  frame = window.requestAnimationFrame(tick)
-
-  return () => {
-    if (stopped) return
-    stopped = true
-    window.cancelAnimationFrame(frame)
-    source.stopSource?.()
-    onLevel(null)
-    if (source.closeOnStop !== false) {
-      void source.audioContext.close().catch(() => {})
-    }
-  }
-}
-
-async function createMicLevelSampler(onLevel: (level: number | null) => void): Promise<AudioLevelStop | null> {
-  if (!navigator.mediaDevices?.getUserMedia) return null
-
-  try {
-    const permissions = navigator.permissions
-    if (!permissions?.query) return null
-    const status = await permissions.query({ name: 'microphone' as PermissionName })
-    if (status.state !== 'granted') return null
-  } catch {
-    return null
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
-    if (!AudioContextCtor) {
-      stream.getTracks().forEach(track => track.stop())
-      return null
-    }
-
-    const audioContext = new AudioContextCtor()
-    const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 256
-    analyser.smoothingTimeConstant = 0.72
-    const source = audioContext.createMediaStreamSource(stream)
-    source.connect(analyser)
-
-    return sampleAudioLevel({
-      analyser,
-      audioContext,
-      stopSource: () => stream.getTracks().forEach(track => track.stop()),
-    }, onLevel)
-  } catch {
-    onLevel(null)
-    return null
-  }
-}
-
-function getPlaybackLevelSource(
-  audio: HTMLAudioElement,
-  nodesRef: { current: PlaybackAudioNodes | null },
-  onLevel: (level: number | null) => void,
-): AudioLevelSource | null {
-  try {
-    if (!nodesRef.current) {
-      const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
-      if (!AudioContextCtor) return null
-      const audioContext = new AudioContextCtor()
-      const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.7
-      const source = audioContext.createMediaElementSource(audio)
-      source.connect(analyser)
-      analyser.connect(audioContext.destination)
-      nodesRef.current = { audioContext, analyser, source }
-    }
-    void nodesRef.current.audioContext.resume().catch(() => {})
-    return {
-      analyser: nodesRef.current.analyser,
-      audioContext: nodesRef.current.audioContext,
-      closeOnStop: false,
-    }
-  } catch {
-    onLevel(null)
-    return null
-  }
-}
-
-function normalizePlaybackRate(speed?: number) {
-  if (typeof speed !== 'number' || !Number.isFinite(speed)) return 1
-  return Math.min(1.6, Math.max(0.5, speed))
-}
-
-function isCoarsePointerDevice() {
-  if (typeof window === 'undefined') return false
-  return Boolean(window.matchMedia?.('(pointer: coarse)').matches)
-}
-
-function getPlaybackStartDelayMs() {
-  return isCoarsePointerDevice() ? 120 : 0
-}
-
-function writeString(view: DataView, offset: number, value: string) {
-  for (let index = 0; index < value.length; index += 1) {
-    view.setUint8(offset + index, value.charCodeAt(index))
-  }
-}
-
-function encodeWavWithSilence(audioBuffer: AudioBuffer, silenceSeconds: number) {
-  const channels = audioBuffer.numberOfChannels
-  const sampleRate = audioBuffer.sampleRate
-  const silenceFrames = Math.ceil(sampleRate * silenceSeconds)
-  const totalFrames = silenceFrames + audioBuffer.length
-  const bytesPerSample = 2
-  const blockAlign = channels * bytesPerSample
-  const dataSize = totalFrames * blockAlign
-  const buffer = new ArrayBuffer(44 + dataSize)
-  const view = new DataView(buffer)
-
-  writeString(view, 0, 'RIFF')
-  view.setUint32(4, 36 + dataSize, true)
-  writeString(view, 8, 'WAVE')
-  writeString(view, 12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, channels, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * blockAlign, true)
-  view.setUint16(32, blockAlign, true)
-  view.setUint16(34, bytesPerSample * 8, true)
-  writeString(view, 36, 'data')
-  view.setUint32(40, dataSize, true)
-
-  const channelData = Array.from({ length: channels }, (_, index) => audioBuffer.getChannelData(index))
-  let offset = 44
-  for (let frame = 0; frame < totalFrames; frame += 1) {
-    const sourceFrame = frame - silenceFrames
-    for (let channel = 0; channel < channels; channel += 1) {
-      const sample = sourceFrame < 0 ? 0 : channelData[channel][sourceFrame] ?? 0
-      const clamped = Math.max(-1, Math.min(1, sample))
-      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
-      offset += bytesPerSample
-    }
-  }
-
-  return new Blob([buffer], { type: 'audio/wav' })
-}
-
-async function addSilencePreroll(blob: Blob, silenceSeconds: number) {
-  const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext
-  if (!AudioContextCtor) return blob
-
-  const audioContext = new AudioContextCtor()
-  try {
-    const audioBuffer = await audioContext.decodeAudioData(await blob.arrayBuffer())
-    return encodeWavWithSilence(audioBuffer, silenceSeconds)
-  } finally {
-    void audioContext.close().catch(() => {})
-  }
-}
-
-async function createPlayableAudioUrl(audioUrl: string) {
-  if (!audioUrl.startsWith('data:audio/')) return { url: audioUrl, revoke: null as (() => void) | null }
-
-  const response = await fetch(audioUrl)
-  const blob = await response.blob()
-  const playableBlob = isCoarsePointerDevice()
-    ? await addSilencePreroll(blob, 0.18).catch(() => blob)
-    : blob
-  const objectUrl = URL.createObjectURL(playableBlob)
-  return {
-    url: objectUrl,
-    revoke: () => URL.revokeObjectURL(objectUrl),
-  }
-}
-
-function playAudioToEnd(
-  audioUrl: string,
-  options?: {
-    audio?: HTMLAudioElement
-    playbackNodesRef?: { current: PlaybackAudioNodes | null }
-    onLevel?: (level: number | null) => void
-    speed?: number
-  },
-) {
-  return new Promise<void>((resolve, reject) => {
-    const audio = options?.audio ?? new Audio()
-    const playbackRate = normalizePlaybackRate(options?.speed)
-    audio.crossOrigin = 'anonymous'
-    audio.preload = 'auto'
-    audio.playbackRate = playbackRate
-    audio.setAttribute('playsinline', 'true')
-    let settled = false
-    let timeout: number | null = null
-    let startTimeout: number | null = null
-    let stopLevelSampler: AudioLevelStop | null = null
-    let revokePlayableUrl: (() => void) | null = null
-    let playbackStarted = false
-
-    function cleanup() {
-      audio.onended = null
-      audio.onerror = null
-      audio.onloadedmetadata = null
-      audio.onloadeddata = null
-      audio.oncanplay = null
-      stopLevelSampler?.()
-      stopLevelSampler = null
-      if (timeout) {
-        window.clearTimeout(timeout)
-        timeout = null
-      }
-      if (startTimeout) {
-        window.clearTimeout(startTimeout)
-        startTimeout = null
-      }
-      revokePlayableUrl?.()
-      revokePlayableUrl = null
-    }
-
-    function settle(callback: () => void) {
-      if (settled) return
-      settled = true
-      cleanup()
-      callback()
-    }
-
-    function armTimeout(ms: number) {
-      if (timeout) window.clearTimeout(timeout)
-      timeout = window.setTimeout(() => settle(resolve), ms)
-    }
-
-    audio.onloadedmetadata = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        armTimeout((audio.duration * 1000 / playbackRate) + 2000)
-      }
-    }
-    audio.onended = () => settle(resolve)
-    audio.onerror = () => settle(() => reject(new Error('Audio playback failed')))
-
-    function startPlayback() {
-      if (playbackStarted || settled) return
-      playbackStarted = true
-      const delayMs = getPlaybackStartDelayMs()
-      startTimeout = window.setTimeout(() => {
-        startTimeout = null
-        try {
-          audio.currentTime = 0
-        } catch {}
-        audio.play().catch(error => {
-          if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
-            settle(() => reject(new PlaybackBlockedError(audioUrl)))
-            return
-          }
-          settle(() => reject(error))
-        })
-      }, delayMs)
-    }
-
-    audio.onloadeddata = startPlayback
-    audio.oncanplay = startPlayback
-    armTimeout(45000)
-    if (options?.onLevel && options.playbackNodesRef) {
-      const levelSource = getPlaybackLevelSource(audio, options.playbackNodesRef, options.onLevel)
-      if (levelSource) {
-        stopLevelSampler = sampleAudioLevel(levelSource, options.onLevel)
-      }
-    }
-
-    void createPlayableAudioUrl(audioUrl)
-      .then(playable => {
-        if (settled) {
-          playable.revoke?.()
-          return
-        }
-        revokePlayableUrl = playable.revoke
-        audio.src = playable.url
-        audio.load()
-      })
-      .catch(error => {
-        settle(() => reject(error))
-      })
-  })
 }
 
 interface VoiceSessionContextValue {
@@ -522,6 +131,7 @@ interface VoiceSessionContextValue {
 
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null)
 
+/** 获取语音会话上下文的 React Hook */
 export function useVoiceSession() {
   const context = useContext(VoiceSessionContext)
   if (!context) throw new Error('useVoiceSession must be used within VoiceSessionProvider')
@@ -532,6 +142,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const pathname = usePathname()
   const tr = useT()
   const { locale } = useLocale()
+
+  // ─── Session State / 会话状态 ───
   const [initialState] = useState(readPersistedSessionState)
   const [scenarioKey, setScenarioKey] = useState(initialState.scenarioKey)
   const [accent, setAccent] = useState<AccentProfile>(() =>
@@ -549,9 +161,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const [ttsSpeed, setTtsSpeed] = useState<TTSSpeed>(readTTSSpeedPreference)
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(readTTSVoiceIdPreference)
   const [ttsPreferenceLoaded, setTtsPreferenceLoaded] = useState(false)
-  const [voiceLevel, setVoiceLevel] = useState<number | null>(null)
-  const [playbackBlocked, setPlaybackBlocked] = useState(false)
 
+  // ─── Derived Values / 派生值 ───
   const scenario = useMemo(
     () => scenarios.find(s => s.key === scenarioKey) ?? scenarios[0],
     [scenarioKey],
@@ -559,6 +170,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const messages = snapshot.messages
   const isSessionRoute = pathname.startsWith('/session')
 
+  // ─── Refs / 可变引用 ───
   const snapshotRef = useRef(snapshot)
   const scenarioRef = useRef(scenario)
   const accentRef = useRef(accent)
@@ -572,16 +184,51 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
   const abortListeningRef = useRef<AbortController | null>(null)
   const simulateTurnRef = useRef<(turnId: number) => void>(() => {})
   const correctionHistoryRef = useRef<ConversationResponse['corrections']>(initialState.corrections)
-  const stopVoiceLevelRef = useRef<AudioLevelStop | null>(null)
   const voiceActivityRef = useRef<VoiceActivitySnapshot>(createVoiceActivitySnapshot())
-  const voiceLevelRequestRef = useRef(0)
   const listeningStartMsRef = useRef(0)
   const pendingEndpointTranscriptRef = useRef('')
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const playbackNodesRef = useRef<PlaybackAudioNodes | null>(null)
-  const audioUnlockedRef = useRef(false)
-  const pendingPlaybackRef = useRef<PendingPlayback | null>(null)
 
+  // ─── Engine Hooks / 引擎 Hook ───
+  // 播放引擎：audioRef、playbackNodesRef、unlock、blocked playback 等
+  const playback = usePlaybackEngine()
+
+  // 监听引擎：麦克风音量采样、VAD 快照、request 防竞态
+  const listening = useListeningEngine({
+    activeSessionRef,
+    activeTurnRef,
+    canListenOnRouteRef,
+    snapshotRef,
+    voiceActivityRef,
+  })
+  const {
+    playbackBlocked,
+    playBlockedReply,
+    resolvePendingPlayback,
+    unlockSessionAudio,
+  } = playback
+  const {
+    setVoiceLevel,
+    startListeningLevelSampling,
+    stopVoiceLevelSampling,
+    voiceLevel,
+  } = listening
+
+  // TTS 引擎：文本合成、播放、错误恢复、mock 降级
+  const tts = useTTSEngine({
+    playback,
+    setVoiceLevel,
+    ttsProviderRef,
+    ttsSpeedRef,
+    ttsVoiceIdRef,
+    activeSessionRef,
+    activeTurnRef,
+    canListenOnRouteRef,
+    snapshotRef,
+    setStatusText,
+    tr,
+  })
+
+  // ─── Ref Sync / 引用同步 ───
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
@@ -606,6 +253,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     ttsVoiceIdRef.current = ttsVoiceId
   }, [ttsVoiceId])
 
+  // ─── TTS Pref Sync / TTS 偏好同步 ───
   useEffect(() => {
     const syncSpeedPreference = () => setTtsSpeed(readTTSSpeedPreference())
 
@@ -668,6 +316,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
       .finally(() => setTtsPreferenceLoaded(true))
   }, [])
 
+  // ─── Session Lifecycle / 会话生命周期 ───
   useEffect(() => {
     publishActiveSession(isSessionActive)
     return () => publishActiveSession(false)
@@ -692,6 +341,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     })
   }, [tr])
 
+  // ─── Session Persistence / 会话持久化 ───
   useEffect(() => {
     correctionHistoryRef.current = corrections
   }, [corrections])
@@ -715,6 +365,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     sessionStorage.setItem(voiceSessionStateStorageKey, JSON.stringify(state))
   }, [accent.key, corrections, isRoutePaused, isSessionActive, scenario.key, snapshot, statusText, summary])
 
+  // ─── Workflow Helpers / 工作流辅助 ───
   const updateSnapshot = useCallback((updater: (current: WorkflowSnapshot) => WorkflowSnapshot) => {
     const next = updater(snapshotRef.current)
     snapshotRef.current = next
@@ -725,140 +376,8 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     updateSnapshot(prev => transition(prev, to, { ...patch }))
   }, [updateSnapshot])
 
-  const stopVoiceLevelSampling = useCallback(() => {
-    voiceLevelRequestRef.current += 1
-    stopVoiceLevelRef.current?.()
-    stopVoiceLevelRef.current = null
-    voiceActivityRef.current = createVoiceActivitySnapshot()
-    setVoiceLevel(null)
-  }, [])
-
-  const getSessionAudio = useCallback(() => {
-    if (!audioRef.current) {
-      const audio = new Audio()
-      audio.crossOrigin = 'anonymous'
-      audio.preload = 'auto'
-      audio.setAttribute('playsinline', 'true')
-      audioRef.current = audio
-    }
-    return audioRef.current
-  }, [])
-
-  const unlockSessionAudio = useCallback(() => {
-    if (audioUnlockedRef.current) return
-    const audio = getSessionAudio()
-    audio.muted = true
-    audio.src = silentAudioUrl
-    audio.load()
-    const levelSource = getPlaybackLevelSource(audio, playbackNodesRef, () => {})
-    if (levelSource) {
-      void levelSource.audioContext.resume().catch(() => {})
-    }
-    void audio.play()
-      .then(() => {
-        audio.pause()
-        audio.currentTime = 0
-        audio.muted = false
-        audioUnlockedRef.current = true
-        if (playbackNodesRef.current) {
-          void playbackNodesRef.current.audioContext.resume().catch(() => {})
-        }
-      })
-      .catch(() => {
-        audio.muted = false
-        audioUnlockedRef.current = false
-      })
-  }, [getSessionAudio])
-
-  const resolvePendingPlayback = useCallback(() => {
-    pendingPlaybackRef.current?.resolve()
-    pendingPlaybackRef.current = null
-    setPlaybackBlocked(false)
-  }, [])
-
-  const closePlaybackAudioContext = useCallback(() => {
-    const playbackNodes = playbackNodesRef.current
-    playbackNodesRef.current = null
-    if (playbackNodes) {
-      void playbackNodes.audioContext.close().catch(() => {})
-    }
-  }, [])
-
-  const waitForBlockedPlayback = useCallback((
-    audioUrl: string,
-    onLevel?: (level: number | null) => void,
-    speed?: number,
-  ) => {
-    setPlaybackBlocked(true)
-    return new Promise<void>(resolve => {
-      pendingPlaybackRef.current = { audioUrl, onLevel, speed, resolve }
-    })
-  }, [])
-
-  const playBlockedReply = useCallback(() => {
-    const pending = pendingPlaybackRef.current
-    if (!pending) return
-    setPlaybackBlocked(false)
-    void playAudioToEnd(pending.audioUrl, {
-      audio: getSessionAudio(),
-      playbackNodesRef,
-      onLevel: pending.onLevel,
-      speed: pending.speed,
-    })
-      .then(resolvePendingPlayback)
-      .catch(error => {
-        if (error instanceof PlaybackBlockedError) {
-          setPlaybackBlocked(true)
-          return
-        }
-        resolvePendingPlayback()
-      })
-  }, [getSessionAudio, resolvePendingPlayback])
-
-  const startListeningLevelSampling = useCallback((turnId: number) => {
-    stopVoiceLevelSampling()
-    const requestId = voiceLevelRequestRef.current
-    void createMicLevelSampler(level => {
-      if (
-        canSampleListeningLevel({
-          activeSession: activeSessionRef.current,
-          activeTurnId: activeTurnRef.current,
-          currentTurnId: turnId,
-          canListenOnRoute: canListenOnRouteRef.current,
-          workflowState: snapshotRef.current.state,
-        })
-      ) {
-        voiceActivityRef.current = updateVoiceActivitySnapshot(voiceActivityRef.current, { level })
-        setVoiceLevel(level)
-      }
-    }).then(stop => {
-      if (!stop) return
-      if (
-        voiceLevelRequestRef.current !== requestId ||
-        !canSampleListeningLevel({
-          activeSession: activeSessionRef.current,
-          activeTurnId: activeTurnRef.current,
-          currentTurnId: turnId,
-          canListenOnRoute: canListenOnRouteRef.current,
-          workflowState: snapshotRef.current.state,
-        })
-      ) {
-        stop()
-        return
-      }
-      stopVoiceLevelRef.current = stop
-    })
-  }, [stopVoiceLevelSampling])
-
-  useEffect(() => {
-    return () => {
-      stopVoiceLevelSampling()
-      resolvePendingPlayback()
-      audioRef.current?.pause()
-      closePlaybackAudioContext()
-    }
-  }, [closePlaybackAudioContext, resolvePendingPlayback, stopVoiceLevelSampling])
-
+  // ─── Turn Control / 轮次控制 ───
+  /** 中止当前 turn：abort STT、递增 turnId、停止音量采样、释放播放锁 */
   const cancelCurrentTurn = useCallback(() => {
     abortListeningRef.current?.abort()
     abortListeningRef.current = null
@@ -887,63 +406,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     return next
   }, [])
 
-  const speakText = useCallback(async (text: string, accentName: string) => {
-    const updatePlaybackLevel = (level: number | null) => {
-      if (canSamplePlaybackLevel({
-        activeSession: activeSessionRef.current,
-        activeTurnId: activeTurnRef.current,
-        currentTurnId: activeTurnRef.current,
-        canListenOnRoute: canListenOnRouteRef.current,
-        workflowState: snapshotRef.current.state,
-      })) {
-        setVoiceLevel(level)
-      }
-    }
-
-    try {
-      const provider = ttsProviderRef.current
-      const speed = ttsSpeedRef.current
-      if (provider === 'mock') {
-        setVoiceLevel(null)
-        await mockTTS.synthesize(text, { accent: accentName, speed })
-        return
-      }
-      const playTTS = async (speechText: string) => {
-        const speedRouting = getTTSSpeedRouting(provider, speed)
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-web' },
-          body: JSON.stringify({ text: speechText, accent: accentName, provider, speed: speedRouting.serverSpeed, voiceId: ttsVoiceIdRef.current }),
-        })
-        const result = await readApiJsonResponse<{ audioUrl?: string }>(res, 'TTS request failed')
-        if (!result.audioUrl) throw new Error('TTS response did not include audioUrl')
-
-        try {
-          await playAudioToEnd(result.audioUrl, {
-            audio: getSessionAudio(),
-            playbackNodesRef,
-            onLevel: updatePlaybackLevel,
-            speed: speedRouting.playbackRate,
-          })
-        } catch (error) {
-          if (error instanceof PlaybackBlockedError) {
-            setStatusText(tr('session.playback_blocked'))
-            await waitForBlockedPlayback(error.audioUrl, updatePlaybackLevel, speedRouting.playbackRate)
-            return
-          }
-          throw error
-        }
-      }
-
-      await playTTS(text)
-    } catch {
-      setVoiceLevel(null)
-      await mockTTS.synthesize(text, { accent: accentName, speed: ttsSpeedRef.current })
-    } finally {
-      setVoiceLevel(null)
-    }
-  }, [getSessionAudio, tr, waitForBlockedPlayback])
-
+  // ─── Session Management / 会话管理 ───
   const startNextTurn = useCallback(() => {
     if (!activeSessionRef.current || !canListenOnRouteRef.current) return
     const nextTurnId = activeTurnRef.current + 1
@@ -1087,10 +550,12 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     startNextTurn()
   }, [startNextTurn, tr, unlockSessionAudio])
 
+  /** 用 TTS 引擎朗读纠错文本 */
   const playCorrection = useCallback((text: string) => {
-    void speakText(text, accentRef.current.name)
-  }, [speakText])
+    void tts.speakText(text, accentRef.current.name)
+  }, [tts])
 
+  // ─── Turn Orchestration / 轮次编排 ───
   async function simulateTurn(turnId: number) {
     const isCurrentTurn = () => activeSessionRef.current && activeTurnRef.current === turnId
     const canContinueListening = () => canContinueCurrentTurn({
@@ -1115,7 +580,13 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     abortListeningRef.current = abortController
 
     let transcript: string
-    if (browserSTTSupported()) {
+    const e2eTranscript = process.env.NODE_ENV !== 'production'
+      ? window.__METEORVOICE_E2E_TRANSCRIPT__?.trim()
+      : undefined
+    if (e2eTranscript) {
+      transcript = e2eTranscript
+      window.__METEORVOICE_E2E_TRANSCRIPT__ = undefined
+    } else if (browserSTTSupported()) {
       try {
         startListeningLevelSampling(turnId)
         const browserSTT = createBrowserSTT()
@@ -1259,7 +730,7 @@ export default function VoiceSessionProvider({ children }: { children: ReactNode
     snapshotRef.current = coachTurn.snapshot
     setSnapshot(coachTurn.snapshot)
     setVoiceLevel(null)
-    await speakText(response.text, newAccent.name)
+    await tts.speakText(response.text, newAccent.name)
     await wait(postPlaybackListenDelayMs)
     if (!isCurrentTurn()) return
 

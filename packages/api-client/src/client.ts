@@ -1,3 +1,7 @@
+/**
+ * Typed HTTP API client with exponential backoff retry.
+ * 类型化 HTTP API 客户端（指数退避重试）。
+ */
 import type {
   ApiClientOptions,
   ApiErrorBody,
@@ -9,6 +13,7 @@ import type {
   CreateSessionResponse,
   CreateTurnRequest,
   CreateTurnResponse,
+  DeleteSessionResponse,
   GenerateCoachReplyRequest,
   GenerateCoachReplyResponse,
   GenerateSummaryRequest,
@@ -58,6 +63,8 @@ export class MeteorVoiceApiClient {
   private readonly headers?: ApiHeadersProvider
   private readonly onUnauthorized?: ApiUnauthorizedHandler
   private readonly timeoutMs: number
+  private readonly maxRetries: number
+  private readonly retryBaseDelayMs: number
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
@@ -65,6 +72,8 @@ export class MeteorVoiceApiClient {
     this.headers = options.headers
     this.onUnauthorized = options.onUnauthorized
     this.timeoutMs = options.timeoutMs ?? defaultRequestTimeoutMs
+    this.maxRetries = options.maxRetries ?? 2
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500
   }
 
   getPreferences() {
@@ -152,6 +161,12 @@ export class MeteorVoiceApiClient {
     return this.request<ListSessionTurnsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/turns`)
   }
 
+  deleteSession(sessionId: string) {
+    return this.request<DeleteSessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
+  }
+
   createTurn(input: CreateTurnRequest) {
     return this.request<CreateTurnResponse>('/api/turns', {
       method: 'POST',
@@ -168,22 +183,45 @@ export class MeteorVoiceApiClient {
       headers.set('Content-Type', 'application/json')
     }
 
-    const response = await fetchWithTimeout(this.fetchImpl, this.toUrl(path), {
+    const fetchInit: RequestInit = {
       method: init.method,
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    }, this.timeoutMs)
-    const body = await readJson(response)
-
-    if (!response.ok) {
-      const message = isApiErrorBody(body) ? body.error : `Request failed with status ${response.status}`
-      if (response.status === 401) {
-        await this.onUnauthorized?.()
-      }
-      throw new MeteorVoiceApiError(message, response.status, body)
     }
 
-    return body as T
+    let lastError: unknown
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await fetchWithTimeout(this.fetchImpl, this.toUrl(path), fetchInit, this.timeoutMs)
+        const body = await readJson(response)
+
+        if (!response.ok) {
+          const message = isApiErrorBody(body) ? body.error : `Request failed with status ${response.status}`
+          if (response.status === 401) {
+            await this.onUnauthorized?.()
+          }
+          const error = new MeteorVoiceApiError(message, response.status, body)
+          if (attempt < this.maxRetries && isRetryableStatus(response.status)) {
+            lastError = error
+            await retryDelay(this.retryBaseDelayMs, attempt)
+            continue
+          }
+          throw error
+        }
+
+        return body as T
+      } catch (error) {
+        if (error instanceof MeteorVoiceApiError) throw error
+        if (attempt < this.maxRetries && isRetryableError(error)) {
+          lastError = error
+          await retryDelay(this.retryBaseDelayMs, attempt)
+          continue
+        }
+        throw error
+      }
+    }
+
+    throw lastError
   }
 
   private toUrl(path: string) {
@@ -196,10 +234,18 @@ export class MeteorVoiceApiClient {
   }
 }
 
+/**
+ * Creates a new MeteorVoice API client instance configured with the given options.
+ * 创建一个使用给定选项配置的 MeteorVoice API 客户端实例。
+ */
 export function createMeteorVoiceApiClient(options?: ApiClientOptions) {
   return new MeteorVoiceApiClient(options)
 }
 
+/**
+ * Fetches a resource with an abort-controller timeout, throwing MeteorVoiceApiTimeoutError on timeout or abort.
+ * 使用 AbortController 超时机制进行 fetch 请求，超时或中止时抛出 MeteorVoiceApiTimeoutError。
+ */
 export async function fetchWithTimeout(
   fetchImpl: typeof fetch,
   input: RequestInfo | URL,
@@ -251,4 +297,19 @@ function isApiErrorBody(value: unknown): value is ApiErrorBody {
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
+}
+
+function isRetryableStatus(status: number) {
+  return status === 429 || status === 502 || status === 503 || status === 504
+}
+
+function isRetryableError(error: unknown) {
+  if (error instanceof MeteorVoiceApiTimeoutError) return true
+  if (error instanceof TypeError) return true
+  return false
+}
+
+function retryDelay(baseDelayMs: number, attempt: number) {
+  const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * baseDelayMs
+  return new Promise<void>(resolve => setTimeout(resolve, delay))
 }

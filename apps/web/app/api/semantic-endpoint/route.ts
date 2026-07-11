@@ -1,5 +1,13 @@
-import { guardApiRequest, jsonApiResult, jsonServerError, requireApiUser } from '@/lib/server/http'
+/**
+ * Semantic endpoint health check. / 语义端点健康检查。
+ */
 import { createSemanticEndpointCheck } from '@/lib/server/semantic-endpoint'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+  requireApiUser,
+} from '@/lib/server/http'
 
 const MAX_TRANSCRIPT_LENGTH = 2000
 const MAX_MESSAGES = 8
@@ -28,7 +36,7 @@ async function getCheck() {
 
 export async function POST(request: Request) {
   try {
-    const guard = guardApiRequest(request, { name: 'semantic_endpoint', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    const guard = await guardApiRequest(request, { name: 'semantic_endpoint', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
     if (guard) return jsonApiResult(guard)
     const auth = await requireApiUser()
     if (auth) return jsonApiResult(auth)

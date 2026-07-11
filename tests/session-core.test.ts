@@ -1,20 +1,32 @@
-import { describe, expect, it } from 'vitest'
 import {
+  describe,
+  expect,
+  it,
+} from 'vitest'
+
+import { splitSpokenText } from '@meteorvoice/shared'
+import {
+  acceptTranscriptTurn,
+  advancePlaybackQueue,
   canAcceptUserTranscript,
   canContinueListening,
   canEndSession,
-  containsChineseText,
-  acceptTranscriptTurn,
-  advancePlaybackQueue,
+  canSampleListeningLevel,
+  canSamplePlaybackLevel,
   completeCoachPlayback,
+  containsChineseText,
   continueListening,
   createPlaybackQueueSnapshot,
   createVoiceActivitySnapshot,
+  DEFAULT_PLAYBACK_COOLDOWN_MS,
   DEFAULT_SILENCE_FINALIZE_MS,
   endActiveSession,
   endsWithThinkingFiller,
   FINAL_RESULT_SILENCE_FINALIZE_MS,
   FILLER_GRACE_FINALIZE_MS,
+  gateUserTranscript,
+  getNextSessionAction,
+  getPlaybackCompletionEffects,
   getSilenceFinalizeDelay,
   getSpeechEndpointDelay,
   getVoiceActivityHoldDelay,
@@ -23,20 +35,14 @@ import {
   MAX_VOICE_ACTIVITY_ENDPOINT_HOLD_MS,
   MIN_VOICE_ACTIVITY_LEVEL,
   MIXED_LANGUAGE_GRACE_FINALIZE_MS,
-  canSampleListeningLevel,
-  canSamplePlaybackLevel,
-  DEFAULT_PLAYBACK_COOLDOWN_MS,
-  gateUserTranscript,
-  getNextSessionAction,
-  getPlaybackCompletionEffects,
+  normalizeEchoText,
   pauseSessionForRoute,
   receiveCoachReply,
-  normalizeEchoText,
   recoverSessionError,
   requestCoachReply,
   shouldBlockUserInputDuringPlayback,
-  shouldIgnoreNoSpeech,
   shouldIgnoreLikelyPlaybackEcho,
+  shouldIgnoreNoSpeech,
   shouldPauseForRouteExit,
   shouldRestoreListeningAfterPlayback,
   shouldResumeListeningOnRoute,
@@ -46,7 +52,6 @@ import {
   VOICE_ACTIVITY_PEAK_RATIO,
   VOICE_ACTIVITY_PEAK_SMOOTHING,
 } from '@meteorvoice/session-core'
-import { splitSpokenText } from '@meteorvoice/shared'
 
 describe('session-core turn guard helpers', () => {
   it('allows a current active turn to continue listening on route', () => {

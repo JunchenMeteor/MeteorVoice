@@ -1,3 +1,7 @@
+/**
+ * Turn history operations. / 对话轮次操作。
+ */
+import type { TablesInsert } from '@/lib/supabase/database.types'
 import { createClient } from '@/lib/supabase/server'
 
 export async function createTurn(input: {
@@ -123,7 +127,7 @@ export async function saveSessionSummary(input: { userSummary: string; sessionId
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: true }
 
-  const payload: Record<string, string> = {
+  const payload: TablesInsert<'learning_history'> = {
     user_id: user.id,
     summary: input.userSummary,
   }

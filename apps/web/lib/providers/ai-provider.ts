@@ -1,6 +1,24 @@
-import { generateText } from 'ai'
+/**
+ * AI coach provider (DeepSeek via Vercel AI SDK).
+ * AI 教练提供者（DeepSeek + Vercel AI SDK）。
+ */
+
 import { createDeepSeek } from '@ai-sdk/deepseek'
-import type { AIProvider, ConversationMessage, ConversationContext, ConversationResponse } from './types'
+import { generateText } from 'ai'
+
+import type {
+  AIProvider,
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+} from './types'
+
+export class AIProviderUnavailableError extends Error {
+  constructor(message = 'AI provider unavailable') {
+    super(message)
+    this.name = 'AIProviderUnavailableError'
+  }
+}
 
 function responseLanguageInstruction(context: ConversationContext) {
   if (context.responseLocale === 'zh') {
@@ -79,15 +97,21 @@ function getDeepSeek() {
   })
 }
 
+/**
+ * Create an AI conversation coach provider backed by DeepSeek, with automatic fallback to mock AI.
+ * 创建基于 DeepSeek 的 AI 对话教练提供者；仅在非生产环境回退到模拟 AI。
+ */
 export function createAICoach(): AIProvider {
+  const explicitMock = process.env.AI_PROVIDER === 'mock'
   const deepseek = getDeepSeek()
 
   return {
     async generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse> {
-      if (!deepseek) {
+      if (explicitMock || (!deepseek && process.env.NODE_ENV !== 'production')) {
         const { createMockAI } = await import('./mock-ai')
         return createMockAI().generateReply(messages, context)
       }
+      if (!deepseek) throw new AIProviderUnavailableError('DeepSeek API key is not configured')
 
       try {
         const allowLongReply = userAskedForDetail(messages)
@@ -107,7 +131,11 @@ export function createAICoach(): AIProvider {
           suggestedReply: parsed.suggestedReply || text,
         }
       } catch (err) {
-        console.error('DeepSeek API call failed, falling back to mock:', err)
+        if (err instanceof AIProviderUnavailableError) throw err
+        console.error('DeepSeek API call failed:', err)
+        if (process.env.NODE_ENV === 'production') {
+          throw new AIProviderUnavailableError('DeepSeek request failed')
+        }
         const { createMockAI } = await import('./mock-ai')
         return createMockAI().generateReply(messages, context)
       }

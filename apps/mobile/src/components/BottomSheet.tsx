@@ -1,12 +1,30 @@
+/**
+ * Bottom sheet with tabs for corrections and transcript.
+ * 底部弹窗（纠错/转录标签页）。
+ */
+
 import { useMemo } from 'react'
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
+import type {
+  ConversationMessage,
+  ConversationResponse,
+  TranslateFn,
+} from '@meteorvoice/shared'
+
 import { useTheme } from '../ThemeProvider'
-import type { ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
 
 type Tab = 'corrections' | 'transcript'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   visible: boolean
   onClose: () => void
   activeTab: Tab
@@ -112,4 +130,3 @@ export function BottomSheet({ tr, visible, onClose, activeTab, onTabChange, corr
     </Modal>
   )
 }
-

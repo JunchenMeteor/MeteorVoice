@@ -1,21 +1,45 @@
-import { useMemo, useState } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+/**
+ * Session history and review screen.
+ * 会话历史记录界面。
+ */
+
+import {
+  useMemo,
+} from 'react'
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
+import type {
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
+import type {
+  HistorySession,
+  MeteorVoiceApiClient,
+} from '@meteorvoice/api-client'
+import {
+  accentProfiles,
+  getAccentLabel,
+  getScenarioLabel,
+  scenarios,
+} from '@meteorvoice/shared'
+
+import { useHistoryScreenState } from '../hooks/useHistoryScreenState'
 import { useTheme } from '../ThemeProvider'
-import type { HistorySession, SessionTurnDto } from '@meteorvoice/api-client'
-import { scenarios, accentProfiles, getScenarioLabel, getAccentLabel } from '@meteorvoice/shared'
-import type { Locale } from '@meteorvoice/shared'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
-  sessions: HistorySession[]
-  loading: boolean
-  error: string | null
-  selectedHistory: HistorySession | null
-  selectedTurns: SessionTurnDto[]
-  onLoad: () => void
-  onSelect: (item: HistorySession) => void
-  onDelete: (id: string) => void
+  api: MeteorVoiceApiClient
+  getAuthHeaders: () => Promise<HeadersInit>
+  handleUnauthorized: () => void
+  defaultApiBaseUrl: string
 }
 
 function scenarioLabel(entry: HistorySession, locale: Locale) {
@@ -28,29 +52,23 @@ function accentLabel(entry: HistorySession, locale: Locale) {
   return a ? getAccentLabel(a, locale) : entry.accent
 }
 
-export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHistory, selectedTurns, onLoad, onSelect, onDelete }: Props) {
+export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
   const { C } = useTheme()
-  const [expandedId, setExpandedId] = useState<string | number | null>(null)
-  const [filterScenario, setFilterScenario] = useState<string | null>(null)
+  const {
+    deleteSession,
+    error,
+    expandedId,
+    filtered,
+    filterScenario,
+    loadHistory,
+    loading,
+    selectedHistory,
+    selectedTurns,
+    setFilterScenario,
+    toggle,
+  } = useHistoryScreenState({ api, handleUnauthorized })
 
-  function toggle(id: string | number) {
-    if (expandedId === id) {
-      setExpandedId(null)
-    } else {
-      setExpandedId(id)
-      onSelect(sessions.find(s => s.id === id)!)
-    }
-  }
-
-  function handleDelete(id: string) {
-    onDelete(id)
-  }
-
-  const filtered = filterScenario
-    ? sessions.filter(s => s.scenario_key === filterScenario || s.scenario === filterScenario)
-    : sessions
-
-
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     header: {
@@ -114,11 +132,13 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
     correctionSuggested: { color: C.success },
     correctionExplanation: { color: C.textMuted, fontSize: 11, lineHeight: 16 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <View style={styles.shell}>
       <View style={styles.header}>
         <Text style={styles.title}>{tr('history.title')}</Text>
-        <Pressable onPress={onLoad} style={styles.loadBtn} disabled={loading}>
+        <Pressable onPress={loadHistory} style={styles.loadBtn} disabled={loading}>
           <Text style={styles.loadTxt}>{loading ? tr('history.loading') : tr('nav.history') || 'Refresh'}</Text>
         </Pressable>
       </View>
@@ -165,7 +185,7 @@ export function HistoryScreen({ tr, locale, sessions, loading, error, selectedHi
                       <Text style={styles.statusTxt}>{tr(`history.status.${item.status}`) || item.status}</Text>
                     </View>
                     {!isDeleted && (
-                      <Pressable onPress={() => handleDelete(item.id)} style={styles.deleteBtn} hitSlop={8}>
+                      <Pressable onPress={() => deleteSession(item.id)} style={styles.deleteBtn} hitSlop={8}>
                         <Text style={styles.deleteTxt}>✕</Text>
                       </Pressable>
                     )}

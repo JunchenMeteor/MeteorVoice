@@ -192,8 +192,9 @@ ASR/TTS provider keys (all optional — mock/native fallback works without them)
 ASR_PROVIDER=native
 TTS_PROVIDER=mock
 XUNFEI_APP_ID=
+XUNFEI_API_PASSWORD=              # preferred; sent as the server-side x-api-key header
 XUNFEI_API_KEY=
-XUNFEI_API_SECRET=
+XUNFEI_API_SECRET=                # APIKey + APISecret remain supported as a fallback
 XUNFEI_ASR_PRODUCT=zh_iat
 XUNFEI_TTS_VOICE=                 # default fallback vcn; coach voice is selectable in Settings
 VOLCENGINE_ACCESS_KEY=
@@ -254,6 +255,18 @@ Set the API base URL in `apps/mobile/app.json`:
   "apiBaseUrlPreview": "https://mv-pre.jcmeteor.com"
 }
 ```
+
+## Release Management
+
+Production releases are managed by the GitHub Actions `Release Manager` workflow:
+
+```text
+GitHub -> Actions -> Release Manager -> Run workflow
+```
+
+Use `action=full` with a semantic version such as `1.3.1`. The workflow creates the release issue and PRs, waits for checks, promotes `main` to `release`, waits for Tencent deployment, verifies public URLs, and creates the GitHub Release.
+
+Detailed operation and recovery steps live in `docs/release-manager.md`.
 
 ## TTS Providers
 

@@ -1,7 +1,26 @@
 'use client'
 
+/**
+ * Session page client component.
+ * 会话页面客户端组件。
+ */
+
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+
+import type { VoiceWaveformMode } from './VoiceWaveform'
+import type { ConversationResponse } from '@/lib/providers/types'
+import { VoiceWaveform } from './VoiceWaveform'
+import { Button } from '@/components/ui/button'
+import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
 import {
   getAccentLabel,
   getAccentRegion,
@@ -9,11 +28,6 @@ import {
   getScenarioDescription,
   getScenarioLabel,
 } from '@/lib/scenarios'
-import type { ConversationResponse } from '@/lib/providers/types'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { useVoiceSession } from '@/components/VoiceSessionProvider'
-import { Button } from '@/components/ui/button'
-import { VoiceWaveform, type VoiceWaveformMode } from './VoiceWaveform'
 
 type SidePanelTab = 'corrections' | 'transcript'
 
@@ -109,10 +123,10 @@ export function SessionPageClient() {
     }`
   const correctionSummary = corrections.length === 0
     ? tr('session.corrections_empty')
-    : tr('session.corrections_count').replace('{count}', String(corrections.length))
+    : tr('session.corrections_count', { count: corrections.length })
   const transcriptSummary = messages.length === 0
     ? tr('session.transcript_empty')
-    : tr('session.transcript_count').replace('{count}', String(messages.length))
+    : tr('session.transcript_count', { count: messages.length })
 
   function openMobilePanel(tab: SidePanelTab) {
     setActiveTab(tab)
@@ -220,7 +234,7 @@ export function SessionPageClient() {
 
         <div className="relative z-10 mt-3 flex items-center gap-2 pr-14">
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: statusColor }} />
-          <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]">{statusText}</span>
+          <span className="min-w-0 truncate text-xs text-[var(--theme-text-secondary)]" aria-live="polite">{statusText}</span>
           {interrupted && (
             <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
           )}
@@ -343,13 +357,16 @@ export function SessionPageClient() {
               aria-label={tr('session.close_panel')}
             />
             <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="session-mobile-panel-title"
               className="fixed inset-x-0 bottom-0 z-40 flex max-h-[78dvh] min-h-[45dvh] flex-col rounded-t-2xl border-t p-4 shadow-2xl"
               style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-bg-card)' }}
             >
-              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--theme-border)]" />
+              <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--theme-border)]" aria-hidden="true" />
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-[var(--theme-text-primary)]">
+                  <h2 id="session-mobile-panel-title" className="text-sm font-semibold text-[var(--theme-text-primary)]">
                     {activeTab === 'corrections' ? tr('session.correction_tips') : tr('session.transcript')}
                   </h2>
                   <p className="text-xs text-[var(--theme-text-muted)]">
@@ -398,8 +415,9 @@ export function SessionPageClient() {
             <span
               className="w-2 h-2 rounded-full shrink-0"
               style={{ background: statusColor }}
+              aria-hidden="true"
             />
-            <span className="text-sm text-[var(--theme-text-secondary)]">{statusText}</span>
+            <span className="text-sm text-[var(--theme-text-secondary)]" aria-live="polite">{statusText}</span>
             {interrupted && (
               <span className="status-badge warning text-xs">{tr('session.interrupted')}</span>
             )}

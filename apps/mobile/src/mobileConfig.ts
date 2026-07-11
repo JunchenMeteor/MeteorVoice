@@ -1,3 +1,8 @@
+/**
+ * Mobile app configuration (API URL, version).
+ * 移动端应用配置。
+ */
+
 import Constants from 'expo-constants'
 import { Platform } from 'react-native'
 

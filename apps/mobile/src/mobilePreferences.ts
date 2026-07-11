@@ -1,5 +1,11 @@
-import { createMeteorVoiceApiClient, type PreferencesResponse } from '@meteorvoice/api-client'
+/**
+ * Mobile preferences sync utilities.
+ * 移动端偏好同步工具。
+ */
+
+import type { PreferencesResponse } from '@meteorvoice/api-client'
 import type { VoiceProfile } from '@meteorvoice/shared'
+import { createMeteorVoiceApiClient } from '@meteorvoice/api-client'
 
 export type XunfeiVoice = {
   id: string

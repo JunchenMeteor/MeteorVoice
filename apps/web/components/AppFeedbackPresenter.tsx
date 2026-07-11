@@ -1,7 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { appFeedback, hideAppFeedback, type AppFeedbackState } from '@meteorvoice/shared'
+/**
+ * App feedback overlay presenter.
+ * 应用反馈遮罩展示器。
+ */
+
+import {
+  useEffect,
+  useState,
+} from 'react'
+
+import type { AppFeedbackState } from '@meteorvoice/shared'
+import {
+  appFeedback,
+  hideAppFeedback,
+} from '@meteorvoice/shared'
 
 export default function AppFeedbackPresenter() {
   const [feedback, setFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())

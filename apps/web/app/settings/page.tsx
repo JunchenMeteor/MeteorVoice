@@ -1,13 +1,52 @@
 'use client'
 
-import { useTheme, themes } from '@/components/ThemeProvider'
-import { useLocale, useT } from '@/components/LanguageProvider'
-import { readTTSSpeedPreference, ttsSpeedOptions, writeTTSSpeedPreference, type TTSSpeed } from '@/lib/tts-speed'
+/**
+ * Settings page.
+ * 设置页面。
+ */
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
+
+import type {
+  Locale,
+  VoiceProfile,
+} from '@meteorvoice/shared'
+import {
+  formatApiRequestError,
+  readApiJsonResponse,
+} from '@meteorvoice/api-client'
+import {
+  displayErrorFeedback,
+  hideAppFeedback,
+  runAppOperationGroup,
+} from '@meteorvoice/shared'
+
+import type { TTSSpeed } from '@/lib/tts-speed'
 import { writeTTSVoiceIdPreference } from '@/lib/tts-voice'
-import { displayErrorFeedback, hideAppFeedback, runAppOperationGroup, type Locale, type VoiceProfile } from '@meteorvoice/shared'
-import { formatApiRequestError, readApiJsonResponse } from '@meteorvoice/api-client'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { useCallback, useEffect, useState } from 'react'
+import {
+  useLocale,
+  useT,
+} from '@/components/LanguageProvider'
+import {
+  themes,
+  useTheme,
+} from '@/components/ThemeProvider'
+import {
+  readTTSSpeedPreference,
+  ttsSpeedOptions,
+  writeTTSSpeedPreference,
+} from '@/lib/tts-speed'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
 const allTtsProviders = [
   { key: 'mock', labelKey: 'settings.tts_provider_mock' },
@@ -309,6 +348,7 @@ export default function SettingsPage() {
                 onClick={() => isAvailable && handleTtsProviderChange(provider.key)}
                 disabled={settingsLoading || !isAvailable}
                 title={isAvailable ? undefined : t('settings.tts_not_configured')}
+                aria-label={isAvailable ? t(provider.labelKey) : `${t(provider.labelKey)} (${t('settings.tts_not_configured')})`}
                 className={`chip-action ${provider.key === ttsProvider ? 'is-active' : ''} ${!isAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 {t(provider.labelKey)}
@@ -356,6 +396,9 @@ export default function SettingsPage() {
                         type="button"
                         disabled={settingsLoading || unavailable}
                         onClick={() => handleVoiceProfileChange(profile)}
+                        aria-label={unavailable
+                          ? `${getVoiceProfileName(profile, locale)} (${t('settings.voice_profile_unavailable')})`
+                          : getVoiceProfileName(profile, locale)}
                         className={`chip-action min-h-[72px] flex-col items-start justify-start text-left ${selectedVoiceProfile?.id === profile.id ? 'is-active' : ''} ${unavailable ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <span className="text-sm font-medium">{getVoiceProfileName(profile, locale)}</span>

@@ -1,5 +1,8 @@
-import { createAICoach } from '@/lib/providers/ai-provider'
+/**
+ * Session summary generation. / 会话总结生成。
+ */
 import { saveSessionSummary } from './turns'
+import { createAICoach } from '@/lib/providers/ai-provider'
 
 export const FALLBACK_SESSION_SUMMARY =
   "Great session! You practiced conversation skills and received real-time feedback. Keep up the good work — consistency is key to improving your English fluency."

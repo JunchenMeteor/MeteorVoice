@@ -1,5 +1,11 @@
-import { generateText } from 'ai'
+/**
+ * Semantic endpoint detection (LLM-based stop judgment).
+ * 语义判停（LLM 判断用户是否说完）。
+ */
+
 import { createDeepSeek } from '@ai-sdk/deepseek'
+import { generateText } from 'ai'
+
 import type { ConversationMessage } from '@meteorvoice/shared'
 
 const ENDPOINT_PROMPT = `You are a turn-taking detector for an English conversation practice app.

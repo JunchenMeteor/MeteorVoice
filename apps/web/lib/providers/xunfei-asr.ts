@@ -1,14 +1,33 @@
+/**
+ * Xunfei ASR provider.
+ * 讯飞语音识别提供者。
+ */
+
 import crypto from 'crypto'
-import type { ASRSessionBootstrapResponse, ASRSessionConfig } from '@meteorvoice/shared'
+
+import type {
+  ASRSessionBootstrapResponse,
+  ASRSessionConfig,
+} from '@meteorvoice/shared'
+
+import { requireEnv } from '@/lib/server/env'
 
 const zhIatHost = 'iat.xf-yun.com'
 const zhIatPath = '/v1'
+// Cache for burst protection during prewarm (WebSocket opens ~1s before actual
+// capture start). 2 minutes is shorter than the 4-minute original — still long
+// enough for prewarm reuse, but reduces the window where Xunfei may link multiple
+// restarts to the same credentials. If Xunfei returns an auth expiry error, the
+// client will retry with backoff and eventually get a fresh URL after cache expiry.
+const signedUrlTtlMs = 2 * 60 * 1000
+const signedUrlRefreshSkewMs = 20 * 1000
 
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`${name} is required for Xunfei ASR`)
-  return value
+type CachedSignedUrl = {
+  endpointUrl: string
+  expiresAtMs: number
 }
+
+let cachedSignedUrl: CachedSignedUrl | null = null
 
 function createAuthUrl(apiKey: string, apiSecret: string) {
   const date = new Date().toUTCString()
@@ -23,10 +42,34 @@ function createAuthUrl(apiKey: string, apiSecret: string) {
   return `wss://${zhIatHost}${zhIatPath}?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${zhIatHost}`
 }
 
+function getCachedAuthUrl(apiKey: string, apiSecret: string, now: number) {
+  if (cachedSignedUrl && cachedSignedUrl.expiresAtMs - signedUrlRefreshSkewMs > now) {
+    console.log('[xunfei-asr] url_cache_hit', {
+      cacheAgeMs: now - (cachedSignedUrl.expiresAtMs - signedUrlTtlMs),
+      ttlRemainingMs: cachedSignedUrl.expiresAtMs - now,
+    })
+    return cachedSignedUrl
+  }
+
+  console.log('[xunfei-asr] url_cache_miss', {
+    hadCachedUrl: cachedSignedUrl !== null,
+    urlDate: new Date().toISOString(),
+  })
+  cachedSignedUrl = {
+    endpointUrl: createAuthUrl(apiKey, apiSecret),
+    expiresAtMs: now + signedUrlTtlMs,
+  }
+  return cachedSignedUrl
+}
+
+/**
+ * Create a Xunfei (iFlytek) Automatic Speech Recognition session with cached signed WebSocket URL.
+ * 创建讯飞（科大讯飞）语音识别会话，使用缓存的签名 WebSocket URL。
+ */
 export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<ASRSessionBootstrapResponse> {
-  const appId = requireEnv('XUNFEI_ASR_APP_ID')
-  const apiKey = requireEnv('XUNFEI_ASR_API_KEY')
-  const apiSecret = requireEnv('XUNFEI_ASR_API_SECRET')
+  const appId = requireEnv('XUNFEI_ASR_APP_ID', 'Xunfei ASR')
+  const apiKey = requireEnv('XUNFEI_ASR_API_KEY', 'Xunfei ASR')
+  const apiSecret = requireEnv('XUNFEI_ASR_API_SECRET', 'Xunfei ASR')
   const product = process.env.XUNFEI_ASR_PRODUCT?.trim() || 'zh_iat'
 
   if (product !== 'zh_iat') {
@@ -34,6 +77,7 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
   }
 
   const now = Date.now()
+  const signedUrl = getCachedAuthUrl(apiKey, apiSecret, now)
   const sessionId = config.sessionId ?? `asr_xunfei_${crypto.randomUUID()}`
   const eosMs = Math.min(6000, Math.max(600, config.endpointSilenceMs ?? 900))
 
@@ -42,11 +86,11 @@ export async function createXunfeiASRSession(config: ASRSessionConfig): Promise<
     status: 'created',
     sessionId,
     transport: 'websocket',
-    endpointUrl: createAuthUrl(apiKey, apiSecret),
-    expiresAt: new Date(now + 4 * 60 * 1000).toISOString(),
+    endpointUrl: signedUrl.endpointUrl,
+    expiresAt: new Date(signedUrl.expiresAtMs).toISOString(),
     providerConfig: {
       appId,
-      domain: 'slm',
+      domain: 'iat',
       language: 'zh_cn',
       accent: 'mandarin',
       eosMs,

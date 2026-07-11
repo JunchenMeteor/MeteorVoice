@@ -1,13 +1,23 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
+/**
+ * Practice scenario listing. / 练习场景列表。
+ */
 import {
   getScenarioDescription,
   getScenarioLabel,
+  normalizeLocale,
   scenarios,
-  type Locale,
 } from '@meteorvoice/shared'
+
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+} from '@/lib/server/http'
 
 export async function GET(request: Request) {
   try {
+    const guard = await guardApiRequest(request, { name: 'scenarios', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
     const url = new URL(request.url)
     const locale = normalizeLocale(url.searchParams.get('locale'))
 
@@ -23,6 +33,3 @@ export async function GET(request: Request) {
   }
 }
 
-function normalizeLocale(value: string | null): Locale {
-  return value === 'zh' ? 'zh' : 'en'
-}

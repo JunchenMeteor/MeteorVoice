@@ -1,6 +1,6 @@
 {
   "name": "@meteorvoice/mobile",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -22,13 +22,19 @@
     "@meteorvoice/session-core": "file:../../packages/session-core",
     "@meteorvoice/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "^2.106.1",
-    "expo": "~55.0.0",
-    "expo-audio": "~55.0.14",
+    "expo": "~55.0.27",
+    "expo-audio": "~55.0.15",
     "expo-constants": "~55.0.16",
+    "expo-file-system": "~55.0.23",
+    "expo-linking": "~55.0.16",
     "expo-modules-core": "~55.0.25",
-    "expo-secure-store": "~55.0.14",
+    "expo-router": "~55.0.16",
+    "expo-secure-store": "~55.0.15",
     "expo-speech-recognition": "^56.0.0",
+    "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
-    "react-native": "0.83.0"
+    "react-native": "0.83.6",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0"
   }
 }

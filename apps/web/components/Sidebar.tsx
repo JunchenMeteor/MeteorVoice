@@ -1,12 +1,24 @@
+/**
+ * App sidebar navigation with session controls.
+ * 应用侧边栏导航。
+ */
+
 'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { getUserDisplayName, getUserInitial } from '@/lib/auth/display'
+import {
+  useEffect,
+  useState,
+} from 'react'
+
 import { useT } from '@/components/LanguageProvider'
 import { useVoiceSession } from '@/components/VoiceSessionProvider'
+import { createClient } from '@/lib/supabase/client'
+import {
+  getUserDisplayName,
+  getUserInitial,
+} from '@/lib/auth/display'
 
 export default function Sidebar() {
   const pathname = usePathname()

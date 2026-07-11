@@ -1,3 +1,7 @@
+/**
+ * API client type definitions.
+ * API 客户端类型定义。
+ */
 import type {
   AccentProfile,
   ASRProviderDescriptor,
@@ -23,6 +27,8 @@ export type ApiClientOptions = {
   headers?: ApiHeadersProvider
   onUnauthorized?: ApiUnauthorizedHandler
   timeoutMs?: number
+  maxRetries?: number
+  retryBaseDelayMs?: number
 }
 
 export type ApiErrorBody = {
@@ -219,4 +225,9 @@ export type SessionTurnDto = {
 export type ListSessionTurnsResponse = {
   session_id: string
   turns: SessionTurnDto[]
+}
+
+export type DeleteSessionResponse = {
+  success?: boolean
+  error?: string
 }

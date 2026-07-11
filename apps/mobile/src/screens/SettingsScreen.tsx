@@ -1,87 +1,125 @@
-import { useMemo } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+/**
+ * App settings and preferences screen.
+ * 应用设置与偏好界面。
+ */
+
+import {
+  useMemo,
+} from 'react'
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
+
+import type {
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
+
+import type { ThemeKey } from '../theme'
+import { DiagnosticsSection } from '../components/DiagnosticsSection'
+import { useAuthFormState } from '../hooks/useAuthFormState'
+import { useSettingsPreferencesState } from '../hooks/useSettingsPreferencesState'
+import { useLog } from '../LogContext'
+import { useSession } from '../SessionContext'
+import { themeLabels } from '../theme'
 import { useTheme } from '../ThemeProvider'
-import type { Locale, VoiceProfile } from '@meteorvoice/shared'
-import type { MobileAuthState } from '../mobileAuth'
-import type { XunfeiVoice } from '../mobilePreferences'
-import { themeLabels, type ThemeKey } from '../theme'
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
-  ttsProvider: string
-  availableProviders: string[]
-  sessionSttProvider: 'native' | 'xunfei'
-  availableSessionSttProviders: Array<'native' | 'xunfei'>
-  ttsSpeed: number
-  ttsVoiceId: string | null
-  voiceProfiles: VoiceProfile[]
-  selectedVoiceProfileId: string | null
-  xunfeiVoices: XunfeiVoice[]
-  settingsLoading: boolean
-  authSubmitting: boolean
-  settingsMessage: string | null
-  auth: MobileAuthState
-  email: string
-  password: string
-  authMode: 'sign-in' | 'sign-up'
-  apiBaseUrl: string
-  apiBaseUrlSource: 'default' | 'user'
-  defaultApiBaseUrl: string
   appVersion: string
-  voiceMetricsText: string
-  asrEvaluationText: string
-  onSetLocale: (l: string) => void
-  onSetTheme: (k: ThemeKey) => void
-  onSaveProvider: (p: string) => void
-  onSetSessionSttProvider: (p: 'native' | 'xunfei') => void
-  onAdjustSpeed: (delta: number) => void
-  onSavePracticePreferences: () => void
-  onLoadPreferences: () => void
-  onSelectVoiceProfile: (profile: VoiceProfile) => void
-  onSetEmail: (v: string) => void
-  onSetPassword: (v: string) => void
-  onSetAuthMode: (m: 'sign-in' | 'sign-up') => void
-  onSubmitAuth: () => void
-  onSignOut: () => void
-  onSetApiBaseUrl: (v: string) => void
-  onResetApiBaseUrl: () => void
-  onClearVoiceMetrics: () => void
-  onShareVoiceMetrics: () => void
-  onShareASREvaluation: () => void
+  defaultApiBaseUrl: string
+  auth: import('../mobileAuth').MobileAuthState
+  signOut: (nextMessage?: string | null) => Promise<void>
+  handleUnauthorized: () => void
+  getAuthHeaders: () => Promise<HeadersInit>
+  onLocaleChange: (l: Locale) => void
 }
 
 export function SettingsScreen({
-  tr, locale, ttsProvider, availableProviders, sessionSttProvider, availableSessionSttProviders, ttsSpeed,
-  ttsVoiceId, voiceProfiles, selectedVoiceProfileId, xunfeiVoices,
-  settingsLoading, authSubmitting, settingsMessage,
-  auth, email, password, authMode, apiBaseUrl, apiBaseUrlSource, defaultApiBaseUrl, appVersion, voiceMetricsText, asrEvaluationText,
-  onSetLocale, onSetTheme, onSaveProvider, onSetSessionSttProvider, onAdjustSpeed, onSavePracticePreferences,
-  onLoadPreferences, onSelectVoiceProfile,
-  onSetEmail, onSetPassword, onSetAuthMode, onSubmitAuth, onSignOut, onSetApiBaseUrl,
-  onResetApiBaseUrl, onClearVoiceMetrics, onShareVoiceMetrics, onShareASREvaluation,
+  tr, locale, appVersion, defaultApiBaseUrl,
+  auth, signOut, handleUnauthorized, getAuthHeaders,
+  onLocaleChange,
 }: Props) {
-  const { C, themeKey } = useTheme()
-  const speedFill = Math.max(0, Math.min(1, (ttsSpeed - 0.7) / 0.6))
-  const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
-  const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
-    ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
-    ?? providerVoiceProfiles.find(profile => profile.status === 'active')
+  const { voiceMetricsText, asrEvaluationText, clearVoiceMetrics, logMetric } = useLog()
+  const {
+    applyTtsPreferences,
+    clearAudio,
+    selectedAccentKey: ctxAccentKey,
+    selectedScenarioKey: ctxScenarioKey,
+    ttsProvider: ctxTtsProvider,
+    ttsVoiceId: ctxTtsVoiceId,
+  } = useSession()
+  const { C, setTheme: setThemeLocal, themeKey } = useTheme()
 
-  function voiceProfileMeta(profile: VoiceProfile) {
-    const providerLabel = tr(`settings.tts_provider_${profile.provider}`) !== `settings.tts_provider_${profile.provider}`
-      ? tr(`settings.tts_provider_${profile.provider}`)
-      : profile.provider
-    const gender = profile.gender ? tr(`settings.xunfei_voice_gender_${profile.gender}`) : null
-    const language = profile.locale === 'zh' ? tr('settings.xunfei_voice_language_zh') : tr('settings.xunfei_voice_language_en')
-    const tier = profile.qualityTier ? tr(`settings.xunfei_voice_tier_${profile.qualityTier}`) : null
-    return [providerLabel, language, gender, tier, profile.accentLabel, profile.accentRegion, profile.style].filter(Boolean).join(' · ')
-  }
+  const preferences = useSettingsPreferencesState({
+    auth,
+    clearAudio,
+    ctxAccentKey,
+    ctxScenarioKey,
+    ctxTtsProvider,
+    ctxTtsVoiceId,
+    defaultApiBaseUrl,
+    getAuthHeaders,
+    handleUnauthorized,
+    locale,
+    logMetric,
+    onTtsPreferencesChange: applyTtsPreferences,
+    onLocaleChange,
+    setThemeLocal,
+    tr,
+  })
+  const {
+    apiBaseUrl,
+    apiBaseUrlSource,
+    availableProviders,
+    availableSessionSttProviders,
+    onAdjustSpeed,
+    onLoadPreferences,
+    onResetApiBaseUrl,
+    onSavePracticePreferences,
+    onSaveProvider,
+    onSelectVoiceProfile,
+    onSetApiBaseUrl,
+    onSetLocale,
+    onSetSessionSttProvider,
+    onSetTheme,
+    providerVoiceProfiles,
+    selectedVoiceProfile,
+    sessionSttProvider,
+    settingsLoading,
+    settingsMessage,
+    speedFill,
+    ttsProvider,
+    ttsSpeed,
+    voiceProfileMeta,
+    voiceProfileName,
+    xunfeiVoices,
+  } = preferences
+  const {
+    authMode,
+    authSubmitting,
+    email,
+    password,
+    setAuthMode: onSetAuthMode,
+    setEmail: onSetEmail,
+    setPassword: onSetPassword,
+    submitAuth: onSubmitAuth,
+  } = useAuthFormState({ auth, tr })
+  const onSignOut = () => { void signOut() }
+  const onClearVoiceMetrics = clearVoiceMetrics
+  const onShareVoiceMetrics = () => Share.share({ title: 'MeteorVoice voice diagnostics', message: voiceMetricsText })
+  const onShareASREvaluation = () => Share.share({ title: 'MeteorVoice ASR evaluation', message: asrEvaluationText })
 
-  function voiceProfileName(profile: VoiceProfile) {
-    return locale === 'zh' ? profile.displayNameZh ?? profile.displayName : profile.displayName
-  }
-
+  // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
     scrollView: { flex: 1 },
@@ -162,6 +200,8 @@ export function SettingsScreen({
     diagnosticsText: { color: C.textSecondary, fontSize: 11, lineHeight: 16 },
     appVersion: { color: C.textMuted, fontSize: 11, textAlign: 'center', paddingBottom: 16 },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView
@@ -344,30 +384,14 @@ export function SettingsScreen({
         </Text>
       </View>
 
-      {/* Diagnostics */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Voice diagnostics</Text>
-          <View style={styles.chipRow}>
-            <Pressable onPress={onShareVoiceMetrics} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>Logs</Text>
-            </Pressable>
-            <Pressable onPress={onShareASREvaluation} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>ASR</Text>
-            </Pressable>
-            <Pressable onPress={onClearVoiceMetrics} style={styles.smallBtn}>
-              <Text style={styles.smallBtnTxt}>Clear</Text>
-            </Pressable>
-          </View>
-        </View>
-        <View style={styles.diagnosticsBox}>
-          <ScrollView nestedScrollEnabled>
-            <Text selectable style={styles.diagnosticsText}>
-              {voiceMetricsText || asrEvaluationText || 'No voice metrics yet.'}
-            </Text>
-          </ScrollView>
-        </View>
-      </View>
+      <DiagnosticsSection
+        asrEvaluationText={asrEvaluationText}
+        onClearVoiceMetrics={onClearVoiceMetrics}
+        onShareASREvaluation={onShareASREvaluation}
+        onShareVoiceMetrics={onShareVoiceMetrics}
+        styles={styles}
+        voiceMetricsText={voiceMetricsText}
+      />
 
       {/* Auth */}
       <View style={styles.card}>

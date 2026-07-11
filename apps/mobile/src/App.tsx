@@ -1,453 +1,252 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+/**
+ * App entry point — ThemeProvider, LogProvider, SessionContext orchestration.
+ * 应用入口 — 主题、日志、会话编排。
+ */
+
+import type { AppStateStatus } from 'react-native'
+import * as SecureStore from 'expo-secure-store'
 import {
+  File,
+  Paths,
+} from 'expo-file-system'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import {
+  Alert,
   AppState,
-  Pressable,
-  SafeAreaView,
-  Share,
-  StyleSheet,
-  Text,
-  View,
-  type AppStateStatus,
 } from 'react-native'
+
+import type {
+  PlaybackQueueSnapshot,
+  WorkflowSnapshot,
+} from '@meteorvoice/session-core'
+import type {
+  AppFeedbackState,
+  ConversationMessage,
+  ConversationResponse,
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
+import type { SyncSessionRequest } from '@meteorvoice/api-client'
+import type { PreferencesResponse } from '@meteorvoice/api-client'
 import {
   createMeteorVoiceApiClient,
   fetchWithTimeout,
   formatApiRequestError,
-  type CreateASRSessionResponse,
-  type HistorySession,
-  type PreferencesResponse,
-  type SessionTurnDto,
 } from '@meteorvoice/api-client'
 import {
-  acceptTranscriptTurn,
-  advancePlaybackQueue,
-  canAcceptUserTranscript,
-  canEndSession,
-  createPlaybackQueueSnapshot,
-  createInitialSnapshot,
-  DEFAULT_PLAYBACK_COOLDOWN_MS,
-  endActiveSession,
-  gateUserTranscript,
-  getPlaybackCompletionEffects,
-  judgeEndpoint,
-  receiveCoachReply,
-  recoverSessionError,
-  requestCoachReply,
-  completeCoachPlayback,
-  shouldIgnoreLikelyPlaybackEcho,
-  startListeningSession,
-  startPlaybackQueue,
-  type PlaybackQueueSnapshot,
-  type WorkflowSnapshot,
-} from '@meteorvoice/session-core'
-import {
   accentProfiles,
+  appFeedback,
+  displayErrorFeedback,
   getAccentLabel,
   getAccentRegion,
   getDifficultyLabel,
   getScenarioDescription,
   getScenarioLabel,
   getTTSSpeedRouting,
-  runAppOperationGroup,
   scenarios,
-  t,
-  appFeedback,
-  displayErrorFeedback,
-  type AppFeedbackState,
-  type ConversationMessage,
-  type ConversationResponse,
-  type Locale,
-  type VoiceProfile,
+  translate,
 } from '@meteorvoice/shared'
+import {
+  acceptTranscriptTurn,
+  canAcceptUserTranscript,
+  canEndSession,
+  completeCoachPlayback,
+  createInitialSnapshot,
+  createPlaybackQueueSnapshot,
+  DEFAULT_PLAYBACK_COOLDOWN_MS,
+  endActiveSession,
+  gateUserTranscript,
+  judgeEndpoint,
+  receiveCoachReply,
+  recoverSessionError,
+  requestCoachReply,
+  shouldIgnoreLikelyPlaybackEcho,
+  startListeningSession,
+  startPlaybackQueue,
+} from '@meteorvoice/session-core'
 
-import * as SecureStore from 'expo-secure-store'
+import {
+  SessionContext,
+  type SessionContextValue,
+} from './SessionContext'
+import type {
+  SessionRoutePresence,
+  SessionSttProvider,
+  Tab,
+} from './sessionRuntime'
+import { AppShell } from './AppShell'
+import { useXunfeiStt } from './hooks/useXunfeiStt'
 import { useMobileAuth } from './mobileAuth'
 import { useNativeSessionAudio } from './nativeAudio'
 import { useNativeSpeech } from './nativeSpeech'
-import { syncMobilePreferences, type XunfeiVoice } from './mobilePreferences'
-import { getDefaultApiBaseUrl, getDisplayAppVersion } from './mobileConfig'
+import { useHandlerBridge } from './utils/handlerBridge'
 import {
-  addPcmFrameListener,
-  addPcmStateListener,
-  isPcmCaptureAvailable,
-  startPcmCapture,
-  stopPcmCapture,
-  type PcmCaptureFrameEvent,
-} from './voicePcmCapture'
-import { ThemeProvider, useTheme } from './ThemeProvider'
-import { SessionScreen } from './screens/SessionScreen'
-import { HomeScreen } from './screens/HomeScreen'
-import { HistoryScreen } from './screens/HistoryScreen'
-import { SettingsScreen } from './screens/SettingsScreen'
+  LogProvider,
+  useLog,
+} from './LogContext'
+import {
+  getDefaultApiBaseUrl,
+  getDisplayAppVersion,
+} from './mobileConfig'
+import { ThemeProvider } from './ThemeProvider'
+import {
+  canApplyEndpointResult,
+  classifyRequestTerminalStage,
+  isTurnStale,
+} from './sessionTurnRuntime'
 import { AppFeedbackOverlay } from './components/AppFeedbackOverlay'
+import {
+  enqueueSessionSync,
+  flushSessionSyncOutbox,
+} from './sessionSyncOutbox'
+import {
+  canStartListening,
+  enqueueRuntimeOperation,
+  getPlaybackTailPrewarmDecision,
+  routePresenceForTab,
+  shouldResumeListening,
+  STT_MAX_CONSECUTIVE_RESTARTS,
+  withTimeout,
+} from './sessionRuntime'
 
 const defaultApiBaseUrl = getDefaultApiBaseUrl()
 const appVersion = getDisplayAppVersion()
-const apiBaseUrlStorageKey = 'api_base_url'
 const sessionSttProviderStorageKey = 'session_stt_provider'
-type Tab = 'session' | 'home' | 'history' | 'settings'
-type ApiBaseUrlSource = 'default' | 'user'
-type SessionSttProvider = 'native' | 'xunfei'
-type VoiceMetricEntry = {
-  ts: number
-  stage: string
-  data: Record<string, unknown>
+const sessionSyncOutboxStorage = {
+  getItem: async (key: string) => {
+    const file = sessionSyncOutboxFile(key)
+    return file.exists ? file.text() : null
+  },
+  setItem: async (key: string, value: string) => {
+    const file = sessionSyncOutboxFile(key)
+    if (!file.exists) file.create({ intermediates: true })
+    file.write(value)
+  },
+  removeItem: async (key: string) => {
+    const file = sessionSyncOutboxFile(key)
+    if (file.exists) file.delete()
+  },
 }
 
-type ASREvaluationRun = {
-  startedAt?: number
-  firstPartialMs?: number | null
-  finalMs?: number | null
-  chars?: number
-  source?: string
-  frameCount?: number
-  totalBytes?: number
-  error?: string
+function sessionSyncOutboxFile(key: string) {
+  return new File(Paths.document, `${key.replace(/[^a-z0-9._-]/gi, '_')}.json`)
 }
 
-const TAB_LABELS: Record<Tab, string> = {
-  home: 'nav.home',
-  session: 'nav.practice',
-  history: 'nav.history',
-  settings: 'nav.settings',
-}
+// ─── Main Entry / 入口 ───
 
-
-function TabIcon({ tab, color }: { tab: Tab; color: string }) {
-  if (tab === 'home') return (
-    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'flex-end' }}>
-      <View style={{ width: 0, height: 0, borderLeftWidth: 9, borderRightWidth: 9, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: color, marginBottom: 1 }} />
-      <View style={{ width: 12, height: 8, backgroundColor: color, borderRadius: 1 }} />
-    </View>
-  )
-  if (tab === 'session') return (
-    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-      <View style={{ width: 8, height: 11, borderRadius: 4, borderWidth: 2, borderColor: color }} />
-      <View style={{ width: 12, height: 2, backgroundColor: color, borderRadius: 1 }} />
-    </View>
-  )
-  if (tab === 'history') return (
-    <View style={{ width: 18, height: 18, justifyContent: 'center', gap: 3 }}>
-      {[0, 1, 2].map(i => <View key={i} style={{ height: 2, backgroundColor: color, borderRadius: 1, width: i === 0 ? 18 : i === 1 ? 14 : 10 }} />)}
-    </View>
-  )
-  return (
-    <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: color }} />
-      <View style={{ position: 'absolute', width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
-        {[0, 45, 90, 135].map(deg => (
-          <View key={deg} style={{ position: 'absolute', width: 3, height: 3, borderRadius: 1.5, backgroundColor: color, transform: [{ rotate: `${deg}deg` }, { translateY: -8 }] }} />
-        ))}
-      </View>
-    </View>
-  )
-}
-
-function createASREvaluationReport(entries: VoiceMetricEntry[]) {
-  const nativeRuns: ASREvaluationRun[] = []
-  const remoteRuns: ASREvaluationRun[] = []
-  let currentNative: ASREvaluationRun | null = null
-  let currentRemote: ASREvaluationRun | null = null
-
-  for (const entry of entries) {
-    if (entry.stage === 'stt_start') {
-      currentNative = { startedAt: entry.ts }
-      nativeRuns.push(currentNative)
-    } else if (entry.stage === 'stt_first_partial' && currentNative) {
-      currentNative.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
-      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
-    } else if (entry.stage === 'stt_submit' && currentNative) {
-      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
-      currentNative.chars = readMetricNumber(entry.data.chars) ?? currentNative.chars
-      currentNative.source = typeof entry.data.source === 'string' ? entry.data.source : undefined
-    } else if (entry.stage === 'stt_end' && currentNative && currentNative.finalMs == null) {
-      currentNative.finalMs = readMetricNumber(entry.data.elapsedMs)
-    }
-
-    if (entry.stage === 'asr_stream_start') {
-      currentRemote = { startedAt: entry.ts }
-      remoteRuns.push(currentRemote)
-    } else if (entry.stage === 'asr_first_partial' && currentRemote) {
-      currentRemote.firstPartialMs = readMetricNumber(entry.data.elapsedMs)
-      currentRemote.chars = readMetricNumber(entry.data.chars) ?? currentRemote.chars
-    } else if (entry.stage === 'asr_stream_done' && currentRemote) {
-      currentRemote.finalMs = readMetricNumber(entry.data.streamElapsedMs) ?? readMetricNumber(entry.data.elapsedMs)
-      currentRemote.chars = readMetricNumber(entry.data.transcriptChars) ?? currentRemote.chars
-      currentRemote.frameCount = readMetricNumber(entry.data.frameCount) ?? undefined
-      currentRemote.totalBytes = readMetricNumber(entry.data.totalBytes) ?? undefined
-    } else if (entry.stage === 'asr_stream_provider_error' && currentRemote) {
-      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Provider error'
-    } else if (entry.stage === 'asr_diagnostic_error' && currentRemote) {
-      currentRemote.error = typeof entry.data.message === 'string' ? entry.data.message : 'Diagnostic error'
-    }
-  }
-
-  const latestNative = nativeRuns.at(-1)
-  const latestRemote = remoteRuns.at(-1)
-  return [
-    'ASR P4 evaluation report',
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    `Native runs: ${nativeRuns.length}`,
-    formatASRRun('Latest native', latestNative),
-    '',
-    `Remote Xunfei runs: ${remoteRuns.length}`,
-    formatASRRun('Latest remote', latestRemote),
-    '',
-    'Acceptance checks:',
-    '- Compare first partial latency between native and remote.',
-    '- Compare final latency between native and remote.',
-    '- Compare transcript chars and exported raw metrics against the spoken script.',
-    '- Do not switch production STT until remote accuracy and latency are better on device.',
-  ].join('\n')
-}
-
-function formatASRRun(label: string, run: ASREvaluationRun | undefined) {
-  if (!run) return `${label}: no run captured`
-  return [
-    `${label}:`,
-    `  startedAt: ${run.startedAt ? new Date(run.startedAt).toLocaleString() : 'unknown'}`,
-    `  firstPartialMs: ${formatMetricValue(run.firstPartialMs)}`,
-    `  finalMs: ${formatMetricValue(run.finalMs)}`,
-    `  chars: ${formatMetricValue(run.chars)}`,
-    run.source ? `  source: ${run.source}` : null,
-    run.frameCount != null ? `  frameCount: ${run.frameCount}` : null,
-    run.totalBytes != null ? `  totalBytes: ${run.totalBytes}` : null,
-    run.error ? `  error: ${run.error}` : null,
-  ].filter(Boolean).join('\n')
-}
-
-function readMetricNumber(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function formatMetricValue(value: number | null | undefined) {
-  return value == null ? 'n/a' : String(value)
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeoutMs)
-    promise
-      .then(resolve, reject)
-      .finally(() => clearTimeout(timer))
-  })
-}
-
-function createXunfeiASRFrame(session: CreateASRSessionResponse, status: 0 | 1 | 2, audioBase64: string, sequence: number) {
-  const providerConfig = session.providerConfig
-  const header = {
-    app_id: providerConfig?.appId,
-    status,
-  }
-  const audio = {
-    encoding: providerConfig?.audioEncoding ?? 'raw',
-    sample_rate: providerConfig?.sampleRate ?? 16000,
-    channels: providerConfig?.channels ?? 1,
-    bit_depth: providerConfig?.bitDepth ?? 16,
-    seq: sequence,
-    status,
-    audio: audioBase64,
-  }
-  if (status !== 0) {
-    return {
-      header,
-      payload: { audio },
-    }
-  }
-
-  return {
-    header,
-    parameter: {
-      iat: {
-        domain: providerConfig?.domain ?? 'slm',
-        language: providerConfig?.language ?? 'zh_cn',
-        accent: providerConfig?.accent ?? 'mandarin',
-        eos: providerConfig?.eosMs ?? 900,
-        dwa: 'wpgs',
-        result: {
-          encoding: 'utf8',
-          compress: 'raw',
-          format: 'json',
-        },
-      },
-    },
-    payload: { audio },
-  }
-}
-
-function parseJsonObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'string') return null
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function getObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
-}
-
-function extractXunfeiRecognitionResult(payload: Record<string, unknown> | null) {
-  const payloadObject = getObject(payload?.payload)
-  const payloadResult = getObject(payloadObject?.result)
-  const encodedText = typeof payloadResult?.text === 'string' ? payloadResult.text : null
-  if (encodedText) {
-    const decoded = decodeBase64Utf8(encodedText)
-    const decodedPayload = parseJsonObject(decoded)
-    const decodedWords = extractXunfeiWords(decodedPayload?.ws)
-    if (decodedWords) {
-      const rg = Array.isArray(decodedPayload?.rg) &&
-        typeof decodedPayload.rg[0] === 'number' &&
-        typeof decodedPayload.rg[1] === 'number'
-        ? [decodedPayload.rg[0], decodedPayload.rg[1]] as [number, number]
-        : null
-      return {
-        text: decodedWords,
-        sn: typeof decodedPayload?.sn === 'number' ? decodedPayload.sn : null,
-        pgs: typeof decodedPayload?.pgs === 'string' ? decodedPayload.pgs : null,
-        rg,
-      }
-    }
-  }
-
-  const data = getObject(payload?.data)
-  const result = getObject(data?.result)
-  const fallbackWords = extractXunfeiWords(result?.ws)
-  return fallbackWords
-    ? { text: fallbackWords, sn: null, pgs: null, rg: null }
-    : null
-}
-
-function extractXunfeiWords(words: unknown) {
-  if (!Array.isArray(words)) return ''
-  return words.map(item => {
-    const word = getObject(item)
-    const candidates = word?.cw
-    if (!Array.isArray(candidates)) return ''
-    return candidates.map(candidate => {
-      const candidateObject = getObject(candidate)
-      return typeof candidateObject?.w === 'string' ? candidateObject.w : ''
-    }).join('')
-  }).join('')
-}
-
-function decodeBase64Utf8(value: string) {
-  try {
-    const decoder = globalThis.atob
-    if (!decoder) return ''
-    const binary = decoder(value)
-    const escaped = Array.from(binary)
-      .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-      .join('')
-    return decodeURIComponent(escaped)
-  } catch {
-    return ''
-  }
-}
-
-export default function App() {
+export default function App({ children }: { children?: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AppInner />
+      <LogProvider>
+        <AppInner>{children}</AppInner>
+      </LogProvider>
     </ThemeProvider>
   )
 }
 
-function AppInner() {
-  const { C, setTheme: setThemeLocal } = useTheme()
+// ─── AppInner / 编排层 ───
+
+function AppInner({ children }: { children?: React.ReactNode }) {
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const { logMetric, logUserAction, setEnrichment } = useLog()
+
+  // ─── Navigation / 导航 ───
   const [activeTab, setActiveTab] = useState<Tab>('session')
-  const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl)
-  const [apiBaseUrlSource, setApiBaseUrlSource] = useState<ApiBaseUrlSource>('default')
+
+  // ─── Session State / 会话状态 ───
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [correctionHistory, setCorrectionHistory] = useState<ConversationResponse['corrections']>([])
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueueSnapshot>(() => createPlaybackQueueSnapshot())
-  const [status, setStatus] = useState('session.ready')
+  const [status, setStatusState] = useState('session.ready')
+  const [isSessionActive, setIsSessionActive] = useState(false)
+  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-session'))
+  const [summary, setSummary] = useState<string | null>(null)
+  const [busy, setBusyState] = useState(false)
+
+  // ─── Scenario & Accent / 场景与口音 ───
+  const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
+  const [selectedAccentKey, setSelectedAccentKey] = useState('american')
+  const [scenarioSwitching, setScenarioSwitching] = useState(false)
+  const [apiSessionId] = useState<string | null>(null)
+
+  // ─── Language / 语言 ───
   const [locale, setLocaleState] = useState<Locale>('en')
   useEffect(() => {
     SecureStore.getItemAsync('app_locale').then(v => { if (v === 'zh' || v === 'en') setLocaleState(v) })
-  }, [])
-  useEffect(() => {
-    SecureStore.getItemAsync(apiBaseUrlStorageKey).then(value => {
-      const stored = value?.trim()
-      if (stored) {
-        setApiBaseUrl(stored)
-        setApiBaseUrlSource('user')
-      } else {
-        setApiBaseUrl(defaultApiBaseUrl)
-        setApiBaseUrlSource('default')
-      }
-    })
   }, [])
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l)
     void SecureStore.setItemAsync('app_locale', l)
   }, [])
-  const [summary, setSummary] = useState<string | null>(null)
-  const [voiceMetrics, setVoiceMetrics] = useState<VoiceMetricEntry[]>([])
-  const [busy, setBusy] = useState(false)
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyError, setHistoryError] = useState<string | null>(null)
-  const [historySessions, setHistorySessions] = useState<HistorySession[]>([])
-  const [selectedHistory, setSelectedHistory] = useState<HistorySession | null>(null)
-  const [selectedHistoryTurns, setSelectedHistoryTurns] = useState<SessionTurnDto[]>([])
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
-  const [authSubmitting, setAuthSubmitting] = useState(false)
-  const [scenarioSwitching, setScenarioSwitching] = useState(false)
-  const [activeFeedback, setActiveFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())
+
+  // ─── Provider State / 提供者状态 ───
   const [ttsProvider, setTtsProvider] = useState('mock')
-  const [availableProviders, setAvailableProviders] = useState<string[]>(['mock'])
-  const [sessionSttProvider, setSessionSttProviderState] = useState<SessionSttProvider>('native')
-  const [availableSessionSttProviders, setAvailableSessionSttProviders] = useState<SessionSttProvider[]>(['native'])
   const [ttsVoiceId, setTtsVoiceId] = useState<string | null>(null)
-  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfile[]>([])
-  const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string | null>(null)
-  const [xunfeiVoices, setXunfeiVoices] = useState<XunfeiVoice[]>([])
   const [ttsSpeed, setTtsSpeed] = useState(1)
-  const [isSessionActive, setIsSessionActive] = useState(false)
-  const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(() => createInitialSnapshot('mobile-session'))
-  const [authMode, setAuthMode] = useState<'sign-in' | 'sign-up'>('sign-in')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [apiSessionId] = useState<string | null>(null)
-  const [selectedScenarioKey, setSelectedScenarioKey] = useState('small-talk')
-  const [selectedAccentKey, setSelectedAccentKey] = useState('american')
+  const [sessionSttProvider, setSessionSttProviderState] = useState<SessionSttProvider>('native')
+  const [activeFeedback, setActiveFeedback] = useState<AppFeedbackState | null>(() => appFeedback.getFeedback())
+
+  // ─── TTS & Audio / 语音合成与音频 ───
   const ttsSpeedRouting = getTTSSpeedRouting(ttsProvider, ttsSpeed)
   const audio = useNativeSessionAudio(audioUrl, ttsSpeedRouting.playbackRate)
   const auth = useMobileAuth()
   const getAuthHeaders = auth.getAuthHeaders
   const signOut = auth.signOut
+
+  const tr: TranslateFn = useCallback((key, values) => translate(locale, key, values), [locale])
+
+  const handleUnauthorized = useCallback(() => {
+    if (auth.state !== 'signed-in') return signOut(null)
+    return signOut(tr('settings.auth_expired'))
+  }, [auth.state, signOut, tr])
+
+  const api = useMemo(() => createMeteorVoiceApiClient({
+    baseUrl: defaultApiBaseUrl.trim(),
+    headers: getAuthHeaders,
+    onUnauthorized: handleUnauthorized,
+  }), [getAuthHeaders, handleUnauthorized])
+
+  const applyTtsPreferences = useCallback((preferences: PreferencesResponse) => {
+    if (preferences.tts_provider) setTtsProvider(preferences.tts_provider)
+    if (typeof preferences.tts_speed === 'number') setTtsSpeed(preferences.tts_speed)
+    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
+  }, [])
+
+  useEffect(() => {
+    if (auth.state !== 'signed-in') return
+    let cancelled = false
+    void api.getPreferences()
+      .then(preferences => { if (!cancelled) applyTtsPreferences(preferences) })
+      .catch(error => {
+        logMetric('mobile_preferences_startup_error', {
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      })
+    return () => { cancelled = true }
+  }, [api, applyTtsPreferences, auth.state, logMetric])
+
+  // ─── Derived Values / 派生值 ───
+  const scenario = useMemo(() => scenarios.find(s => s.key === selectedScenarioKey) ?? scenarios[0], [selectedScenarioKey])
+  const accent = useMemo(() => accentProfiles.find(a => a.key === selectedAccentKey) ?? accentProfiles[0], [selectedAccentKey])
+
+  // Voice profile accent override (for SettingsScreen voice selection)
+  const voiceProfileAccentLabel = null  // TODO: wire from SettingsScreen voice profile selection
+  const voiceProfileAccentRegion = null
+
+  // ─── Refs / 可变引用 ───
   const snapshotRef = useRef(snapshot)
   const messagesRef = useRef(messages)
-  const localeRef = useRef(locale)
-  const sessionSttProviderRef = useRef(sessionSttProvider)
-  const sessionSttProviderHydratedRef = useRef(false)
-  const sessionSttProvidersLoadedRef = useRef(false)
-  const startListeningWithProviderRef = useRef<(provider: SessionSttProvider, lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
-  const prefSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const themeInitializedRef = useRef(false)
-  const listeningStartMsRef = useRef(0)
-  const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
-  const speechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
-  const nativeSpeechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
-  const nativeSpeechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
-  const xunfeiSessionSttRef = useRef<{
-    socket: WebSocket | null
-    frameSubscription: { remove: () => void } | null
-    stateSubscription: { remove: () => void } | null
-    finalizeTimer: ReturnType<typeof setTimeout> | null
-    hardTimer: ReturnType<typeof setTimeout> | null
-    noFrameTimer: ReturnType<typeof setTimeout> | null
-    settled: boolean
-  } | null>(null)
-  const endpointRequestRef = useRef(0)
-  const turnRequestRef = useRef(0)
+  const statusRef = useRef(status)
   const sessionActiveRef = useRef(false)
   const canListenOnRouteRef = useRef(true)
+  const routePresenceRef = useRef<SessionRoutePresence>('inSession')
   const playbackActiveRef = useRef(false)
   const audioPlayingRef = useRef(false)
   const busyRef = useRef(false)
@@ -456,1018 +255,159 @@ function AppInner() {
   const pendingNativeTranscriptRef = useRef('')
   const isCorrectionPlayingRef = useRef(false)
   const resumeListeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const historyAutoLoadRef = useRef(false)
-  const settingsAutoLoadRef = useRef(false)
-  const settingsRequestRef = useRef(0)
-  const settingsLoadingRef = useRef(false)
-  const activeTabRef = useRef(activeTab)
+  const listeningStartMsRef = useRef(0)
   const listeningTeardownRef = useRef<Promise<void> | null>(null)
+  const endpointRequestRef = useRef(0)
+  const turnRequestRef = useRef(0)
+  const sessionGenerationRef = useRef(0)
+  const sttRestartCountRef = useRef(0)
+  const sttRestartStartMsRef = useRef(0)
+  const sttStreamIdRef = useRef(0)
+  const sttOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const sttPrewarmAudioUrlRef = useRef<string | null>(null)
+  const sessionSyncFlushRef = useRef<Promise<void> | null>(null)
 
-  const scenario = scenarios.find(item => item.key === selectedScenarioKey) ?? scenarios[0]
-  const accent = accentProfiles.find(item => item.key === selectedAccentKey) ?? accentProfiles[0]
-  const providerVoiceProfiles = voiceProfiles.filter(profile => profile.provider === ttsProvider)
-  const selectedVoiceProfile = voiceProfiles.find(profile => profile.id === selectedVoiceProfileId)
-    ?? providerVoiceProfiles.find(profile => profile.providerVoiceId === ttsVoiceId)
-    ?? providerVoiceProfiles.find(profile => profile.status === 'active')
-  const sessionAccentName = selectedVoiceProfile?.accentLabel ?? getAccentLabel(accent, locale)
-  const sessionAccentRegion = selectedVoiceProfile?.accentRegion ?? getAccentRegion(accent, locale)
-  const tr = useCallback((key: string) => t[locale]?.[key] ?? t.en[key] ?? key, [locale])
-
-  useEffect(() => {
-    SecureStore.getItemAsync(sessionSttProviderStorageKey).then(value => {
-      if (value === 'xunfei' || value === 'native') {
-        sessionSttProviderRef.current = value
-        setSessionSttProviderState(value)
-      }
-      sessionSttProviderHydratedRef.current = true
-    })
+  const clearAudio = useCallback(() => {
+    setAudioUrl(null)
+    playbackEndedAtMsRef.current = null
   }, [])
 
-  useEffect(() => {
-    snapshotRef.current = snapshot
-  }, [snapshot])
+  // STT provider refs
+  const sessionSttProviderRef = useRef(sessionSttProvider)
+  const sessionSttProviderHydratedRef = useRef(false)
+  const speechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
+  const speechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
+  const nativeSpeechStartListeningRef = useRef<(lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
+  const nativeSpeechCancelListeningRef = useRef<() => void | Promise<void>>(() => undefined)
+  const startListeningWithProviderRef = useRef<(provider: SessionSttProvider, lang?: string) => Promise<boolean>>(() => Promise.resolve(false))
+
+  // Ref syncs: state → ref
+  useEffect(() => { snapshotRef.current = snapshot }, [snapshot])
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { statusRef.current = status }, [status])
+  useEffect(() => { sessionSttProviderRef.current = sessionSttProvider }, [sessionSttProvider])
+  useEffect(() => { busyRef.current = busy }, [busy])
+  useEffect(() => { sessionActiveRef.current = isSessionActive }, [isSessionActive])
+
+  const flushPendingSessionSyncs = useCallback(() => {
+    if (auth.state !== 'signed-in') return Promise.resolve()
+    if (sessionSyncFlushRef.current) return sessionSyncFlushRef.current
+    const run = flushSessionSyncOutbox(sessionSyncOutboxStorage, payload => api.syncSession(payload))
+      .then(result => {
+        if (result.synced > 0) logMetric('session_sync_outbox_flushed', result)
+        if (result.remaining > 0) logMetric('session_sync_outbox_pending', result)
+        if (result.synced > 0 && result.remaining === 0 && !sessionActiveRef.current && statusRef.current === 'session.sync_pending') {
+          statusRef.current = 'session.ended'
+          setStatusState('session.ended')
+        }
+      })
+      .catch(error => {
+        logMetric('session_sync_outbox_error', {
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      })
+      .finally(() => { sessionSyncFlushRef.current = null })
+    sessionSyncFlushRef.current = run
+    return run
+  }, [api, auth.state, logMetric])
 
   useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+    if (auth.state === 'signed-in') void flushPendingSessionSyncs()
+  }, [auth.state, flushPendingSessionSyncs])
 
-  useEffect(() => {
-    localeRef.current = locale
-  }, [locale])
-
-  useEffect(() => {
-    sessionSttProviderRef.current = sessionSttProvider
-  }, [sessionSttProvider])
-
-  useEffect(() => {
-    activeTabRef.current = activeTab
-  }, [activeTab])
-
-  useEffect(() => {
-    busyRef.current = busy
-  }, [busy])
-
-  const listeningStartupStatus = useCallback((provider = sessionSttProviderRef.current) => (
-    provider === 'xunfei'
-      ? 'session.status.preparing_listening'
-      : 'session.status.listening'
-  ), [])
-  const handleUnauthorized = useCallback(() => {
-    if (auth.state !== 'signed-in') return signOut(null)
-    return signOut(tr('settings.auth_expired'))
-  }, [auth.state, signOut, tr])
-  const api = useMemo(() => createMeteorVoiceApiClient({
-    baseUrl: apiBaseUrl.trim(),
-    headers: getAuthHeaders,
-    onUnauthorized: handleUnauthorized,
-  }), [apiBaseUrl, getAuthHeaders, handleUnauthorized])
-  const setSettingsLoadingFlag = useCallback((loading: boolean) => {
-    settingsLoadingRef.current = loading
-    setSettingsLoading(loading)
+  // ─── STT Provider / 语音识别提供者 ───
+  const setSessionSttProvider = useCallback((provider: SessionSttProvider) => {
+    sessionSttProviderRef.current = provider
+    setSessionSttProviderState(provider)
+    void SecureStore.setItemAsync(sessionSttProviderStorageKey, provider)
   }, [])
-  const applyThemeLocal = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
-    setThemeLocal(k)
-  }, [setThemeLocal])
-  const setTheme = useCallback((k: Parameters<typeof setThemeLocal>[0]) => {
-    themeInitializedRef.current = true
-    setThemeLocal(k)
-    const now = new Date().toISOString()
-    void SecureStore.setItemAsync('theme_set_at', now)
-    void api.updatePreferences({ ui_theme: k }).catch(() => {})
-  }, [setThemeLocal, api])
+
+  // ─── Voice Metrics / 语音指标 ───
+  const setStatus = useCallback((nextStatus: string) => {
+    const previous = statusRef.current
+    statusRef.current = nextStatus
+    if (previous !== nextStatus) logMetric('ui_status_changed', { from: previous, to: nextStatus })
+    setStatusState(nextStatus)
+  }, [logMetric])
+
+  const setBusy = useCallback((nextBusy: boolean) => {
+    busyRef.current = nextBusy
+    if (busyRef.current !== nextBusy) logMetric('ui_busy_changed', { from: !nextBusy, to: nextBusy })
+    setBusyState(nextBusy)
+  }, [logMetric])
+
+  const setRoutePresence = useCallback((next: SessionRoutePresence, reason: string) => {
+    const previous = routePresenceRef.current
+    routePresenceRef.current = next
+    canListenOnRouteRef.current = next === 'inSession'
+    if (previous !== next) logMetric('route_presence_changed', { from: previous, to: next, reason })
+  }, [logMetric])
+
+  const canStartSessionListening = useCallback((context: string, generation?: number) => {
+    const gen = generation ?? sessionGenerationRef.current
+    const gate = {
+      sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current,
+      canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current,
+      playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current,
+      generation: gen, currentGeneration: sessionGenerationRef.current,
+    }
+    const allowed = canStartListening(gate)
+    if (!allowed) logMetric('stt_start_aborted', { context, ...gate })
+    return allowed
+  }, [logMetric])
+
   const clearResumeListeningTimer = useCallback(() => {
     if (!resumeListeningTimerRef.current) return
     clearTimeout(resumeListeningTimerRef.current)
     resumeListeningTimerRef.current = null
   }, [])
 
-  const logVoiceMetric = useCallback((stage: string, data: Record<string, unknown> = {}) => {
-    const sanitizedData = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [
-        key,
-        key.toLowerCase().includes('audiourl') && typeof value === 'string' ? '<audioUrl>' : value,
-      ]),
-    )
-    const entry = { ts: Date.now(), stage, data: sanitizedData }
-    console.info('[voice-metrics]', JSON.stringify(entry))
-    setVoiceMetrics(previous => [...previous.slice(-239), entry])
-  }, [])
-
-  const logUserAction = useCallback((action: string, data: Record<string, unknown> = {}) => {
-    logVoiceMetric('user_action', {
-      action,
-      activeTab: activeTabRef.current,
-      scenario: selectedScenarioKey,
-      sessionActive: sessionActiveRef.current,
-      canListenOnRoute: canListenOnRouteRef.current,
-      busy,
-      playbackActive: playbackActiveRef.current,
-      audioPlaying: audioPlayingRef.current,
-      sttProvider: sessionSttProviderRef.current,
-      pendingTeardown: Boolean(listeningTeardownRef.current),
-      ...data,
-    })
-  }, [busy, logVoiceMetric, selectedScenarioKey])
-
-  const runListeningTeardown = useCallback((reason: string, action: () => void | Promise<void>) => {
-    const startedAt = Date.now()
-    logVoiceMetric('listening_teardown_start', {
-      reason,
-      provider: sessionSttProviderRef.current,
-      activeTab: activeTabRef.current,
-      sessionActive: sessionActiveRef.current,
-      canListenOnRoute: canListenOnRouteRef.current,
-    })
-    const task = Promise.resolve()
-      .then(action)
-      .catch(error => {
-        logVoiceMetric('listening_teardown_error', {
-          reason,
-          message: error instanceof Error ? error.message : 'Listening teardown failed',
-        })
-      })
-      .finally(() => {
-        if (listeningTeardownRef.current === task) {
-          listeningTeardownRef.current = null
-        }
-        logVoiceMetric('listening_teardown_done', {
-          reason,
-          elapsedMs: Date.now() - startedAt,
-        })
-      })
-    listeningTeardownRef.current = task
-    return task
-  }, [logVoiceMetric])
-
-  const waitForListeningTeardown = useCallback(async (context: string) => {
-    const pending = listeningTeardownRef.current
-    if (!pending) return
-    const startedAt = Date.now()
-    logVoiceMetric('listening_teardown_wait', { context })
-    await pending
-    logVoiceMetric('listening_teardown_wait_done', {
-      context,
-      elapsedMs: Date.now() - startedAt,
-    })
-  }, [logVoiceMetric])
-
-  const cancelListeningForReason = useCallback((reason: string) => (
-    runListeningTeardown(reason, async () => {
-      await speechCancelListeningRef.current()
-    })
-  ), [runListeningTeardown])
-
-  const voiceMetricsText = useMemo(() => {
-    return voiceMetrics
-      .map(entry => `${new Date(entry.ts).toLocaleTimeString()} ${entry.stage} ${JSON.stringify(entry.data)}`)
-      .join('\n')
-  }, [voiceMetrics])
-  const asrEvaluationText = useMemo(() => createASREvaluationReport(voiceMetrics), [voiceMetrics])
-
   const scheduleResumeListening = useCallback((delayMs = DEFAULT_PLAYBACK_COOLDOWN_MS, updateStatus = true) => {
     clearResumeListeningTimer()
     resumeListeningTimerRef.current = setTimeout(() => {
       resumeListeningTimerRef.current = null
-      if (!sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current || audioPlayingRef.current) {
-        logVoiceMetric('resume_listening_skipped', {
-          playbackActive: playbackActiveRef.current,
-          audioPlaying: audioPlayingRef.current,
-        })
+      if (!canStartSessionListening('resume_timer')) {
+        logMetric('resume_listening_skipped', {})
         return
       }
       listeningStartMsRef.current = Date.now()
-      if (updateStatus) setStatus(listeningStartupStatus())
+      if (updateStatus) {
+        setStatus(sessionSttProviderRef.current === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+      }
       void speechStartListeningRef.current('en-US')
     }, delayMs)
-  }, [clearResumeListeningTimer, listeningStartupStatus, logVoiceMetric])
+  }, [canStartSessionListening, clearResumeListeningTimer, logMetric, setStatus])
 
-  useEffect(() => clearResumeListeningTimer, [clearResumeListeningTimer])
-
-  const updateApiBaseUrl = useCallback((value: string) => {
-    setApiBaseUrl(value)
-    const normalized = value.trim()
-    if (!normalized || normalized === defaultApiBaseUrl) {
-      setApiBaseUrlSource('default')
-      void SecureStore.deleteItemAsync(apiBaseUrlStorageKey)
-      return
-    }
-    setApiBaseUrlSource('user')
-    void SecureStore.setItemAsync(apiBaseUrlStorageKey, normalized)
-  }, [])
-
-  const resetApiBaseUrl = useCallback(() => {
-    setApiBaseUrl(defaultApiBaseUrl)
-    setApiBaseUrlSource('default')
-    void SecureStore.deleteItemAsync(apiBaseUrlStorageKey)
-  }, [])
-
-  const setSessionSttProvider = useCallback((provider: SessionSttProvider) => {
-    sessionSttProviderRef.current = provider
-    setSessionSttProviderState(provider)
-    void SecureStore.setItemAsync(sessionSttProviderStorageKey, provider)
-    logVoiceMetric('stt_provider_selected', { provider })
-  }, [logVoiceMetric, setSessionSttProviderState])
-
-  async function ensureSessionSttProviderForStart() {
-    let provider = sessionSttProviderRef.current
-
-    if (!sessionSttProviderHydratedRef.current) {
-      const stored = await SecureStore.getItemAsync(sessionSttProviderStorageKey)
-      if (stored === 'xunfei' || stored === 'native') {
-        provider = stored
-        sessionSttProviderRef.current = stored
-        setSessionSttProviderState(stored)
-      }
-      sessionSttProviderHydratedRef.current = true
-    }
-
-    if (auth.state === 'signed-in' && !sessionSttProvidersLoadedRef.current) {
-      try {
-        const result = await api.listASRProviders()
-        const providers: SessionSttProvider[] = ['native']
-        if (result.providers.some(item => item.key === 'xunfei' && item.enabled)) {
-          providers.push('xunfei')
-        }
-        setAvailableSessionSttProviders(providers)
-        sessionSttProvidersLoadedRef.current = true
-        if (!providers.includes(provider)) {
-          provider = 'native'
-          sessionSttProviderRef.current = 'native'
-          setSessionSttProviderState('native')
-          void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
-        }
-      } catch (error) {
-        const requestError = formatApiRequestError(error, {
-          context: 'mobile_asr_providers_load',
-          presentation: 'silent',
-        })
-        logVoiceMetric('mobile_silent_request_error', requestError.logData)
-      }
-    }
-
-    return provider
-  }
-
-  async function startSession() {
-    logUserAction('session_start_tap', { scenario: scenario.key })
-    if (scenarioSwitching) {
-      logVoiceMetric('session_start_blocked', { reason: 'scenario_switching' })
-      return
-    }
-    if (auth.state !== 'signed-in') {
-      setActiveTab('settings')
-      setStatus('login.signin')
-      return
-    }
-
-    setStatus('session.status.preparing_listening')
-    logVoiceMetric('session_start_requested', {
-      scenario: scenario.key,
-      activeTab: activeTabRef.current,
-      pendingTeardown: Boolean(listeningTeardownRef.current),
+  const enqueueSttOperation = useCallback(<T,>(label: string, operation: () => Promise<T>) => {
+    const { task, queue } = enqueueRuntimeOperation({
+      queue: sttOperationQueueRef.current, label, log: logMetric, operation,
     })
-    await waitForListeningTeardown('session_start')
-    await cancelListeningForReason('session_start_reset')
-    const listeningProvider = await ensureSessionSttProviderForStart()
-    logVoiceMetric('session_start', {
-      scenario: scenario.key,
-      accent: accent.key,
-      provider: ttsProvider,
-      sttProvider: listeningProvider,
-    })
-    endpointRequestRef.current += 1
-    clearResumeListeningTimer()
-    playbackActiveRef.current = false
-    playbackStartedRef.current = false
-    playbackEndedAtMsRef.current = null
-    listeningStartMsRef.current = Date.now()
-    pendingNativeTranscriptRef.current = ''
-    sessionActiveRef.current = true
-    canListenOnRouteRef.current = true
-    const nextSessionId = apiSessionId ?? `mobile-${Date.now()}`
-    const nextSnapshot = startListeningSession(nextSessionId)
-    snapshotRef.current = nextSnapshot
-    messagesRef.current = []
-    setSnapshot(nextSnapshot)
-    setMessages([])
-    setCorrectionHistory([])
-    setAudioUrl(null)
-    playbackEndedAtMsRef.current = null
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    setSummary(null)
-    setIsSessionActive(true)
-    setStatus(listeningStartupStatus(listeningProvider))
-    logVoiceMetric('session_listening_start_requested', {
-      sttProvider: listeningProvider,
-      sessionId: nextSessionId,
-      canListenOnRoute: canListenOnRouteRef.current,
-    })
-    void startListeningWithProviderRef.current(listeningProvider, 'en-US')
-  }
+    sttOperationQueueRef.current = queue
+    return task
+  }, [logMetric])
 
-  const synthesizeCoachSpeech = useCallback(async (text: string) => {
-    return api.synthesizeSpeech({
-      text,
-      accent: accent.name,
-      provider: ttsProvider,
-      speed: ttsSpeedRouting.serverSpeed,
-      voiceId: ttsVoiceId ?? undefined,
-    })
-  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
-
-  useEffect(() => {
-    audioPlayingRef.current = audio.isPlaying
-    if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
-      playbackStartedRef.current = true
-      logVoiceMetric('playback_started', { audioUrl })
-      void cancelListeningForReason('playback_started')
-    }
-  }, [audio.isPlaying, audioUrl, cancelListeningForReason, logVoiceMetric])
-
-  useEffect(() => {
-    if (!audioUrl || !audio.didJustFinish || audio.isPlaying) return
-    if (!playbackStartedRef.current) {
-      logVoiceMetric('playback_finish_ignored', { reason: 'not_started', audioUrl })
-      return
-    }
-
-    let cancelled = false
-    const advanceQueue = () => {
-      if (cancelled) return
-
-      if (isCorrectionPlayingRef.current) {
-        isCorrectionPlayingRef.current = false
-        playbackActiveRef.current = false
-        playbackStartedRef.current = false
-        playbackEndedAtMsRef.current = Date.now()
-        setStatus(sessionActiveRef.current && canListenOnRouteRef.current
-          ? 'session.status.listening'
-          : 'session.status.reply_played')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
-          scheduleResumeListening(900, false)
-        }
-        return
-      }
-
-      const nextQueue = advancePlaybackQueue({
-        queue: playbackQueue,
-        finishedAudioUrl: audioUrl,
-        didJustFinish: audio.didJustFinish,
-        isPlaying: audio.isPlaying,
+  const cancelListeningForReason = useCallback((reason: string) => {
+    const task = Promise.resolve()
+      .then(() => speechCancelListeningRef.current())
+      .catch(error => { logMetric('listening_teardown_error', { reason, message: error instanceof Error ? error.message : 'teardown failed' }) })
+      .finally(() => {
+        if (listeningTeardownRef.current === task) listeningTeardownRef.current = null
+        logMetric('listening_teardown_done', { reason })
       })
+    listeningTeardownRef.current = task
+    return task
+  }, [logMetric])
 
-      if (nextQueue === playbackQueue) return
-
-      setPlaybackQueue(nextQueue)
-      const effects = getPlaybackCompletionEffects(nextQueue)
-      if (effects.includes('play_next_audio') && nextQueue.currentAudioUrl && nextQueue.currentAudioUrl !== audioUrl) {
-        playbackActiveRef.current = true
-        playbackStartedRef.current = false
-        playbackEndedAtMsRef.current = null
-        clearResumeListeningTimer()
-        void cancelListeningForReason('play_next_audio')
-        setStatus('session.status.playing_reply')
-        setAudioUrl(nextQueue.currentAudioUrl)
-        return
-      }
-
-      playbackActiveRef.current = false
-      playbackStartedRef.current = false
-      playbackEndedAtMsRef.current = Date.now()
-      logVoiceMetric('playback_finished', { audioUrl })
-      setStatus('session.status.reply_played')
-      if (sessionActiveRef.current && canListenOnRouteRef.current) {
-        scheduleResumeListening()
-      }
-    }
-
-    const timeout = setTimeout(advanceQueue, 0)
-    return () => {
-      cancelled = true
-      clearTimeout(timeout)
-    }
-  }, [
-    audio.didJustFinish, audio.isPlaying, audioUrl, playbackQueue, cancelListeningForReason,
-    clearResumeListeningTimer, logVoiceMetric, scheduleResumeListening,
-  ])
-
-  const submitTurn = useCallback(async (sourceTranscript: string) => {
-    const submitStartedAt = Date.now()
-    const transcript = sourceTranscript.trim()
-    const currentSnapshot = snapshotRef.current
-    const currentMessages = messagesRef.current
-    if (
-      busy ||
-      audio.isRecording ||
-      playbackActiveRef.current ||
-      !canAcceptUserTranscript({
-        activeSession: isSessionActive,
-        canListenOnRoute: canListenOnRouteRef.current,
-        workflowState: currentSnapshot.state,
-        transcript,
-      })
-    ) return
-
-    const acceptedTurn = acceptTranscriptTurn({ snapshot: currentSnapshot, transcript, messages: currentMessages })
-    const nextMessages = acceptedTurn.messages
-    let nextSnapshot = acceptedTurn.snapshot
-    snapshotRef.current = nextSnapshot
-    messagesRef.current = nextMessages
-    setSnapshot(nextSnapshot)
-    setMessages(nextMessages)
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
-    listeningStartMsRef.current = 0
-    playbackEndedAtMsRef.current = null
-    pendingNativeTranscriptRef.current = ''
-    clearResumeListeningTimer()
-    await cancelListeningForReason('submit_turn')
-    setBusy(true)
-    const turnRequestId = ++turnRequestRef.current
-
-    try {
-      setStatus('session.status.requesting_reply')
-      nextSnapshot = requestCoachReply(nextSnapshot)
-      snapshotRef.current = nextSnapshot
-      setSnapshot(nextSnapshot)
-      const coachReply = await withTimeout(api.generateCoachReply({
-        messages: nextMessages,
-        context: {
-          scenario: { name: scenario.name, description: scenario.description },
-          accentProfile: { name: accent.name, region: accent.region },
-          sessionId: nextSnapshot.sessionId,
-          turnNumber: nextMessages.filter(message => message.role === 'user').length,
-          responseLocale: localeRef.current,
-        },
-      }), 20_000, 'Coach reply request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
-        logVoiceMetric('coach_reply_ignored', { reason: 'session_inactive' })
-        return
-      }
-      logVoiceMetric('coach_reply_ready', {
-        elapsedMs: Date.now() - submitStartedAt,
-        chars: coachReply.text.length,
-      })
-      setCorrectionHistory(previous => [...previous, ...coachReply.corrections])
-      const coachTurn = receiveCoachReply({
-        snapshot: nextSnapshot,
-        messages: nextMessages,
-        responseText: coachReply.text,
-        corrections: coachReply.corrections,
-      })
-      nextSnapshot = coachTurn.snapshot
-      snapshotRef.current = nextSnapshot
-      messagesRef.current = coachTurn.messages
-      setMessages(coachTurn.messages)
-      setSnapshot(nextSnapshot)
-
-      setStatus('session.status.requesting_voice')
-      if (!coachReply.text.trim()) {
-        setStatus('session.status.reply_without_text')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
-          scheduleResumeListening(500)
-        }
-        return
-      }
-      const voice = await withTimeout(synthesizeCoachSpeech(coachReply.text), 20_000, 'Coach voice request timed out.')
-      if (turnRequestRef.current !== turnRequestId || !sessionActiveRef.current) {
-        logVoiceMetric('tts_ignored', { reason: 'session_inactive' })
-        return
-      }
-      logVoiceMetric('tts_ready', {
-        elapsedMs: Date.now() - submitStartedAt,
-        hasAudio: Boolean(voice.audioUrl),
-      })
-
-      if (voice.audioUrl) {
-        playbackActiveRef.current = true
-        playbackStartedRef.current = false
-        playbackEndedAtMsRef.current = null
-        clearResumeListeningTimer()
-        await cancelListeningForReason('playback_enqueue')
-        setStatus('session.status.playing_reply')
-        setPlaybackQueue(startPlaybackQueue(voice.audioUrl))
-        setAudioUrl(voice.audioUrl)
-        logVoiceMetric('playback_enqueued', { elapsedMs: Date.now() - submitStartedAt })
-      } else {
-        playbackActiveRef.current = false
-        setStatus('session.status.reply_without_audio')
-        if (sessionActiveRef.current && canListenOnRouteRef.current) {
-          scheduleResumeListening(500)
-        }
-      }
-      const completedTurn = completeCoachPlayback({
-        snapshot: nextSnapshot,
-        corrections: coachReply.corrections,
-      })
-      snapshotRef.current = completedTurn.snapshot
-      setSnapshot(completedTurn.snapshot)
-    } catch (error) {
-      const recovery = recoverSessionError({
-        snapshot: nextSnapshot,
-        reason: 'coach_reply_failed',
-        activeSession: isSessionActive,
-        canListenOnRoute: canListenOnRouteRef.current,
-      })
-      snapshotRef.current = recovery.snapshot
-      setSnapshot(recovery.snapshot)
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_session_submit',
-        presentation: 'banner',
-      })
-      logVoiceMetric('mobile_session_request_error', requestError.logData)
-      displayErrorFeedback(requestError, 'mobile_session_submit')
-      setStatus(requestError.displayMessage)
-      if (sessionActiveRef.current && canListenOnRouteRef.current) {
-        scheduleResumeListening(900)
-      }
-    } finally {
-      if (turnRequestRef.current === turnRequestId) setBusy(false)
-    }
-  }, [
-    accent.name, accent.region, api, audio.isRecording, busy, cancelListeningForReason,
-    clearResumeListeningTimer, isSessionActive, logVoiceMetric, scenario.description, scenario.name,
-    scheduleResumeListening, synthesizeCoachSpeech,
-  ])
-
-  const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
-    const finalReceivedAt = Date.now()
-    const transcript = finalTranscript.trim()
-    if (!transcript) return
-    const endpointTranscript = [pendingNativeTranscriptRef.current, transcript]
-      .map(part => part.trim())
-      .filter(Boolean)
-      .join(' ')
-
-    if (!sessionActiveRef.current) {
-      logVoiceMetric('transcript_ignored_inactive', { chars: transcript.length })
-      setStatus('session.status.speech_captured')
-      return
-    }
-
-    const currentSnapshot = snapshotRef.current
-    const currentMessages = messagesRef.current
-    const transcriptGate = gateUserTranscript({
-      activeSession: sessionActiveRef.current,
-      canListenOnRoute: canListenOnRouteRef.current,
-      workflowState: currentSnapshot.state,
-      transcript: endpointTranscript,
-      playbackActive: playbackActiveRef.current,
-      audioPlaying: audio.isPlaying,
-      playbackEndedAtMs: playbackEndedAtMsRef.current,
-      nowMs: Date.now(),
-      cooldownMs: DEFAULT_PLAYBACK_COOLDOWN_MS,
-    })
-    if (!transcriptGate.accepted) {
-      logVoiceMetric('transcript_gate_rejected', {
-        reason: transcriptGate.reason,
-        chars: endpointTranscript.length,
-      })
-      if (transcriptGate.reason === 'playback_active') {
-        void cancelListeningForReason('transcript_gate_playback_active')
-      }
-      pendingNativeTranscriptRef.current = ''
-      return
-    }
-
-    const echoGuard = shouldIgnoreLikelyPlaybackEcho({
-      transcript: endpointTranscript,
-      lastAssistantResponse: currentSnapshot.lastResponse,
-      playbackEndedAtMs: playbackEndedAtMsRef.current,
-      nowMs: Date.now(),
-    })
-    if (echoGuard.shouldIgnore) {
-      logVoiceMetric('transcript_echo_ignored', {
-        overlapRatio: echoGuard.overlapRatio,
-        chars: endpointTranscript.length,
-      })
-      pendingNativeTranscriptRef.current = ''
-      setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
-        void speechStartListeningRef.current('en-US')
-      }
-      return
-    }
-
-    const baseUrl = apiBaseUrl.trim()
-    const endpointRequestId = ++endpointRequestRef.current
-    logVoiceMetric('endpoint_start', { chars: endpointTranscript.length })
-    const endpointResult = await judgeEndpoint({
-      transcript: endpointTranscript,
-      listeningDurationMs: Date.now() - listeningStartMsRef.current,
-      messages: currentMessages,
-      scenario: scenario.key,
-      semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
-        const authHeaders = await getAuthHeaders()
-        const res = await fetchWithTimeout(fetch, `${baseUrl}/api/semantic-endpoint`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
-          body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
-        })
-        if (res.status === 401) await handleUnauthorized()
-        if (!res.ok) throw new Error('Semantic check failed')
-        const data = await res.json() as { judgment: 'done' | 'thinking' }
-        return data.judgment
-      } : undefined,
-    })
-    if (endpointRequestId !== endpointRequestRef.current || !sessionActiveRef.current || !canListenOnRouteRef.current || playbackActiveRef.current) return
-    logVoiceMetric('endpoint_done', {
-      judgment: endpointResult.judgment,
-      reason: endpointResult.reason,
-      elapsedMs: Date.now() - finalReceivedAt,
-    })
-
-    if (endpointResult.judgment === 'continue') {
-      pendingNativeTranscriptRef.current = endpointTranscript
-      setStatus(listeningStartupStatus())
-      if (!playbackActiveRef.current && !audioPlayingRef.current) {
-        void speechStartListeningRef.current('en-US')
-      }
-      return
-    }
-
-    pendingNativeTranscriptRef.current = ''
-    logVoiceMetric('submit_turn_start', { chars: endpointTranscript.length })
-    void submitTurn(endpointTranscript)
-  }, [
-    apiBaseUrl, audio.isPlaying, auth.state, cancelListeningForReason, getAuthHeaders, handleUnauthorized,
-    listeningStartupStatus, logVoiceMetric, scenario.key, submitTurn,
-  ])
-
-  const handleListeningEndedWithoutTranscript = useCallback(() => {
-    if (!sessionActiveRef.current || !canListenOnRouteRef.current || busy || playbackActiveRef.current || audioPlayingRef.current) {
-      logVoiceMetric('stt_end_restart_skipped', {
-        sessionActive: sessionActiveRef.current,
-        canListenOnRoute: canListenOnRouteRef.current,
-        activeTab: activeTabRef.current,
-        busy,
-        playbackActive: playbackActiveRef.current,
-        audioPlaying: audioPlayingRef.current,
-        provider: sessionSttProviderRef.current,
-      })
-      return
-    }
-    logVoiceMetric('stt_end_restart_scheduled')
-    scheduleResumeListening(250, false)
-  }, [busy, logVoiceMetric, scheduleResumeListening])
-
-  const cancelXunfeiSessionListening = useCallback(async (reason = 'cancel') => {
-    const current = xunfeiSessionSttRef.current
-    if (!current || current.settled) return
-    current.settled = true
-    if (current.finalizeTimer) clearTimeout(current.finalizeTimer)
-    if (current.hardTimer) clearTimeout(current.hardTimer)
-    if (current.noFrameTimer) clearTimeout(current.noFrameTimer)
-    current.frameSubscription?.remove()
-    current.stateSubscription?.remove()
-    if (current.socket && current.socket.readyState === WebSocket.OPEN) {
-      current.socket.close()
-    }
-    await stopPcmCapture(`session_${reason}`).catch(() => undefined)
-    xunfeiSessionSttRef.current = null
-    logVoiceMetric('stt_end', { provider: 'xunfei', cancelled: true, reason })
-  }, [logVoiceMetric])
-
-  const startXunfeiSessionListening = useCallback(async () => {
-    const canUseXunfeiRoute = (context: string) => {
-      const allowed = sessionActiveRef.current &&
-        canListenOnRouteRef.current &&
-        !busyRef.current &&
-        !playbackActiveRef.current &&
-        !audioPlayingRef.current &&
-        activeTabRef.current === 'session'
-      if (!allowed) {
-        logVoiceMetric('stt_start_aborted', {
-          provider: 'xunfei',
-          context,
-          sessionActive: sessionActiveRef.current,
-          canListenOnRoute: canListenOnRouteRef.current,
-          activeTab: activeTabRef.current,
-          busy: busyRef.current,
-          playbackActive: playbackActiveRef.current,
-          audioPlaying: audioPlayingRef.current,
-        })
-      }
-      return allowed
-    }
-
-    if (!canUseXunfeiRoute('entry')) return false
-    if (xunfeiSessionSttRef.current && !xunfeiSessionSttRef.current.settled) return true
-    if (!availableSessionSttProviders.includes('xunfei') || !isPcmCaptureAvailable()) {
-      logVoiceMetric('stt_provider_fallback', {
-        requested: 'xunfei',
-        reason: !isPcmCaptureAvailable() ? 'pcm_unavailable' : 'provider_unavailable',
-      })
-      return nativeSpeechStartListeningRef.current('en-US')
-    }
-    if (auth.state !== 'signed-in') return nativeSpeechStartListeningRef.current('en-US')
-
-    const streamStartedAt = Date.now()
-    let socket: WebSocket | null = null
-    let frameSubscription: { remove: () => void } | null = null
-    let stateSubscription: { remove: () => void } | null = null
-    let finalizeTimer: ReturnType<typeof setTimeout> | null = null
-    let hardTimer: ReturnType<typeof setTimeout> | null = null
-    let noFrameTimer: ReturnType<typeof setTimeout> | null = null
-    let settled = false
-    let firstFrame = true
-    let finalFrameSent = false
-    let finalReceived = false
-    let audioSequence = 0
-    let frameCount = 0
-    let totalBytes = 0
-    let transcript = ''
-    let firstPartialAt: number | null = null
-    const transcriptSegments: string[] = []
-
-    const updateCurrent = () => {
-      xunfeiSessionSttRef.current = {
-        socket,
-        frameSubscription,
-        stateSubscription,
-        finalizeTimer,
-        hardTimer,
-        noFrameTimer,
-        settled,
-      }
-    }
-
-    const clearNoFrameTimer = () => {
-      if (!noFrameTimer) return
-      clearTimeout(noFrameTimer)
-      noFrameTimer = null
-      updateCurrent()
-    }
-
-    const settle = (reason: string, submitted: boolean) => {
-      if (settled) return
-      settled = true
-      updateCurrent()
-      if (finalizeTimer) clearTimeout(finalizeTimer)
-      if (hardTimer) clearTimeout(hardTimer)
-      if (noFrameTimer) clearTimeout(noFrameTimer)
-      frameSubscription?.remove()
-      void stopPcmCapture(`session_${reason}`).catch(() => undefined).finally(() => stateSubscription?.remove())
-      if (socket && socket.readyState === WebSocket.OPEN) socket.close()
-      xunfeiSessionSttRef.current = null
-      logVoiceMetric('stt_end', {
-        provider: 'xunfei',
-        cancelled: reason !== 'final',
-        reason,
-        hadTranscript: Boolean(transcript.trim()),
-        submitted,
-        elapsedMs: Date.now() - streamStartedAt,
-        frameCount,
-        totalBytes,
-      })
-    }
-
-    const sendAudioFrame = (status: 0 | 1 | 2, audioBase64: string, session: CreateASRSessionResponse) => {
-      if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
-      if (status === 2) finalFrameSent = true
-      audioSequence += 1
-      socket.send(JSON.stringify(createXunfeiASRFrame(session, status, audioBase64, audioSequence)))
-    }
-
-    try {
-      const authReady = await auth.refreshSession()
-      if (!canUseXunfeiRoute('after_auth_refresh')) return false
-      if (!authReady) return nativeSpeechStartListeningRef.current('en-US')
-
-      const session = await api.createASRSession({
-        provider: 'xunfei',
-        mode: 'streaming',
-        languageMode: 'mixed_zh_en',
-        scenarioKey: scenario.key,
-        sessionId: snapshotRef.current.sessionId,
-        endpointSilenceMs: 900,
-        clientTraceId: `mobile-session-${Date.now()}`,
-      })
-      if (!canUseXunfeiRoute('after_session_create')) {
-        logVoiceMetric('stt_start_stale_after_bootstrap', { provider: 'xunfei' })
-        return false
-      }
-      if (session.provider !== 'xunfei' || session.status !== 'created' || session.transport !== 'websocket' || !session.endpointUrl) {
-        logVoiceMetric('stt_provider_fallback', { requested: 'xunfei', reason: 'session_not_ready' })
-        return nativeSpeechStartListeningRef.current('en-US')
-      }
-
-      logVoiceMetric('stt_bootstrap_start', { provider: 'xunfei' })
-      setStatus('session.status.preparing_listening')
-      await nativeSpeechCancelListeningRef.current()
-
-      socket = new WebSocket(session.endpointUrl)
-      updateCurrent()
-
-      const finishAudio = () => {
-        if (!canUseXunfeiRoute('finish_audio')) {
-          settle('route_inactive', false)
-          return
-        }
-        if (finalFrameSent) return
-        sendAudioFrame(2, '', session)
-        void stopPcmCapture('session_endpoint').catch(() => undefined)
-      }
-
-      const scheduleFinalize = () => {
-        if (finalizeTimer) clearTimeout(finalizeTimer)
-        finalizeTimer = setTimeout(finishAudio, session.providerConfig?.eosMs ?? 900)
-        updateCurrent()
-      }
-
-      stateSubscription = addPcmStateListener(event => {
-        logVoiceMetric('stt_pcm_state', {
-          provider: 'xunfei',
-          state: event.state,
-          frameCount: event.frameCount,
-          totalBytes: event.totalBytes,
-          message: event.message,
-        })
-      })
-
-      frameSubscription = addPcmFrameListener((event: PcmCaptureFrameEvent) => {
-        if (!canUseXunfeiRoute('pcm_frame')) {
-          settle('route_inactive', false)
-          return
-        }
-        if (!socket || socket.readyState !== WebSocket.OPEN || finalFrameSent) return
-        frameCount += 1
-        totalBytes += event.byteCount
-        if (frameCount === 1) clearNoFrameTimer()
-        sendAudioFrame(firstFrame ? 0 : 1, event.audioBase64, session)
-        firstFrame = false
-        if (frameCount === 1 || frameCount % 50 === 0) {
-          logVoiceMetric('stt_pcm_frame', {
-            provider: 'xunfei',
-            frameCount,
-            totalBytes,
-            elapsedMs: event.elapsedMs,
-          })
-        }
-      })
-
-      socket.onopen = () => {
-        if (!canUseXunfeiRoute('socket_open')) {
-          settle('route_inactive', false)
-          return
-        }
-        void startPcmCapture({
-          sampleRate: session.providerConfig?.sampleRate ?? 16000,
-          frameDurationMs: session.providerConfig?.frameIntervalMs ?? 40,
-        }).then(status => {
-          if (!canUseXunfeiRoute('after_pcm_start')) {
-            void stopPcmCapture('session_route_inactive').catch(() => undefined)
-            settle('route_inactive', false)
-            return
-          }
-          listeningStartMsRef.current = Date.now()
-          logVoiceMetric('stt_start', { provider: 'xunfei' })
-          logVoiceMetric('stt_ready', {
-            provider: 'xunfei',
-            elapsedMs: Date.now() - streamStartedAt,
-            sampleRate: status.sampleRate,
-            frameSizeBytes: status.frameSizeBytes,
-          })
-          setStatus('session.status.listening')
-          noFrameTimer = setTimeout(() => {
-            if (settled || frameCount > 0) return
-            logVoiceMetric('stt_pcm_no_frame', {
-              provider: 'xunfei',
-              elapsedMs: Date.now() - streamStartedAt,
-              pcmStatusFrameCount: status.frameCount,
-              pcmStatusTotalBytes: status.totalBytes,
-            })
-            settle('pcm_no_frame', false)
-            handleListeningEndedWithoutTranscript()
-          }, 1800)
-          updateCurrent()
-        }).catch(error => {
-          logVoiceMetric('stt_provider_error', {
-            provider: 'xunfei',
-            message: error instanceof Error ? error.message : 'PCM capture failed',
-          })
-          settle('pcm_error', false)
-          handleListeningEndedWithoutTranscript()
-        })
-        hardTimer = setTimeout(finishAudio, 15_000)
-        updateCurrent()
-      }
-
-      socket.onmessage = event => {
-        if (!canUseXunfeiRoute('socket_message')) {
-          settle('route_inactive', false)
-          return
-        }
-        const payload = parseJsonObject(event.data)
-        const header = getObject(payload?.header)
-        const code = typeof header?.code === 'number'
-          ? header.code
-          : typeof payload?.code === 'number'
-            ? payload.code
-            : 0
-        if (code !== 0) {
-          const message = typeof header?.message === 'string'
-            ? header.message
-            : typeof payload?.message === 'string'
-              ? payload.message
-              : `Xunfei ASR error ${code}`
-          logVoiceMetric('stt_provider_error', { provider: 'xunfei', code, message })
-          settle('provider_error', false)
-          handleListeningEndedWithoutTranscript()
-          return
-        }
-
-        const recognitionResult = extractXunfeiRecognitionResult(payload)
-        if (recognitionResult?.text) {
-          if (recognitionResult.pgs === 'rpl' && recognitionResult.rg) {
-            const [start, end] = recognitionResult.rg
-            for (let index = start; index <= end; index += 1) transcriptSegments[index] = ''
-          }
-          if (recognitionResult.sn != null) {
-            transcriptSegments[recognitionResult.sn] = recognitionResult.text
-          } else {
-            transcriptSegments.push(recognitionResult.text)
-          }
-          transcript = transcriptSegments.filter(Boolean).join('').trim()
-          if (!firstPartialAt) {
-            firstPartialAt = Date.now()
-            logVoiceMetric('stt_first_partial', {
-              provider: 'xunfei',
-              elapsedMs: firstPartialAt - streamStartedAt,
-              chars: transcript.length,
-            })
-          }
-          logVoiceMetric('stt_partial', { provider: 'xunfei', chars: transcript.length })
-          scheduleFinalize()
-        }
-
-        const data = getObject(payload?.data)
-        const status = typeof header?.status === 'number'
-          ? header.status
-          : typeof data?.status === 'number'
-            ? data.status
-            : undefined
-        if (status === 2) {
-          finalReceived = true
-          const normalized = transcript.trim()
-          if (normalized) {
-            logVoiceMetric('stt_submit', {
-              provider: 'xunfei',
-              source: 'xunfei_final',
-              chars: normalized.length,
-              elapsedMs: Date.now() - streamStartedAt,
-            })
-            void handleNativeFinalTranscript(normalized)
-            settle('final', true)
-          } else {
-            settle('final', false)
-            handleListeningEndedWithoutTranscript()
-          }
-        }
-      }
-
-      socket.onerror = () => {
-        logVoiceMetric('stt_provider_error', { provider: 'xunfei', message: 'WebSocket error' })
-        settle('socket_error', false)
-        handleListeningEndedWithoutTranscript()
-      }
-
-      socket.onclose = event => {
-        logVoiceMetric('stt_socket_close', {
-          provider: 'xunfei',
-          code: typeof event?.code === 'number' ? event.code : null,
-          reason: typeof event?.reason === 'string' ? event.reason : '',
-          wasClean: Boolean(event?.wasClean),
-          finalReceived,
-          finalFrameSent,
-          frameCount,
-          totalBytes,
-        })
-        if (!finalReceived && !settled) {
-          settle('socket_closed', false)
-          handleListeningEndedWithoutTranscript()
-        }
-      }
-
-      updateCurrent()
-      return true
-    } catch (error) {
-      logVoiceMetric('stt_provider_error', {
-        provider: 'xunfei',
-        message: error instanceof Error ? error.message : 'Xunfei STT failed to start',
-      })
-      settle('start_error', false)
-      return nativeSpeechStartListeningRef.current('en-US')
-    }
-  }, [
-    api, auth, availableSessionSttProviders, handleListeningEndedWithoutTranscript,
-    handleNativeFinalTranscript, logVoiceMetric, scenario.key,
-  ])
+  // ─── Native Speech / 原生语音 ───
+  const nativeFinalTranscriptRef = useHandlerBridge<(t: string) => Promise<void>>()
+  const nativeEndedWithoutTranscriptRef = useHandlerBridge<() => void>()
+  const xunfeiFinalTranscriptRef = useHandlerBridge<(t: string) => Promise<void>>()
+  const xunfeiEndedWithoutTranscriptRef = useHandlerBridge<() => void>()
 
   const speech = useNativeSpeech({
-    onFinalTranscript: handleNativeFinalTranscript,
-    onListeningEndedWithoutTranscript: handleListeningEndedWithoutTranscript,
-    onMetric: logVoiceMetric,
+    onFinalTranscript: useCallback((t: string) => { void nativeFinalTranscriptRef.current(t) }, []),
+    onListeningEndedWithoutTranscript: useCallback(() => { nativeEndedWithoutTranscriptRef.current() }, []),
+    onMetric: useCallback((stage: string, data?: Record<string, unknown>) => { logMetric(stage, data) }, [logMetric]),
   })
 
   useEffect(() => {
@@ -1475,867 +415,528 @@ function AppInner() {
     nativeSpeechCancelListeningRef.current = speech.cancelListening
   }, [speech.cancelListening, speech.startListening])
 
+  // ─── Xunfei STT Engine / 讯飞语音识别引擎 ───
+  const xunfeiStt = useXunfeiStt({
+    network: { api, auth },
+    context: { locale, selectedScenarioKey },
+    refs: {
+      snapshot: snapshotRef, sessionGeneration: sessionGenerationRef,
+      sttStreamId: sttStreamIdRef, sttRestartCount: sttRestartCountRef,
+      sttRestartStartMs: sttRestartStartMsRef, listeningStartMs: listeningStartMsRef,
+    },
+    session: {
+      sessionActive: sessionActiveRef, routePresence: routePresenceRef,
+      canListenOnRoute: canListenOnRouteRef, playbackActive: playbackActiveRef,
+      audioPlaying: audioPlayingRef,
+    },
+    callbacks: { logMetric, setStatus, enqueueSttOperation, canStartSessionListening },
+    bridge: {
+      nativeSpeechStart: nativeSpeechStartListeningRef,
+      nativeSpeechCancel: nativeSpeechCancelListeningRef,
+      finalTranscript: xunfeiFinalTranscriptRef,
+      endedWithoutTranscript: xunfeiEndedWithoutTranscriptRef,
+    },
+  })
+  const { startXunfeiSessionListening, cancelXunfeiSessionListening } = xunfeiStt
+  // Synced from hook — used by prewarm/ref wiring effects
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const xunfeiSessionSttRef = xunfeiStt.xunfeiSessionSttRef
+
+  // ─── STT Ref Wiring / 语音识别引用接线 ───
   useEffect(() => {
     speechStartListeningRef.current = sessionSttProvider === 'xunfei'
-      ? startXunfeiSessionListening
+      ? () => startXunfeiSessionListening(false).then(() => true)
       : speech.startListening
     speechCancelListeningRef.current = sessionSttProvider === 'xunfei'
       ? cancelXunfeiSessionListening
       : speech.cancelListening
-    startListeningWithProviderRef.current = (provider, lang) => (
-      provider === 'xunfei'
-        ? startXunfeiSessionListening()
-        : speech.startListening(lang)
-    )
-  }, [
-    cancelXunfeiSessionListening, sessionSttProvider, speech, speech.cancelListening, speech.startListening,
-    startXunfeiSessionListening,
-  ])
+    startListeningWithProviderRef.current = (provider, lang) =>
+      provider === 'xunfei' ? startXunfeiSessionListening().then(() => true) : speech.startListening(lang)
+  }, [sessionSttProvider, speech, startXunfeiSessionListening, cancelXunfeiSessionListening])
 
+  // ─── Prewarm / 预热 ───
   useEffect(() => {
-    sessionActiveRef.current = isSessionActive
-  }, [isSessionActive])
-
-  const selectTab = useCallback((tab: Tab) => {
-    logUserAction('tab_tap', { to: tab, from: activeTabRef.current })
-    logVoiceMetric('tab_change', {
-      from: activeTabRef.current,
-      to: tab,
-      sessionActive: sessionActiveRef.current,
-      canListenOnRoute: canListenOnRouteRef.current,
-      busy,
-      playbackActive: playbackActiveRef.current,
-      audioPlaying: audioPlayingRef.current,
+    if (!audioUrl || sessionSttProvider !== 'xunfei') { sttPrewarmAudioUrlRef.current = null; return }
+    const decision = getPlaybackTailPrewarmDecision({
+      provider: sessionSttProvider, isPlaying: audio.isPlaying, playbackActive: playbackActiveRef.current,
+      audioUrl, prewarmedAudioUrl: sttPrewarmAudioUrlRef.current,
+      playbackDurationSeconds: audio.playbackDurationSeconds, playbackRemainingMs: audio.playbackRemainingMs,
     })
-    setActiveTab(tab)
-    if (tab !== 'session') {
-      canListenOnRouteRef.current = false
-      playbackEndedAtMsRef.current = null
-      clearResumeListeningTimer()
-      endpointRequestRef.current += 1
+    if (!decision.shouldPrewarm || decision.remainingMs == null) return
+    sttPrewarmAudioUrlRef.current = audioUrl
+    const timer = setTimeout(() => { void startXunfeiSessionListening(true) }, 0)
+    return () => clearTimeout(timer)
+  }, [audio.isPlaying, audio.playbackDurationSeconds, audio.playbackRemainingMs, audioUrl, sessionSttProvider, startXunfeiSessionListening])
+
+  // ─── Orchestration / 编排函数 ───
+
+  const synthesizeCoachSpeech = useCallback(async (text: string) => {
+    return api.synthesizeSpeech({ text, accent: accent.name, provider: ttsProvider, speed: ttsSpeedRouting.serverSpeed, voiceId: ttsVoiceId ?? undefined })
+  }, [accent.name, api, ttsProvider, ttsSpeedRouting.serverSpeed, ttsVoiceId])
+
+  const submitTurn = useCallback(async (sourceTranscript: string) => {
+    const submitStartedAt = Date.now()
+    const submitGeneration = sessionGenerationRef.current
+    const transcript = sourceTranscript.trim()
+    if (busyRef.current || audio.isRecording || playbackActiveRef.current ||
+      !canAcceptUserTranscript({ activeSession: isSessionActive, canListenOnRoute: canListenOnRouteRef.current, workflowState: snapshotRef.current.state, transcript })) return
+
+    const acceptedTurn = acceptTranscriptTurn({ snapshot: snapshotRef.current, transcript, messages: messagesRef.current })
+    snapshotRef.current = acceptedTurn.snapshot
+    messagesRef.current = acceptedTurn.messages
+    setSnapshot(acceptedTurn.snapshot)
+    setMessages(acceptedTurn.messages)
+    setAudioUrl(null); setPlaybackQueue(createPlaybackQueueSnapshot())
+    listeningStartMsRef.current = 0; playbackEndedAtMsRef.current = null; pendingNativeTranscriptRef.current = ''
+    clearResumeListeningTimer()
+    await cancelListeningForReason('submit_turn')
+    setBusy(true)
+    const turnRequestId = ++turnRequestRef.current
+    let terminalLogged = false
+    let nextSnapshot = acceptedTurn.snapshot
+
+    const logTerminal = (stage: string, data: Record<string, unknown> = {}) => {
+      terminalLogged = true
+      logMetric(stage, { turnRequestId, generation: submitGeneration, elapsedMs: Date.now() - submitStartedAt, ...data })
+    }
+
+    try {
+      setStatus('session.status.requesting_reply')
+      nextSnapshot = requestCoachReply(nextSnapshot)
+      snapshotRef.current = nextSnapshot; setSnapshot(nextSnapshot)
+      const reply = await withTimeout(api.generateCoachReply({
+        messages: messagesRef.current,
+        context: { scenario: { name: scenario.name, description: scenario.description }, accentProfile: { name: accent.name, region: accent.region }, sessionId: nextSnapshot.sessionId, turnNumber: messagesRef.current.filter(m => m.role === 'user').length, responseLocale: locale },
+      }), 20_000, 'Coach reply request timed out.')
+      if (isTurnStale({ turnRequestId, currentTurnRequestId: turnRequestRef.current, generation: submitGeneration, currentGeneration: sessionGenerationRef.current, sessionActive: sessionActiveRef.current })) {
+        logTerminal('submit_turn_ignored_stale', { reason: 'coach_reply_stale' }); return
+      }
+      setCorrectionHistory(prev => [...prev, ...reply.corrections])
+      const coachTurn = receiveCoachReply({ snapshot: nextSnapshot, messages: messagesRef.current, responseText: reply.text, corrections: reply.corrections })
+      nextSnapshot = coachTurn.snapshot; snapshotRef.current = nextSnapshot; messagesRef.current = coachTurn.messages
+      setMessages(coachTurn.messages); setSnapshot(nextSnapshot)
+
+      setStatus('session.status.requesting_voice')
+      if (!reply.text.trim()) {
+        setStatus('session.status.reply_without_text')
+        const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: false, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current, generation: submitGeneration, currentGeneration: sessionGenerationRef.current }
+        if (shouldResumeListening(gate)) scheduleResumeListening(500)
+        logTerminal('submit_turn_done', { reason: 'reply_without_text' }); return
+      }
+      const voice = await withTimeout(synthesizeCoachSpeech(reply.text), 20_000, 'Coach voice request timed out.')
+      if (isTurnStale({ turnRequestId, currentTurnRequestId: turnRequestRef.current, generation: submitGeneration, currentGeneration: sessionGenerationRef.current, sessionActive: sessionActiveRef.current })) {
+        logTerminal('submit_turn_ignored_stale', { reason: 'tts_stale' }); return
+      }
+      if (voice.audioUrl) {
+        playbackActiveRef.current = true; playbackStartedRef.current = false; playbackEndedAtMsRef.current = null
+        clearResumeListeningTimer(); await cancelListeningForReason('playback_enqueue')
+        setStatus('session.status.playing_reply'); setPlaybackQueue(startPlaybackQueue(voice.audioUrl)); setAudioUrl(voice.audioUrl)
+      } else {
+        playbackActiveRef.current = false; setStatus('session.status.reply_without_audio')
+        const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: false, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current, generation: submitGeneration, currentGeneration: sessionGenerationRef.current }
+        if (shouldResumeListening(gate)) scheduleResumeListening(500)
+      }
+      const completed = completeCoachPlayback({ snapshot: nextSnapshot, corrections: reply.corrections })
+      snapshotRef.current = completed.snapshot; setSnapshot(completed.snapshot)
+      logTerminal('submit_turn_done', { hasAudio: Boolean(voice.audioUrl) })
+    } catch (error) {
+      const terminal = classifyRequestTerminalStage(error)
+      logTerminal(terminal.stage, { message: terminal.message })
+      const recovery = recoverSessionError({ snapshot: nextSnapshot!, reason: 'coach_reply_failed', activeSession: isSessionActive, canListenOnRoute: canListenOnRouteRef.current })
+      snapshotRef.current = recovery.snapshot; setSnapshot(recovery.snapshot)
+      const requestError = formatApiRequestError(error, { context: 'mobile_session_submit', presentation: 'banner' })
+      logMetric('mobile_session_request_error', requestError.logData)
+      displayErrorFeedback(requestError, 'mobile_session_submit')
+      setStatus(requestError.displayMessage)
+      const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: false, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current, generation: submitGeneration, currentGeneration: sessionGenerationRef.current }
+      if (shouldResumeListening(gate)) scheduleResumeListening(900)
+    } finally {
+      if (turnRequestRef.current === turnRequestId) setBusy(false)
+      if (!terminalLogged) logMetric('submit_turn_finally_without_terminal', { turnRequestId, generation: submitGeneration, elapsedMs: Date.now() - submitStartedAt })
+    }
+  }, [accent, api, audio.isRecording, cancelListeningForReason, clearResumeListeningTimer, isSessionActive, logMetric, scenario, scheduleResumeListening, setBusy, setStatus, synthesizeCoachSpeech, locale])
+
+  const handleNativeFinalTranscript = useCallback(async (finalTranscript: string) => {
+    const transcript = finalTranscript.trim()
+    if (!transcript) return
+    const endpointTranscript = [pendingNativeTranscriptRef.current, transcript].map(p => p.trim()).filter(Boolean).join(' ')
+    if (!sessionActiveRef.current) { setStatus('session.status.speech_captured'); return }
+
+    const gate = gateUserTranscript({
+      activeSession: sessionActiveRef.current, canListenOnRoute: canListenOnRouteRef.current,
+      workflowState: snapshotRef.current.state, transcript: endpointTranscript,
+      playbackActive: playbackActiveRef.current, audioPlaying: audio.isPlaying,
+      playbackEndedAtMs: playbackEndedAtMsRef.current, nowMs: Date.now(), cooldownMs: DEFAULT_PLAYBACK_COOLDOWN_MS,
+    })
+    if (!gate.accepted) {
+      if (gate.reason === 'playback_active') void cancelListeningForReason('transcript_gate_playback_active')
+      pendingNativeTranscriptRef.current = ''; return
+    }
+    const echo = shouldIgnoreLikelyPlaybackEcho({ transcript: endpointTranscript, lastAssistantResponse: snapshotRef.current.lastResponse, playbackEndedAtMs: playbackEndedAtMsRef.current, nowMs: Date.now() })
+    if (echo.shouldIgnore) {
       pendingNativeTranscriptRef.current = ''
-      void cancelListeningForReason(`tab:${tab}`)
-      if (sessionActiveRef.current) setStatus('session.paused')
+      setStatus(sessionSttProviderRef.current === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+      const gate2 = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current }
+      if (shouldResumeListening(gate2)) void speechStartListeningRef.current('en-US')
       return
     }
-
-    canListenOnRouteRef.current = true
-    if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
-      listeningStartMsRef.current = Date.now()
-      setStatus(listeningStartupStatus())
-      void speechStartListeningRef.current('en-US')
+    const endpointRequestId = ++endpointRequestRef.current
+    let endpointResult: Awaited<ReturnType<typeof judgeEndpoint>>
+    try {
+      endpointResult = await judgeEndpoint({
+        transcript: endpointTranscript, listeningDurationMs: Date.now() - listeningStartMsRef.current,
+        messages: messagesRef.current, scenario: scenario.key,
+        semanticCheck: auth.state === 'signed-in' ? async (t, ctx) => {
+          const authHeaders = await getAuthHeaders()
+          const res = await fetchWithTimeout(fetch, `${defaultApiBaseUrl.trim()}/api/semantic-endpoint`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-MeteorVoice-Client': 'meteorvoice-mobile', ...authHeaders },
+            body: JSON.stringify({ transcript: t, messages: ctx.messages, scenario: ctx.scenario }),
+          })
+          if (res.status === 401) handleUnauthorized()
+          if (!res.ok) throw new Error('Semantic check failed')
+          const data = await res.json() as { judgment: 'done' | 'thinking' }
+          return data.judgment
+        } : undefined,
+      })
+    } catch {
+      pendingNativeTranscriptRef.current = endpointTranscript
+      setStatus(sessionSttProviderRef.current === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+      const gate2 = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current }
+      if (shouldResumeListening(gate2)) void speechStartListeningRef.current('en-US')
+      return
     }
-  }, [busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, logUserAction, logVoiceMetric])
+    if (!canApplyEndpointResult({ endpointRequestId, currentEndpointRequestId: endpointRequestRef.current, sessionActive: sessionActiveRef.current, canListenOnRoute: canListenOnRouteRef.current, playbackActive: playbackActiveRef.current })) return
+    if (endpointResult.judgment === 'continue') {
+      pendingNativeTranscriptRef.current = endpointTranscript
+      setStatus(sessionSttProviderRef.current === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+      const gate2 = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current }
+      if (shouldResumeListening(gate2)) void speechStartListeningRef.current('en-US')
+      return
+    }
+    pendingNativeTranscriptRef.current = ''
+    void submitTurn(endpointTranscript)
+  }, [audio.isPlaying, auth.state, cancelListeningForReason, defaultApiBaseUrl, getAuthHeaders, handleUnauthorized, logMetric, scenario.key, setStatus, submitTurn])
 
-  async function endSession() {
+  const handleListeningEndedWithoutTranscript = useCallback(() => {
+    const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current }
+    if (!shouldResumeListening(gate)) return
+    sttRestartCountRef.current += 1
+    if (sttRestartCountRef.current > STT_MAX_CONSECUTIVE_RESTARTS) {
+      sttRestartCountRef.current = 0; sttRestartStartMsRef.current = 0
+      void nativeSpeechStartListeningRef.current('en-US')
+      return
+    }
+    if (sttRestartCountRef.current === 1) sttRestartStartMsRef.current = Date.now()
+    scheduleResumeListening(Math.min(250 * Math.pow(2, sttRestartCountRef.current - 1), 8000), false)
+  }, [scheduleResumeListening])
+
+  const startSession = useCallback(async () => {
+    logUserAction('session_start_tap', { scenario: scenario.key })
+    if (scenarioSwitching) return
+    if (auth.state !== 'signed-in') { setActiveTab('settings'); setStatus('login.signin'); return }
+    setStatus('session.status.preparing_listening')
+    // Wait for any pending teardown to complete before starting
+    const pendingTeardown = listeningTeardownRef.current
+    if (pendingTeardown) await pendingTeardown
+    await cancelListeningForReason('session_start_reset')
+
+    // Hydrate STT provider from SecureStore
+    if (!sessionSttProviderHydratedRef.current) {
+      const stored = await SecureStore.getItemAsync(sessionSttProviderStorageKey)
+      if (stored === 'xunfei' || stored === 'native') { setSessionSttProvider(stored); sessionSttProviderRef.current = stored }
+      sessionSttProviderHydratedRef.current = true
+    }
+
+    const provider = sessionSttProviderRef.current
+    endpointRequestRef.current += 1; sessionGenerationRef.current += 1
+    sttRestartCountRef.current = 0; sttRestartStartMsRef.current = 0
+    clearResumeListeningTimer()
+    playbackActiveRef.current = false; playbackStartedRef.current = false; playbackEndedAtMsRef.current = null
+    listeningStartMsRef.current = Date.now(); pendingNativeTranscriptRef.current = ''
+    sessionActiveRef.current = true; setRoutePresence('inSession', 'session_start')
+    const nextId = apiSessionId ?? `mobile-${Date.now()}`
+    const nextSnap = startListeningSession(nextId)
+    snapshotRef.current = nextSnap; messagesRef.current = []
+    setSnapshot(nextSnap); setMessages([]); setCorrectionHistory([])
+    setAudioUrl(null); playbackEndedAtMsRef.current = null
+    setPlaybackQueue(createPlaybackQueueSnapshot()); setSummary(null)
+    setIsSessionActive(true)
+    setStatus(provider === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+    void startListeningWithProviderRef.current(provider, 'en-US')
+  }, [logUserAction, scenario, scenarioSwitching, auth.state, setActiveTab, setStatus, cancelListeningForReason, clearResumeListeningTimer, setRoutePresence, apiSessionId])
+
+  const endSession = useCallback(async () => {
     logUserAction('session_stop_tap')
     if (!canEndSession({ activeSession: isSessionActive, workflowState: snapshot.state })) return
-    logVoiceMetric('session_end_requested', {
-      sessionId: snapshot.sessionId,
-      state: snapshot.state,
-      messages: messages.length,
-      activeTab: activeTabRef.current,
-      pendingTeardown: Boolean(listeningTeardownRef.current),
-    })
-
-    // 立即结束 session，不等 API
-    turnRequestRef.current += 1
-    sessionActiveRef.current = false
-    canListenOnRouteRef.current = false
-    playbackActiveRef.current = false
-    audioPlayingRef.current = false
-    playbackStartedRef.current = false
-    playbackEndedAtMsRef.current = null
-    clearResumeListeningTimer()
-    endpointRequestRef.current += 1
-    pendingNativeTranscriptRef.current = ''
-    audio.stopPlayback()
-    setAudioUrl(null)
-    setPlaybackQueue(createPlaybackQueueSnapshot())
+    turnRequestRef.current += 1; sessionGenerationRef.current += 1
+    sttRestartCountRef.current = 0; sttRestartStartMsRef.current = 0
+    sessionActiveRef.current = false; setRoutePresence('outSession', 'session_end')
+    playbackActiveRef.current = false; audioPlayingRef.current = false
+    playbackStartedRef.current = false; playbackEndedAtMsRef.current = null
+    clearResumeListeningTimer(); endpointRequestRef.current += 1; pendingNativeTranscriptRef.current = ''
+    audio.stopPlayback(); setAudioUrl(null); setPlaybackQueue(createPlaybackQueueSnapshot())
     void cancelListeningForReason('session_end')
-    const endedSnapshot = endActiveSession(snapshot).snapshot
-    setSnapshot(endedSnapshot)
-    setIsSessionActive(false)
-    setStatus('session.ended')
-    setBusy(false)
-
-    const userTurns = messages.filter(m => m.role === 'user').length
+    const ended = endActiveSession(snapshot).snapshot
+    setSnapshot(ended); setIsSessionActive(false); setStatus('session.ended'); setBusy(false)
+    const userTurns = messagesRef.current.filter(m => m.role === 'user').length
+    const syncPayload: SyncSessionRequest = {
+      session_id: snapshot.sessionId,
+      scenario: scenario.name,
+      accent: accent.name,
+      turns: userTurns,
+      messages: messagesRef.current,
+      corrections: correctionHistory,
+    }
     try {
-      const result = await api.generateSummary({
-        sessionId: snapshot.sessionId,
-        scenario: scenario.name,
-        messages,
-        turnNumber: userTurns,
-      })
+      const result = await api.generateSummary({ sessionId: snapshot.sessionId, scenario: scenario.name, messages: messagesRef.current, turnNumber: userTurns })
       setSummary(result.summary)
-      await api.syncSession({
-        session_id: snapshot.sessionId,
-        scenario: scenario.name,
-        accent: accent.name,
-        turns: userTurns,
-        messages,
-        corrections: correctionHistory,
-      }).catch(() => undefined)
     } catch {
-      // summary 失败不影响 session 已结束的状态
+      logMetric('session_summary_failed')
     }
-  }
-
-  async function selectScenario(key: string) {
-    if (scenarioSwitching) {
-      logUserAction('scenario_tap_ignored_switching', { to: key })
-      return
-    }
-    logUserAction('scenario_tap', { to: key, from: selectedScenarioKey })
-    logVoiceMetric('scenario_select_requested', {
-      from: selectedScenarioKey,
-      to: key,
-      activeTab: activeTabRef.current,
-      sessionActive: sessionActiveRef.current,
-      canListenOnRoute: canListenOnRouteRef.current,
-      pendingTeardown: Boolean(listeningTeardownRef.current),
-    })
-    setScenarioSwitching(true)
-    setStatus('session.status.switching_session')
     try {
-      turnRequestRef.current += 1
-      endpointRequestRef.current += 1
-      sessionActiveRef.current = false
-      canListenOnRouteRef.current = false
-      playbackActiveRef.current = false
-      audioPlayingRef.current = false
-      playbackStartedRef.current = false
-      playbackEndedAtMsRef.current = null
-      clearResumeListeningTimer()
-      pendingNativeTranscriptRef.current = ''
-      audio.stopPlayback()
-      setBusy(false)
+      await api.syncSession(syncPayload)
+      logMetric('session_sync_done', { sessionId: snapshot.sessionId })
+    } catch (error) {
+      try {
+        await enqueueSessionSync(sessionSyncOutboxStorage, syncPayload)
+        setStatus('session.sync_pending')
+        logMetric('session_sync_queued', {
+          sessionId: snapshot.sessionId,
+          message: error instanceof Error ? error.message : 'unknown',
+        })
+      } catch (storageError) {
+        setStatus('session.sync_failed')
+        logMetric('session_sync_outbox_error', {
+          sessionId: snapshot.sessionId,
+          message: storageError instanceof Error ? storageError.message : 'unknown',
+        })
+      }
+    }
+  }, [accent.name, api, audio, cancelListeningForReason, clearResumeListeningTimer, correctionHistory, isSessionActive, logMetric, logUserAction, scenario, setBusy, setRoutePresence, setStatus, snapshot])
+
+  const selectScenario = useCallback(async (key: string) => {
+    if (scenarioSwitching) return false
+    if (key === selectedScenarioKey) return true
+    // Confirmation dialog when switching scenarios during an active session
+    if (isSessionActive) {
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(tr('session.switch_scenario_title'), tr('session.switch_scenario_message'), [
+          { text: tr('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: tr('common.confirm'), style: 'destructive', onPress: () => resolve(true) },
+        ])
+      })
+      if (!confirmed) return false
+    }
+    setScenarioSwitching(true); setStatus('session.status.switching_session')
+    try {
+      turnRequestRef.current += 1; endpointRequestRef.current += 1; sessionGenerationRef.current += 1
+      sttRestartCountRef.current = 0; sttRestartStartMsRef.current = 0
+      sessionActiveRef.current = false; setRoutePresence('outSession', 'scenario_change')
+      playbackActiveRef.current = false; audioPlayingRef.current = false
+      playbackStartedRef.current = false; playbackEndedAtMsRef.current = null
+      clearResumeListeningTimer(); pendingNativeTranscriptRef.current = ''
+      audio.stopPlayback(); setBusy(false)
       await cancelListeningForReason('scenario_change')
-      setSelectedScenarioKey(key)
-      setMessages([])
-      setCorrectionHistory([])
-      setAudioUrl(null)
-      setPlaybackQueue(createPlaybackQueueSnapshot())
-      setSummary(null)
-      setSnapshot(createInitialSnapshot('mobile-session'))
-      setIsSessionActive(false)
-      setStatus('session.status.scenario_selected')
-      logVoiceMetric('scenario_selected', { key })
-    } finally {
-      setScenarioSwitching(false)
-    }
-  }
+      setSelectedScenarioKey(key); setMessages([]); setCorrectionHistory([])
+      setAudioUrl(null); setPlaybackQueue(createPlaybackQueueSnapshot())
+      setSummary(null); setSnapshot(createInitialSnapshot('mobile-session'))
+      setIsSessionActive(false); setStatus('session.status.scenario_selected')
+      return true
+    } finally { setScenarioSwitching(false) }
+  }, [scenarioSwitching, selectedScenarioKey, setStatus, audio, cancelListeningForReason, clearResumeListeningTimer, setBusy, setRoutePresence])
 
-  const loadHistory = useCallback(async () => {
-    if (historyLoading) return
-    if (auth.state !== 'signed-in') {
-      setHistoryError(tr('history.auth_required'))
-      return
-    }
-    setHistoryLoading(true)
-    setHistoryError(null)
-    try {
-      const result = await api.listHistory()
-      setHistorySessions(result.sessions)
-      setSelectedHistory(result.sessions[0] ?? null)
-      setSelectedHistoryTurns([])
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_history_list',
-        presentation: 'inline',
-      })
-      setHistoryError(requestError.displayMessage)
-    } finally {
-      setHistoryLoading(false)
-    }
-  }, [api, auth.state, historyLoading, tr])
-
-  useEffect(() => {
-    if (activeTab !== 'history') return
-    if (auth.state !== 'signed-in') {
-      historyAutoLoadRef.current = false
-      return
-    }
-    if (historyAutoLoadRef.current) return
-    historyAutoLoadRef.current = true
-    void loadHistory()
-  }, [activeTab, auth.state, loadHistory])
-
-  async function deleteSession(id: string) {
-    setHistorySessions(prev => prev.map(s => s.id === id ? { ...s, status: 'deleted' } : s))
-    try {
-      const authHeaders = await getAuthHeaders()
-      await fetchWithTimeout(fetch, `${apiBaseUrl.trim()}/api/session?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: authHeaders as Record<string, string>,
-      }).then(res => {
-        if (res.status === 401) return handleUnauthorized()
-        return undefined
-      })
-    } catch {
-      // 静默失败
-    }
-  }
-
-  async function selectHistorySession(item: HistorySession) {
-    setSelectedHistory(item)
-    setSelectedHistoryTurns([])
-    try {
-      const result = await api.listSessionTurns(item.id)
-      setSelectedHistoryTurns(result.turns)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_history_turns',
-        presentation: 'inline',
-      })
-      setHistoryError(requestError.displayMessage)
-    }
-  }
-
-  const applyPreferences = useCallback((preferences: PreferencesResponse, successMessage?: string) => {
-    setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
-    setTtsProvider(preferences.tts_provider ?? 'mock')
-    setAvailableProviders(preferences.available_providers?.length ? preferences.available_providers : ['mock'])
-    setTtsSpeed(preferences.tts_speed ?? 1)
-    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
-    if (preferences.voice_profiles) setVoiceProfiles(preferences.voice_profiles)
-    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-    if (preferences.xunfei_voices?.configured) setXunfeiVoices(preferences.xunfei_voices.configured)
-    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-    const profile = preferences.voice_profiles?.find(item => item.id === preferences.selected_voice_profile_id)
-    if (profile) setSelectedAccentKey(profile.accentKey)
-    if (preferences.ui_theme && !themeInitializedRef.current) {
-      themeInitializedRef.current = true
-      void SecureStore.getItemAsync('theme_set_at').then(localSetAt => {
-        const serverTs = new Date(preferences.ui_theme_updated_at ?? new Date(0).toISOString()).getTime()
-        const localTs = localSetAt ? new Date(localSetAt).getTime() : 0
-        if (serverTs >= localTs) {
-          applyThemeLocal(preferences.ui_theme as Parameters<typeof setThemeLocal>[0])
-        }
-      })
-    }
-    setSettingsMessage(successMessage ?? tr('session.status.preferences_loaded'))
-  }, [applyThemeLocal, setLocale, tr])
-
-  const applyTtsPreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
-    setTtsProvider(preferences.tts_provider ?? 'mock')
-    setTtsSpeed(preferences.tts_speed ?? 1)
-    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
-    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-    const profiles = preferences.voice_profiles ?? voiceProfiles
-    const profile = profiles.find(item => item.id === preferences.selected_voice_profile_id)
-    if (profile) setSelectedAccentKey(profile.accentKey)
-    setSettingsMessage(successMessage)
-  }, [tr, voiceProfiles])
-
-  const applyPracticePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.practice_defaults_saved')) => {
-    setTtsProvider(preferences.tts_provider ?? 'mock')
-    setTtsSpeed(preferences.tts_speed ?? 1)
-    if (preferences.default_scenario_key) setSelectedScenarioKey(preferences.default_scenario_key)
-    setSettingsMessage(successMessage)
-  }, [tr])
-
-  const applyVoiceProfilePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
-    setTtsProvider(preferences.tts_provider ?? 'mock')
-    if (preferences.tts_voice_id !== undefined) setTtsVoiceId(preferences.tts_voice_id)
-    if (preferences.selected_voice_profile_id !== undefined) setSelectedVoiceProfileId(preferences.selected_voice_profile_id)
-    const profiles = preferences.voice_profiles ?? voiceProfiles
-    const profile = profiles.find(item => item.id === preferences.selected_voice_profile_id)
-    if (profile) setSelectedAccentKey(profile.accentKey)
-    setSettingsMessage(successMessage)
-  }, [tr, voiceProfiles])
-
-  const applyLocalePreferences = useCallback((preferences: PreferencesResponse, successMessage = tr('session.status.preferences_saved')) => {
-    setLocale(preferences.locale === 'zh' ? 'zh' : 'en')
-    setSettingsMessage(successMessage)
-  }, [setLocale, tr])
-
-  const fetchSessionSttProviders = useCallback(async () => {
-    const result = await api.listASRProviders()
-    const providers: SessionSttProvider[] = ['native']
-    if (result.providers.some(provider => provider.key === 'xunfei' && provider.enabled)) {
-      providers.push('xunfei')
-    }
-    return providers
-  }, [api])
-
-  const applySessionSttProviders = useCallback((providers: SessionSttProvider[]) => {
-    setAvailableSessionSttProviders(providers)
-    if (!providers.includes(sessionSttProvider)) {
-      sessionSttProviderRef.current = 'native'
-      setSessionSttProviderState('native')
-      void SecureStore.setItemAsync(sessionSttProviderStorageKey, 'native')
-    }
-  }, [sessionSttProvider])
-
-  const loadSessionSttProviders = useCallback(async () => {
-    try {
-      const providers = await fetchSessionSttProviders()
-      applySessionSttProviders(providers)
-      sessionSttProvidersLoadedRef.current = true
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_asr_providers_load',
-        presentation: 'silent',
-      })
-      logVoiceMetric('mobile_silent_request_error', requestError.logData)
-    }
-  }, [applySessionSttProviders, fetchSessionSttProviders, logVoiceMetric])
-
-  useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
-
-  useEffect(() => {
-    if (settingsLoading && activeTab === 'settings') {
-      appFeedback.show({
-        message: tr('settings.syncing'),
-        variant: 'hud',
-        source: 'settings',
-      })
-      return
-    }
-    appFeedback.hide('settings')
-  }, [activeTab, settingsLoading, tr])
-
-  useEffect(() => {
-    if (authSubmitting && activeTab === 'settings') {
-      appFeedback.show({
-        message: tr('login.loading'),
-        variant: 'hud',
-        source: 'auth',
-      })
-      return
-    }
-    appFeedback.hide('auth')
-  }, [activeTab, authSubmitting, tr])
-
-  useEffect(() => {
-    if (scenarioSwitching) {
-      appFeedback.show({
-        message: tr('session.status.switching_session'),
-        variant: 'hud',
-        source: 'session-transition',
-      })
-      return
-    }
-    appFeedback.hide('session-transition')
-  }, [scenarioSwitching, tr])
-
-  const loadPreferences = useCallback(async (options: { force?: boolean; successMessage?: string } = {}) => {
-    if (settingsLoadingRef.current && !options.force) return
-    if (auth.state !== 'signed-in') {
-      setSettingsMessage(tr('settings.auth_required'))
-      return
-    }
-    const requestId = ++settingsRequestRef.current
-    setSettingsLoadingFlag(true)
-    setSettingsMessage(null)
-    try {
-      const preferences = await api.getPreferences()
-      if (requestId !== settingsRequestRef.current) return
-      applyPreferences(preferences, options.successMessage)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_preferences_load',
-        presentation: 'inline',
-      })
-      setSettingsMessage(requestError.displayMessage)
-    } finally {
-      if (requestId === settingsRequestRef.current) {
-        setSettingsLoadingFlag(false)
-      }
-    }
-  }, [api, applyPreferences, auth.state, setSettingsLoadingFlag, tr])
-
-  const loadSettingsDataGroup = useCallback(() => {
-    if (settingsLoadingRef.current) return () => undefined
-    if (auth.state !== 'signed-in') {
-      setSettingsMessage(tr('settings.auth_required'))
-      return () => undefined
-    }
-
-    let cancelled = false
-    const requestId = ++settingsRequestRef.current
-    setSettingsLoadingFlag(true)
-    setSettingsMessage(null)
-
-    void runAppOperationGroup({
-      source: 'mobile_settings_data',
-      tasks: {
-        preferences: () => api.getPreferences(),
-        providers: fetchSessionSttProviders,
-      },
-    }).then(({ preferences: preferencesResult, providers: providersResult }) => {
-      if (cancelled || requestId !== settingsRequestRef.current) return
-
-      if (preferencesResult.status === 'fulfilled') {
-        applyPreferences(preferencesResult.value)
-      } else {
-        const requestError = formatApiRequestError(preferencesResult.reason, {
-          context: 'mobile_preferences_load',
-          presentation: 'inline',
-        })
-        setSettingsMessage(requestError.displayMessage)
-      }
-
-      if (providersResult.status === 'fulfilled') {
-        applySessionSttProviders(providersResult.value)
-      } else {
-        const requestError = formatApiRequestError(providersResult.reason, {
-          context: 'mobile_asr_providers_load',
-          presentation: 'silent',
-        })
-        logVoiceMetric('mobile_silent_request_error', requestError.logData)
-      }
-    }).finally(() => {
-      if (!cancelled && requestId === settingsRequestRef.current) {
-        setSettingsLoadingFlag(false)
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    api, applyPreferences, applySessionSttProviders, auth.state,
-    fetchSessionSttProviders, logVoiceMetric, setSettingsLoadingFlag, tr,
-  ])
-
-  const reloadSettingsData = useCallback(() => loadSettingsDataGroup(), [loadSettingsDataGroup])
-
-  useEffect(() => {
-    if (auth.state !== 'signed-in') {
-      settingsAutoLoadRef.current = false
-      return
-    }
-    if (activeTab !== 'settings' || settingsAutoLoadRef.current) return
-    settingsAutoLoadRef.current = true
-    return reloadSettingsData()
-  }, [activeTab, auth.state, reloadSettingsData])
-
-  async function saveProvider(provider: string) {
-    settingsRequestRef.current += 1
-    setTtsProvider(provider)
-    setAudioUrl(null)
-    playbackEndedAtMsRef.current = null
-    setSettingsLoadingFlag(true)
-    setSettingsMessage(null)
-    if (auth.state !== 'signed-in') {
-      setSettingsMessage(tr('session.status.preferences_saved'))
-      setSettingsLoadingFlag(false)
-      return
-    }
-
-    try {
-      const preferences = await api.updatePreferences({
-        tts_provider: provider,
-        default_scenario_key: selectedScenarioKey,
-        tts_speed: ttsSpeed,
-      })
-      applyTtsPreferences(preferences)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_preferences_save_provider',
-        presentation: 'inline',
-      })
-      setSettingsMessage(requestError.displayMessage)
-    } finally {
-      setSettingsLoadingFlag(false)
-    }
-  }
-
-  async function savePracticePreferences() {
-    settingsRequestRef.current += 1
-    setSettingsLoadingFlag(true)
-    setSettingsMessage(null)
-    if (auth.state !== 'signed-in') {
-      setSettingsMessage(tr('session.status.practice_defaults_saved'))
-      setSettingsLoadingFlag(false)
-      return
-    }
-
-    try {
-      const preferences = await api.updatePreferences({
-        tts_provider: ttsProvider,
-        default_scenario_key: selectedScenarioKey,
-        tts_speed: ttsSpeed,
-      })
-      applyPracticePreferences(preferences)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_preferences_save_practice',
-        presentation: 'inline',
-      })
-      setSettingsMessage(requestError.displayMessage)
-    } finally {
-      setSettingsLoadingFlag(false)
-    }
-  }
-
-  function adjustSpeed(delta: number) {
-    setTtsSpeed(previous => {
-      const next = Math.min(1.3, Math.max(0.7, Number((previous + delta).toFixed(1))))
-      if (prefSyncTimerRef.current) clearTimeout(prefSyncTimerRef.current)
-      prefSyncTimerRef.current = setTimeout(() => {
-        void syncMobilePreferences({
-          apiBaseUrl: apiBaseUrl.trim(),
-          getAuthHeaders: auth.getAuthHeaders,
-          onUnauthorized: handleUnauthorized,
-          ttsSpeed: next,
-          ttsProvider,
-          defaultScenarioKey: selectedScenarioKey,
-        }).then(preferences => {
-          if (preferences) {
-            applyTtsPreferences(preferences)
-          }
-        })
-      }, 600)
-      return next
-    })
-  }
-
-  async function selectVoiceProfile(profile: VoiceProfile) {
-    if (profile.status !== 'active') return
-    settingsRequestRef.current += 1
-    setAudioUrl(null)
-    playbackEndedAtMsRef.current = null
-    setSelectedVoiceProfileId(profile.id)
-    setTtsProvider(profile.provider)
-    setTtsVoiceId(profile.providerVoiceId)
-    setSelectedAccentKey(profile.accentKey)
-    setSettingsMessage(null)
-    if (auth.state !== 'signed-in') return
-
-    try {
-      const preferences = await api.updatePreferences({ selected_voice_profile_id: profile.id })
-      applyVoiceProfilePreferences(preferences)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_preferences_select_voice_profile',
-        presentation: 'silent',
-      })
-      logVoiceMetric('mobile_silent_request_error', requestError.logData)
-    }
-  }
-
-  async function saveLocalePreference(nextLocale: Locale) {
-    if (nextLocale === locale) return
-    setLocale(nextLocale)
-
-    if (auth.state !== 'signed-in') {
-      setSettingsMessage(tr('settings.auth_required'))
-      return
-    }
-
-    const requestId = ++settingsRequestRef.current
-    setSettingsLoadingFlag(true)
-    setSettingsMessage(null)
-    try {
-      const preferences = await api.updatePreferences({ locale: nextLocale })
-      if (requestId !== settingsRequestRef.current) return
-      applyLocalePreferences(preferences)
-    } catch (error) {
-      const requestError = formatApiRequestError(error, {
-        context: 'mobile_preferences_save_locale',
-        presentation: 'banner',
-      })
-      setSettingsMessage(requestError.displayMessage)
-      displayErrorFeedback(requestError, 'mobile_preferences_save_locale')
-    } finally {
-      if (requestId === settingsRequestRef.current) {
-        setSettingsLoadingFlag(false)
-      }
-    }
-  }
-
-  async function submitAuth() {
-    const normalizedEmail = email.trim()
-    if (!normalizedEmail || !password || auth.state === 'loading' || authSubmitting) return
-    logUserAction('auth_submit_tap', {
-      mode: authMode,
-      hasEmail: Boolean(normalizedEmail),
-      passwordLength: password.length,
-    })
-    setAuthSubmitting(true)
-    try {
-      const success = await auth.submit(authMode, normalizedEmail, password)
-      logVoiceMetric('auth_submit_done', { mode: authMode, success })
-      if (success) setPassword('')
-    } catch (error) {
-      logVoiceMetric('auth_submit_error', {
-        mode: authMode,
-        message: error instanceof Error ? error.message : 'Auth submit failed',
-      })
-    } finally {
-      setAuthSubmitting(false)
-    }
-  }
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadSessionSttProviders()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [loadSessionSttProviders])
-
-  // 登录后自动拉取偏好
-  useEffect(() => {
-    if (auth.state !== 'signed-in') return
-    const timer = setTimeout(() => {
-      loadSettingsDataGroup()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [auth.state, loadSettingsDataGroup])
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState !== 'active') {
-        logVoiceMetric('app_state_inactive', {
-          nextState,
-          sessionActive: sessionActiveRef.current,
-          activeTab: activeTabRef.current,
-        })
-        canListenOnRouteRef.current = false
-        playbackEndedAtMsRef.current = null
-        clearResumeListeningTimer()
-        endpointRequestRef.current += 1
-        pendingNativeTranscriptRef.current = ''
-        void cancelListeningForReason(`app_state:${nextState}`)
-        if (sessionActiveRef.current) setStatus('session.paused')
-        return
-      }
-
-      canListenOnRouteRef.current = true
-      logVoiceMetric('app_state_active', {
-        sessionActive: sessionActiveRef.current,
-        activeTab: activeTabRef.current,
-        busy,
-        playbackActive: playbackActiveRef.current,
-        audioPlaying: audioPlayingRef.current,
-      })
-      if (auth.state === 'signed-in') {
-        void loadPreferences()
-      }
-
-      if (sessionActiveRef.current && !busy && !playbackActiveRef.current && !audioPlayingRef.current) {
-        listeningStartMsRef.current = Date.now()
-        setStatus(listeningStartupStatus())
-        void speechStartListeningRef.current('en-US')
-      }
-    })
-    return () => subscription.remove()
-  }, [auth.state, busy, cancelListeningForReason, clearResumeListeningTimer, listeningStartupStatus, loadPreferences, logVoiceMetric])
-
-  function playCorrection(text: string) {
+  const playCorrection = useCallback((text: string) => {
     logUserAction('play_correction_tap', { chars: text.length })
     clearResumeListeningTimer()
     void cancelListeningForReason('play_correction')
     void synthesizeCoachSpeech(text).then(voice => {
       if (voice.audioUrl) {
         isCorrectionPlayingRef.current = true
-        playbackActiveRef.current = true
-        playbackStartedRef.current = false
-        playbackEndedAtMsRef.current = null
-        setStatus('session.status.playing_reply')
-        setAudioUrl(voice.audioUrl)
+        playbackActiveRef.current = true; playbackStartedRef.current = false; playbackEndedAtMsRef.current = null
+        setStatus('session.status.playing_reply'); setAudioUrl(voice.audioUrl)
       }
     }).catch(() => {})
-  }
+  }, [logUserAction, clearResumeListeningTimer, cancelListeningForReason, synthesizeCoachSpeech, setStatus])
 
-  function renderScreen() {
-    switch (activeTab) {
-      case 'session':
-        return (
-          <SessionScreen
-            tr={tr}
-            snapshot={snapshot}
-            messages={messages}
-            corrections={correctionHistory}
-            isSessionActive={isSessionActive}
-            status={status}
-            summary={summary}
-            busy={busy}
-            scenarioName={getScenarioLabel(scenario, locale)}
-            scenarioIcon={scenario.icon}
-            scenarioDifficulty={getDifficultyLabel(scenario.difficulty, locale)}
-            scenarioDescription={getScenarioDescription(scenario, locale)}
-            accentName={sessionAccentName}
-            accentRegion={sessionAccentRegion}
-            onStart={startSession}
-            onEnd={() => void endSession()}
-            onPlayCorrection={playCorrection}
-            onSubmitText={text => {
-              logUserAction('manual_text_submit', { chars: text.trim().length })
-              void submitTurn(text)
-            }}
-          />
-        )
-      case 'home':
-        return (
-          <HomeScreen
-            tr={tr}
-            locale={locale}
-            scenarios={scenarios}
-            selectedScenarioKey={selectedScenarioKey}
-            isSessionActive={isSessionActive}
-            scenarioSwitching={scenarioSwitching}
-            onSelectScenario={selectScenario}
-            onGoToSession={() => selectTab('session')}
-          />
-        )
-      case 'history':
-        return (
-          <HistoryScreen
-            tr={tr}
-            locale={locale}
-            sessions={historySessions}
-            loading={historyLoading}
-            error={historyError}
-            selectedHistory={selectedHistory}
-            selectedTurns={selectedHistoryTurns}
-            onLoad={() => void loadHistory()}
-            onSelect={item => void selectHistorySession(item)}
-            onDelete={id => void deleteSession(id)}
-          />
-        )
-      case 'settings':
-        return (
-          <SettingsScreen
-            tr={tr}
-            locale={locale}
-            ttsProvider={ttsProvider}
-            availableProviders={availableProviders}
-            sessionSttProvider={sessionSttProvider}
-            availableSessionSttProviders={availableSessionSttProviders}
-            ttsSpeed={ttsSpeed}
-            ttsVoiceId={ttsVoiceId}
-            voiceProfiles={voiceProfiles}
-            selectedVoiceProfileId={selectedVoiceProfileId}
-            xunfeiVoices={xunfeiVoices}
-            settingsLoading={settingsLoading}
-            authSubmitting={authSubmitting}
-            settingsMessage={settingsMessage}
-            auth={auth}
-            email={email}
-            password={password}
-            authMode={authMode}
-            apiBaseUrl={apiBaseUrl}
-            apiBaseUrlSource={apiBaseUrlSource}
-            defaultApiBaseUrl={defaultApiBaseUrl}
-            appVersion={appVersion}
-            voiceMetricsText={voiceMetricsText}
-            asrEvaluationText={asrEvaluationText}
-            onSetLocale={localeValue => {
-              logUserAction('settings_locale_tap', { locale: localeValue })
-              void saveLocalePreference(localeValue as Locale)
-            }}
-            onSetTheme={key => {
-              logUserAction('settings_theme_tap', { theme: key })
-              setTheme(key)
-            }}
-            onSaveProvider={provider => {
-              logUserAction('settings_tts_provider_tap', { provider })
-              void saveProvider(provider)
-            }}
-            onSetSessionSttProvider={provider => {
-              logUserAction('settings_stt_provider_tap', { provider })
-              setSessionSttProvider(provider)
-            }}
-            onAdjustSpeed={delta => {
-              logUserAction('settings_tts_speed_tap', { delta })
-              adjustSpeed(delta)
-            }}
-            onSavePracticePreferences={() => {
-              logUserAction('settings_save_preferences_tap')
-              void savePracticePreferences()
-            }}
-            onLoadPreferences={() => {
-              logUserAction('settings_reload_tap')
-              reloadSettingsData()
-            }}
-            onSelectVoiceProfile={profile => {
-              logUserAction('settings_voice_profile_tap', { profileId: profile.id, provider: profile.provider })
-              void selectVoiceProfile(profile)
-            }}
-            onSetEmail={setEmail}
-            onSetPassword={setPassword}
-            onSetAuthMode={mode => {
-              logUserAction('auth_mode_tap', { mode })
-              setAuthMode(mode)
-            }}
-            onSubmitAuth={() => void submitAuth()}
-            onSignOut={() => {
-              logUserAction('auth_sign_out_tap')
-              void auth.signOut()
-            }}
-            onSetApiBaseUrl={value => {
-              logUserAction('settings_api_base_url_edit', { hasValue: Boolean(value.trim()) })
-              updateApiBaseUrl(value)
-            }}
-            onResetApiBaseUrl={() => {
-              logUserAction('settings_api_base_url_reset_tap')
-              resetApiBaseUrl()
-            }}
-            onClearVoiceMetrics={() => {
-              logUserAction('diagnostics_clear_tap')
-              setVoiceMetrics([])
-            }}
-            onShareVoiceMetrics={() => {
-              logUserAction('diagnostics_share_tap', { entries: voiceMetrics.length })
-              void Share.share({
-                title: 'MeteorVoice voice diagnostics',
-                message: voiceMetricsText || 'No voice metrics yet.',
-              })
-            }}
-            onShareASREvaluation={() => {
-              logUserAction('diagnostics_asr_share_tap', { entries: voiceMetrics.length })
-              void Share.share({
-                title: 'MeteorVoice ASR P4 evaluation',
-                message: asrEvaluationText,
-              })
-            }}
-          />
-        )
+  // ─── Handler Wiring / 回调接线 ───
+  useEffect(() => {
+    nativeFinalTranscriptRef.current = handleNativeFinalTranscript
+    nativeEndedWithoutTranscriptRef.current = handleListeningEndedWithoutTranscript
+    xunfeiFinalTranscriptRef.current = handleNativeFinalTranscript
+    xunfeiEndedWithoutTranscriptRef.current = handleListeningEndedWithoutTranscript
+  })
+
+  // ─── Playback Effects / 播放效果 ───
+  useEffect(() => {
+    audioPlayingRef.current = audio.isPlaying
+    if (audio.isPlaying && audioUrl && playbackActiveRef.current && !playbackStartedRef.current) {
+      playbackStartedRef.current = true; sttPrewarmAudioUrlRef.current = null
+      void cancelListeningForReason('playback_started')
     }
-  }
+  }, [audio.isPlaying, audioUrl, cancelListeningForReason])
 
-  const styles = makeStyles()
+  useEffect(() => {
+    if (!audioUrl || !audio.didJustFinish || audio.isPlaying || !playbackStartedRef.current) return
+    let cancelled = false
+    const advance = () => {
+      if (cancelled) return
+      if (isCorrectionPlayingRef.current) {
+        isCorrectionPlayingRef.current = false
+        playbackActiveRef.current = false; playbackStartedRef.current = false; playbackEndedAtMsRef.current = Date.now()
+        const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current, generation: sessionGenerationRef.current, currentGeneration: sessionGenerationRef.current }
+        setStatus(shouldResumeListening(gate) ? 'session.status.listening' : 'session.status.reply_played')
+        if (shouldResumeListening(gate)) scheduleResumeListening(900, false)
+        return
+      }
+      // Simple: just finish playback and resume listening
+      playbackActiveRef.current = false; playbackStartedRef.current = false; playbackEndedAtMsRef.current = Date.now()
+      setStatus('session.status.reply_played')
+      const gate = { sessionActive: sessionActiveRef.current, routePresence: routePresenceRef.current, canListenOnRoute: canListenOnRouteRef.current, busy: busyRef.current, playbackActive: playbackActiveRef.current, audioPlaying: audioPlayingRef.current, generation: sessionGenerationRef.current, currentGeneration: sessionGenerationRef.current }
+      if (shouldResumeListening(gate)) scheduleResumeListening()
+    }
+    const t = setTimeout(advance, 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [audio.didJustFinish, audio.isPlaying, audioUrl, cancelListeningForReason, clearResumeListeningTimer, scheduleResumeListening, setStatus])
+
+  // ─── AppState Listener / 应用状态监听 ───
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState !== 'active') {
+        setRoutePresence('outSession', `app_state:${nextState}`)
+        playbackEndedAtMsRef.current = null; clearResumeListeningTimer()
+        endpointRequestRef.current += 1; pendingNativeTranscriptRef.current = ''
+        void cancelListeningForReason(`app_state:${nextState}`)
+        if (sessionActiveRef.current) setStatus('session.paused')
+        return
+      }
+      setRoutePresence(routePresenceForTab(activeTab), 'app_state:active')
+      void flushPendingSessionSyncs()
+      if (canStartSessionListening('app_state_active')) {
+        listeningStartMsRef.current = Date.now()
+        if (sessionSttProviderRef.current === 'xunfei') setStatus('session.status.preparing_listening')
+        else setStatus('session.status.listening')
+        void speechStartListeningRef.current('en-US')
+      }
+    })
+    return () => sub.remove()
+  }, [activeTab, canStartSessionListening, cancelListeningForReason, clearResumeListeningTimer, flushPendingSessionSyncs, setRoutePresence, setStatus])
+
+  // ─── Log Enrichment / 日志上下文注入 ───
+  useEffect(() => {
+    setEnrichment({
+      activeTab, scenarioKey: selectedScenarioKey, sessionActive: isSessionActive,
+      busy, ttsProvider, sttProvider: sessionSttProvider,
+    })
+  }, [activeTab, selectedScenarioKey, isSessionActive, busy, ttsProvider, sessionSttProvider, setEnrichment])
+
+  // ─── Cleanup / 清理 ───
+  useEffect(() => () => clearResumeListeningTimer(), [clearResumeListeningTimer])
+  useEffect(() => appFeedback.subscribe(setActiveFeedback), [])
+
+  // HUD feedback overlay effects
+  // Placeholder states kept for HUD overlay feedbaack compatibility
+
+  useEffect(() => {
+    if (scenarioSwitching) {
+      appFeedback.show({ message: tr('session.status.switching_session'), variant: 'hud', source: 'session-transition' })
+    } else {
+      appFeedback.hide('session-transition')
+    }
+  }, [scenarioSwitching, tr])
+
+  // ─── STT Provider Preflight / 语音识别提供者预检 ───
+  useEffect(() => {
+    SecureStore.getItemAsync(sessionSttProviderStorageKey).then(value => {
+      if (value === 'xunfei' || value === 'native') { setSessionSttProvider(value); sessionSttProviderRef.current = value }
+      sessionSttProviderHydratedRef.current = true
+    })
+  }, [setSessionSttProvider])
+
+  useEffect(() => {
+    if (auth.state !== 'signed-in') return
+    // Fetch available ASR providers from server
+    api.listASRProviders().then(result => {
+      const providers: SessionSttProvider[] = ['native']
+      if (result.providers.some(p => p.key === 'xunfei' && p.enabled)) providers.push('xunfei')
+      if (!providers.includes(sessionSttProviderRef.current)) {
+        sessionSttProviderRef.current = 'native'
+        setSessionSttProvider('native')
+      }
+    }).catch(() => { /* silent — provider list is best-effort */ })
+  }, [auth.state, api, setSessionSttProvider])
+
+  // ─── SessionContext Value / 会话上下文值 ───
+  const sessionContext = useMemo<SessionContextValue>(() => ({
+    appVersion, applyTtsPreferences, auth, defaultApiBaseUrl, getAuthHeaders, handleUnauthorized, signOut,
+    snapshot, messages, corrections: correctionHistory, summary,
+    isSessionActive, status, busy, scenarioSwitching,
+    locale, tr,
+    ttsProvider, ttsVoiceId,
+    selectedScenarioKey, selectedAccentKey,
+    voiceProfileAccentLabel, voiceProfileAccentRegion,
+    audioUrl, api,
+    startSession, endSession, playCorrection, selectScenario, setLocale, submitText: submitTurn,
+    clearAudio,
+  }), [applyTtsPreferences, auth, clearAudio, getAuthHeaders, handleUnauthorized, signOut, snapshot, messages, correctionHistory, summary, isSessionActive, status, busy, scenarioSwitching, locale, tr, ttsProvider, ttsVoiceId, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion, audioUrl, api, startSession, endSession, playCorrection, selectScenario, setLocale, submitTurn, playbackQueue, setSelectedAccentKey, setTtsProvider, setTtsVoiceId, setTtsSpeed])
+
+  // ─── Tab Selection / 标签选择 ───
+  const selectTab = useCallback((tab: Tab) => {
+    logUserAction('tab_tap', { to: tab })
+    setActiveTab(tab)
+    const presence = routePresenceForTab(tab)
+    setRoutePresence(presence, `tab:${tab}`)
+    if (presence === 'outSession') {
+      playbackEndedAtMsRef.current = null; clearResumeListeningTimer()
+      endpointRequestRef.current += 1; pendingNativeTranscriptRef.current = ''
+      void cancelListeningForReason(`tab:${tab}`)
+      if (sessionActiveRef.current) setStatus('session.paused')
+      return
+    }
+    // Resume listening when switching to session tab
+    if (canStartSessionListening('tab_session')) {
+      listeningStartMsRef.current = Date.now()
+      setStatus(sessionSttProviderRef.current === 'xunfei' ? 'session.status.preparing_listening' : 'session.status.listening')
+      void speechStartListeningRef.current('en-US')
+    }
+  }, [logUserAction, clearResumeListeningTimer, cancelListeningForReason, setRoutePresence, setStatus, canStartSessionListening])
+
+  // ─── Render / 渲染 ───
+  const accentName = voiceProfileAccentLabel ?? getAccentLabel(accent, locale)
+  const accentRegion = voiceProfileAccentRegion ?? getAccentRegion(accent, locale)
+
+  if (children !== undefined) {
+    return (
+      <SessionContext.Provider value={sessionContext}>
+        {children}
+        <AppFeedbackOverlay feedback={activeFeedback} />
+      </SessionContext.Provider>
+    )
+  }
 
   return (
-    <SafeAreaView style={styles.shell}>
-      <View style={styles.content}>
-        {renderScreen()}
-        <AppFeedbackOverlay feedback={activeFeedback} />
-      </View>
-      <View style={styles.tabBarWrapper}>
-        <View style={styles.tabBar}>
-          {(['home', 'session', 'history', 'settings'] as Tab[]).map(tab => (
-            <Pressable key={tab} onPress={() => selectTab(tab)} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}>
-              <TabIcon tab={tab} color={activeTab === tab ? C.cream : C.textMuted} />
-              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
-                {tr(TAB_LABELS[tab])}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-    </SafeAreaView>
+    <AppShell
+      accentName={accentName}
+      accentRegion={accentRegion}
+      activeFeedback={activeFeedback}
+      activeTab={activeTab}
+      api={api}
+      appVersion={appVersion}
+      auth={auth}
+      defaultApiBaseUrl={defaultApiBaseUrl}
+      getAuthHeaders={getAuthHeaders}
+      handleUnauthorized={handleUnauthorized}
+      locale={locale}
+      scenarioDescription={getScenarioDescription(scenario, locale)}
+      scenarioDifficulty={getDifficultyLabel(scenario.difficulty, locale)}
+      scenarioIcon={scenario.icon}
+      scenarioName={getScenarioLabel(scenario, locale)}
+      selectTab={selectTab}
+      sessionContext={sessionContext}
+      setActiveTab={setActiveTab}
+      setLocale={setLocale}
+      signOut={signOut}
+      tr={tr}
+    />
   )
-
-  function makeStyles() {
-    return StyleSheet.create({
-      shell: { flex: 1, backgroundColor: C.bg },
-      content: { flex: 1 },
-      tabBarWrapper: { paddingHorizontal: 16, paddingBottom: 8, paddingTop: 6, backgroundColor: C.bg },
-      tabBar: {
-        flexDirection: 'row',
-        backgroundColor: C.surface,
-        borderRadius: 24, borderWidth: 1, borderColor: C.border,
-        paddingVertical: 4, paddingHorizontal: 4,
-      },
-      tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8, gap: 2, borderRadius: 20 },
-      tabItemActive: { backgroundColor: C.accent },
-      tabLabel: { fontSize: 10, color: C.textMuted, fontWeight: '600' },
-      tabLabelActive: { color: C.cream },
-    })
-  }
+  /* eslint-enable react-hooks/exhaustive-deps */
 }

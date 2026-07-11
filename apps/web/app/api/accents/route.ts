@@ -1,17 +1,30 @@
-import { jsonApiResult, jsonServerError } from '@/lib/server/http'
-import { getAvailableProviders, getTTSProviderPreference } from '@/lib/server/preferences'
+/**
+ * Accent profile and voice listing. / 口音配置和音色列表。
+ */
 import {
   accentProfiles,
   getAccentDescription,
   getAccentLabel,
   getAccentRegion,
+  normalizeLocale,
   supportsAccent,
   ttsProviderCapabilities,
-  type Locale,
 } from '@meteorvoice/shared'
+
+import {
+  getAvailableProviders,
+  getTTSProviderPreference,
+} from '@/lib/server/preferences'
+import {
+  guardApiRequest,
+  jsonApiResult,
+  jsonServerError,
+} from '@/lib/server/http'
 
 export async function GET(request: Request) {
   try {
+    const guard = await guardApiRequest(request, { name: 'accents', windowMs: 60_000, maxRequests: 120, requireClientHeader: true })
+    if (guard) return jsonApiResult(guard)
     const url = new URL(request.url)
     const locale = normalizeLocale(url.searchParams.get('locale'))
     const selectedProvider = url.searchParams.get('provider') ?? await getTTSProviderPreference()
@@ -42,6 +55,3 @@ export async function GET(request: Request) {
   }
 }
 
-function normalizeLocale(value: string | null): Locale {
-  return value === 'zh' ? 'zh' : 'en'
-}

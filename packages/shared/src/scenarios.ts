@@ -1,4 +1,11 @@
-import type { Locale, LocalizedText } from './locale'
+/**
+ * Scenarios and accent profiles data and label functions.
+ * 场景和口音数据与标签函数。
+ */
+import type {
+  Locale,
+  LocalizedText,
+} from './locale'
 
 export interface Scenario {
   key: string
@@ -125,6 +132,10 @@ export const accentProfiles: AccentProfile[] = [
   },
 ]
 
+/**
+ * Picks a random accent profile using cryptographically secure randomness.
+ * 使用加密安全随机数随机选择一个口音配置。
+ */
 export function pickRandomAccent(): AccentProfile {
   return accentProfiles[pickSecureRandomIndex(accentProfiles.length)] ?? accentProfiles[0]
 }
@@ -143,26 +154,50 @@ function pickSecureRandomIndex(length: number) {
   return value[0] % length
 }
 
+/**
+ * Returns the localized label for a scenario, falling back to the English name.
+ * 返回场景的本地化标签，若无本地化版本则回退到英文名称。
+ */
 export function getScenarioLabel(scenario: Scenario, locale: Locale) {
   return scenario.labels[locale] ?? scenario.name
 }
 
+/**
+ * Returns the localized description for a scenario, falling back to the English description.
+ * 返回场景的本地化描述，若无本地化版本则回退到英文描述。
+ */
 export function getScenarioDescription(scenario: Scenario, locale: Locale) {
   return scenario.descriptions[locale] ?? scenario.description
 }
 
+/**
+ * Returns the localized label for an accent profile, falling back to the English name.
+ * 返回口音的本地化标签，若无本地化版本则回退到英文名称。
+ */
 export function getAccentLabel(accent: AccentProfile, locale: Locale) {
   return accent.labels[locale] ?? accent.name
 }
 
+/**
+ * Returns the localized region for an accent profile, falling back to the English region.
+ * 返回口音的本地化地区，若无本地化版本则回退到英文地区名。
+ */
 export function getAccentRegion(accent: AccentProfile, locale: Locale) {
   return accent.regions[locale] ?? accent.region
 }
 
+/**
+ * Returns the localized description for an accent profile, falling back to the English description.
+ * 返回口音的本地化描述，若无本地化版本则回退到英文描述。
+ */
 export function getAccentDescription(accent: AccentProfile, locale: Locale) {
   return accent.descriptions[locale] ?? accent.description
 }
 
+/**
+ * Returns the localized label for a difficulty level (beginner, intermediate, advanced).
+ * 返回难度级别（初级、中级、高级）的本地化标签。
+ */
 export function getDifficultyLabel(difficulty: Scenario['difficulty'], locale: Locale) {
   const labels: Record<Scenario['difficulty'], LocalizedText> = {
     beginner: { en: 'Beginner', zh: '初级' },
@@ -172,6 +207,10 @@ export function getDifficultyLabel(difficulty: Scenario['difficulty'], locale: L
   return labels[difficulty][locale] ?? labels[difficulty].en
 }
 
+/**
+ * Finds a scenario by its key, name, or any localized label (case-insensitive).
+ * 通过 key、英文名称或任意本地化标签（不区分大小写）查找场景。
+ */
 export function findScenarioByKeyOrName(value: string) {
   const normalized = value.trim().toLowerCase()
   return scenarios.find(s =>
@@ -181,6 +220,10 @@ export function findScenarioByKeyOrName(value: string) {
   )
 }
 
+/**
+ * Finds an accent profile by its key, name, or any localized label (case-insensitive).
+ * 通过 key、英文名称或任意本地化标签（不区分大小写）查找口音。
+ */
 export function findAccentByKeyOrName(value: string) {
   const normalized = value.trim().toLowerCase()
   return accentProfiles.find(a =>

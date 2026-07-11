@@ -1,4 +1,12 @@
-import { hideAppFeedback, showAppFeedback, type AppFeedbackInput } from './feedback'
+/**
+ * Parallel operation group execution.
+ * 并行操作组执行。
+ */
+import type { AppFeedbackInput } from './feedback'
+import {
+  hideAppFeedback,
+  showAppFeedback,
+} from './feedback'
 
 export type AppOperationGroupTasks = Record<string, () => Promise<unknown>>
 
@@ -12,6 +20,10 @@ export type AppOperationGroupOptions<TTasks extends AppOperationGroupTasks> = {
   tasks: TTasks
 }
 
+/**
+ * Runs a group of async tasks with feedback display and returns settled results keyed by task name.
+ * 运行一组带有反馈显示的异步任务，返回按任务名索引的 settled 结果。
+ */
 export async function runAppOperationGroup<TTasks extends AppOperationGroupTasks>(
   options: AppOperationGroupOptions<TTasks>,
 ): Promise<AppOperationGroupResults<TTasks>> {

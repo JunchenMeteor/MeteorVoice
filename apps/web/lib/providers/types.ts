@@ -1,3 +1,8 @@
+/**
+ * Provider type definitions.
+ * 提供者类型定义。
+ */
+
 export type {
   ConversationContext,
   ConversationMessage,
@@ -11,7 +16,11 @@ export type {
   TTSProvider,
 } from '@meteorvoice/shared'
 
-import type { ConversationContext, ConversationMessage, ConversationResponse } from '@meteorvoice/shared'
+import type {
+  ConversationContext,
+  ConversationMessage,
+  ConversationResponse,
+} from '@meteorvoice/shared'
 
 export interface AIProvider {
   generateReply(messages: ConversationMessage[], context: ConversationContext): Promise<ConversationResponse>

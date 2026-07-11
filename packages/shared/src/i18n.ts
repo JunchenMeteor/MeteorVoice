@@ -1,7 +1,19 @@
+/**
+ * Internationalization string map (~250 entries).
+ * 国际化文案映射（约 250 条）。
+ */
 import type { Locale } from './locale'
+
+export type TranslateValue = string | number | boolean | null | undefined
+export type TranslateValues = Record<string, TranslateValue>
+export type TranslateFn = (key: string, values?: TranslateValues) => string
+export type TranslationResources = Partial<Record<Locale, Record<string, string>>>
+export type TranslationResourceLoader = (locale: Locale) => Promise<Record<string, string> | undefined>
 
 export const t: Record<Locale, Record<string, string>> = {
   en: {
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
     'nav.home': 'Home',
     'nav.practice': 'Practice',
     'nav.history': 'History',
@@ -27,8 +39,12 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.playback_blocked': 'Tap to play the coach reply.',
     'session.correcting': 'Coach suggests corrections',
     'session.ended': 'Session ended',
+    'session.sync_pending': 'Session saved on this device; waiting to sync',
+    'session.sync_failed': 'Session sync could not be saved; try again while online',
     'session.start': 'Start Session',
     'session.end': 'End Session',
+    'session.switch_scenario_title': 'Switch scenario?',
+    'session.switch_scenario_message': 'The current practice session will end before the new scenario starts.',
     'session.continue': 'Continue Speaking',
     'session.tap_mic': 'Tap mic to continue',
     'session.no_speech': "Didn't catch that. Tap mic to try again.",
@@ -40,7 +56,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.summary_title': 'Session Summary',
     'session.correction_tips': 'Correction Tips',
     'session.corrections_empty': 'No corrections yet',
-    'session.corrections_count': '{count} corrections',
+    'session.corrections_count': '{count, plural, one {# correction} other {# corrections}}',
     'session.corrections_live_hint': 'Corrections will appear here without interrupting your conversation.',
     'session.play_correction': 'Play correction',
     'session.play_reply': 'Play reply',
@@ -57,7 +73,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.transcript_tab': 'Transcript',
     'session.transcript': 'Transcript',
     'session.transcript_empty': 'No transcript yet',
-    'session.transcript_count': '{count} messages',
+    'session.transcript_count': '{count, plural, one {# message} other {# messages}}',
     'session.close_panel': 'Close',
     'session.global_active': 'Conversation active',
     'session.global_paused': 'Microphone paused',
@@ -99,7 +115,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.speech_phase.unavailable': 'Unavailable',
     'session.speech_phase.error': 'Error',
     'session.status.listening': 'Listening',
-    'session.status.preparing_listening': 'Preparing microphone',
+    'session.status.preparing_listening': 'Connecting speech recognition…',
     'session.status.playing_reply': 'Playing coach reply',
     'session.status.reply_played': 'Coach reply played',
     'session.status.requesting_reply': 'Requesting coach reply',
@@ -140,7 +156,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'history.status.deleted': 'Deleted',
     'history.expand_turns': 'View turns',
     'history.collapse_turns': 'Hide turns',
-    'history.turns_count': '{count} turns',
+    'history.turns_count': '{count, plural, one {# turn} other {# turns}}',
     'history.no_turns': 'No turns recorded for this session.',
     'history.load_more': 'Load more',
     'history.loading': 'Loading...',
@@ -263,6 +279,8 @@ export const t: Record<Locale, Record<string, string>> = {
     'login.signup_phone_success': 'Account created. You can sign in with your phone number.',
   },
   zh: {
+    'common.cancel': '取消',
+    'common.confirm': '确认',
     'nav.home': '首页',
     'nav.practice': '练习',
     'nav.history': '历史',
@@ -288,8 +306,12 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.playback_blocked': '点击播放教练回复。',
     'session.correcting': '教练建议纠正',
     'session.ended': '会话已结束',
+    'session.sync_pending': '会话已保存在本机，等待联网同步',
+    'session.sync_failed': '会话同步暂存失败，请联网后重试',
     'session.start': '开始练习',
     'session.end': '结束练习',
+    'session.switch_scenario_title': '切换场景？',
+    'session.switch_scenario_message': '当前练习会先结束，然后再进入新的场景。',
     'session.continue': '继续对话',
     'session.tap_mic': '点击麦克风继续',
     'session.no_speech': '没有听到声音，点击麦克风重试。',
@@ -360,7 +382,7 @@ export const t: Record<Locale, Record<string, string>> = {
     'session.speech_phase.unavailable': '不可用',
     'session.speech_phase.error': '错误',
     'session.status.listening': '正在聆听',
-    'session.status.preparing_listening': '正在准备麦克风',
+    'session.status.preparing_listening': '正在连接语音识别服务…',
     'session.status.playing_reply': '正在播放教练回复',
     'session.status.reply_played': '教练回复已播放',
     'session.status.requesting_reply': '正在请求教练回复',
@@ -523,4 +545,66 @@ export const t: Record<Locale, Record<string, string>> = {
     'login.signup_email_success': '请查看邮箱中的确认链接。',
     'login.signup_phone_success': '账号已创建，可以使用手机号登录。',
   },
+}
+
+export const defaultTranslationResources: TranslationResources = t
+
+function formatPlural(template: string, values?: TranslateValues): string {
+  if (!values) return template
+
+  return template.replace(/\{([a-zA-Z0-9_]+),\s*plural,\s*((?:=?[a-zA-Z0-9_]+\s*\{[^{}]*\}\s*)+)\}/g, (match, name: string, options: string) => {
+    const rawValue = values[name]
+    const numericValue = typeof rawValue === 'number'
+      ? rawValue
+      : typeof rawValue === 'string' && rawValue.trim() !== ''
+        ? Number(rawValue)
+        : Number.NaN
+
+    if (!Number.isFinite(numericValue)) return match
+
+    const parsedOptions: Record<string, string> = {}
+    options.replace(/(=?[a-zA-Z0-9_]+)\s*\{([^{}]*)\}/g, (_optionMatch, optionName: string, optionValue: string) => {
+      parsedOptions[optionName] = optionValue
+      return _optionMatch
+    })
+
+    const exactOption = parsedOptions[`=${numericValue}`]
+    const pluralCategory = numericValue === 1 ? 'one' : 'other'
+    const selected = exactOption ?? parsedOptions[pluralCategory] ?? parsedOptions.other
+
+    return selected ? selected.replace(/#/g, String(numericValue)) : match
+  })
+}
+
+export function interpolate(template: string, values?: TranslateValues): string {
+  const pluralFormatted = formatPlural(template, values)
+  if (!values) return template
+  return pluralFormatted.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, name: string) => {
+    const value = values[name]
+    return value === null || value === undefined ? match : String(value)
+  })
+}
+
+export function translateWithResources(resources: TranslationResources, locale: Locale, key: string, values?: TranslateValues): string {
+  return interpolate(resources[locale]?.[key] ?? resources.en?.[key] ?? key, values)
+}
+
+export function createTranslator(locale: Locale, resources: TranslationResources = defaultTranslationResources): TranslateFn {
+  return (key, values) => translateWithResources(resources, locale, key, values)
+}
+
+export function createLazyTranslator(resources: TranslationResources = defaultTranslationResources) {
+  const loadedResources: TranslationResources = { ...resources }
+
+  return {
+    load: async (locale: Locale, loader: TranslationResourceLoader) => {
+      const loaded = await loader(locale)
+      if (loaded) loadedResources[locale] = { ...loadedResources[locale], ...loaded }
+    },
+    translate: (locale: Locale, key: string, values?: TranslateValues) => translateWithResources(loadedResources, locale, key, values),
+  }
+}
+
+export function translate(locale: Locale, key: string, values?: TranslateValues): string {
+  return translateWithResources(defaultTranslationResources, locale, key, values)
 }

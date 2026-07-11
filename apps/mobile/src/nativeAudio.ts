@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState, type AppStateStatus } from 'react-native'
+/**
+ * Native audio playback and recording hook.
+ * 原生音频播放与录音 Hook。
+ */
+
+import type { AppStateStatus } from 'react-native'
+import { AppState } from 'react-native'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   getRecordingPermissionsAsync,
   RecordingPresets,
@@ -10,6 +22,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio'
+
 import { configureVoiceAudioSession } from './voiceAudioSession'
 
 type NativeAudioPermission = 'unknown' | 'granted' | 'denied'
@@ -65,9 +78,10 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   const [interrupted, setInterrupted] = useState(false)
   const operationRef = useRef<Promise<unknown> | null>(null)
   const interruptedPhaseRef = useRef<NativeAudioPhase | null>(null)
+  const autoplayedUrlRef = useRef<string | null>(null)
   const playbackRate = normalizePlaybackRate(playbackRateValue)
 
-  const player = useAudioPlayer(audioUrl, { downloadFirst: true, updateInterval: 250 })
+  const player = useAudioPlayer(audioUrl, { updateInterval: 250 })
   const playerStatus = useAudioPlayerStatus(player)
   const recorder = useAudioRecorder(
     audioExperimentFlags.useAndroidVoiceCommunicationRecorder
@@ -253,19 +267,30 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   }, [applyPlaybackRate])
 
   useEffect(() => {
-    if (!audioUrl) return
+    if (!audioUrl) {
+      autoplayedUrlRef.current = null
+      return
+    }
+    if (!playerStatus.isLoaded || autoplayedUrlRef.current === audioUrl) return
+    let cancelled = false
     void configurePlayback()
       .then(() => {
+        if (cancelled) return
         applyPlaybackRate()
         player.seekTo(0)
         player.play()
+        autoplayedUrlRef.current = audioUrl
+        setInterrupted(false)
+        setPhase('playing')
       })
       .catch(error => {
+        if (cancelled) return
         const message = error instanceof Error ? error.message : 'Coach voice failed to play'
         setErrorMessage(message)
         setPhase('error')
       })
-  }, [applyPlaybackRate, audioUrl, configurePlayback, player])
+    return () => { cancelled = true }
+  }, [applyPlaybackRate, audioUrl, configurePlayback, player, playerStatus.isLoaded])
 
   // 前后台切换：后台时暂停音频，前台时检查权限恢复
   useEffect(() => {
@@ -310,7 +335,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
   }, [player, playerStatus.playing, recorder, stopRecording])
 
   return useMemo(() => ({
+    currentTimeSeconds: playerStatus.currentTime,
     didJustFinish: playerStatus.didJustFinish,
+    playbackDurationSeconds: playerStatus.duration,
     durationMillis: recorderState.durationMillis,
     errorMessage,
     interrupted,
@@ -318,6 +345,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     isRecording,
     lastRecordingUri,
     permission,
+    playbackRemainingMs: playerStatus.playing && playerStatus.duration > 0
+      ? Math.max(0, (playerStatus.duration - playerStatus.currentTime) * 1000)
+      : null,
     phase: displayPhase,
     playReply,
     resumeAfterInterruption,
@@ -332,6 +362,9 @@ export function useNativeSessionAudio(audioUrl: string | null, playbackRateValue
     lastRecordingUri,
     permission,
     playerStatus.didJustFinish,
+    playerStatus.currentTime,
+    playerStatus.duration,
+    playerStatus.playing,
     displayPhase,
     playReply,
     resumeAfterInterruption,

@@ -1,11 +1,17 @@
+/**
+ * Root layout with ThemeProvider and LanguageProvider.
+ * 根布局。
+ */
+
 import type { Metadata } from 'next'
+
 import './globals.css'
-import Sidebar from '@/components/Sidebar'
-import ThemeProvider from '@/components/ThemeProvider'
-import LanguageProvider from '@/components/LanguageProvider'
-import VoiceSessionProvider from '@/components/VoiceSessionProvider'
 import ActiveSessionBar from '@/components/ActiveSessionBar'
 import AppFeedbackPresenter from '@/components/AppFeedbackPresenter'
+import LanguageProvider from '@/components/LanguageProvider'
+import Sidebar from '@/components/Sidebar'
+import ThemeProvider from '@/components/ThemeProvider'
+import VoiceSessionProvider from '@/components/VoiceSessionProvider'
 
 export const metadata: Metadata = {
   title: 'MeteorVoice',

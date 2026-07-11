@@ -1,4 +1,10 @@
+/**
+ * Session page wrapper with Suspense.
+ * 会话页面（Suspense 包装）。
+ */
+
 import { Suspense } from 'react'
+
 import { SessionPageClient } from './SessionPage'
 
 export default function SessionPage() {

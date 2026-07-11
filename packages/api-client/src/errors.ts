@@ -1,4 +1,11 @@
-import { MeteorVoiceApiError, MeteorVoiceApiTimeoutError } from './client'
+/**
+ * API error formatting — 7 error kinds + 7 presentation modes.
+ * API 错误格式化 — 7 种错误类型 + 7 种展示模式。
+ */
+import {
+  MeteorVoiceApiError,
+  MeteorVoiceApiTimeoutError,
+} from './client'
 
 export type ApiRequestErrorKind =
   | 'unauthorized'
@@ -41,6 +48,10 @@ export type FormatApiRequestErrorOptions = {
   presentation?: ApiRequestErrorPresentation
 }
 
+/**
+ * Reads and validates a JSON response, throwing MeteorVoiceApiError if the response is not OK.
+ * 读取并验证 JSON 响应，如果响应状态不是 OK 则抛出 MeteorVoiceApiError。
+ */
 export async function readApiJsonResponse<T>(response: Response, fallbackMessage = 'Request failed'): Promise<T> {
   const body = await readResponseJson(response)
   if (!response.ok) {
@@ -50,6 +61,10 @@ export async function readApiJsonResponse<T>(response: Response, fallbackMessage
   return body as T
 }
 
+/**
+ * Formats any error (MeteorVoiceApiError, timeout, network, or unknown) into a structured ApiRequestErrorDetails object.
+ * 将任意错误（MeteorVoiceApiError、超时、网络或未知错误）格式化为结构化的 ApiRequestErrorDetails 对象。
+ */
 export function formatApiRequestError(
   error: unknown,
   options: string | FormatApiRequestErrorOptions,

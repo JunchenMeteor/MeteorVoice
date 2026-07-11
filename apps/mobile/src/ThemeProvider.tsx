@@ -1,6 +1,22 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+/**
+ * Theme context provider.
+ * 主题上下文提供者。
+ */
+
+import type { ReactNode } from 'react'
 import * as SecureStore from 'expo-secure-store'
-import { themes, type ThemeKey, type ThemeColors } from './theme'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from 'react'
+
+import type {
+  ThemeColors,
+  ThemeKey,
+} from './theme'
+import { themes } from './theme'
 
 const THEME_KEY = 'app_theme'
 

@@ -8,6 +8,8 @@
 - `supabase/migrations/004_productized_preferences.sql` adds locale, default scenario/accent, and TTS speed preferences for Web/Mobile sync.
 - `supabase/migrations/005_tts_voice_preferences.sql` adds the selected TTS coach voice id.
 - `supabase/migrations/008_voice_profile_preferences.sql` adds the provider-neutral coach voice profile catalog, stores `selected_voice_profile_id`, and removes `default_accent_key`.
+- `supabase/migrations/012_persistent_rate_limits.sql` adds persistent API rate limit buckets and the `check_api_rate_limit` RPC for multi-instance deployments.
+- `supabase/migrations/013_split_user_preferences.sql` moves product/runtime preferences into `user_preferences` while leaving UI theme state in `theme_preferences`.
 - The app uses Supabase Auth with a MeteorTest-style username/phone account input.
 
 ## Username + Phone Login Mode
@@ -43,7 +45,7 @@ This gives you a single login surface with two formal account types:
 3. Run `002_rls.sql`.
 4. Run `003_tts_preferences.sql`.
 5. Run `004_productized_preferences.sql`.
-6. Run `005_tts_voice_preferences.sql` through `008_voice_profile_preferences.sql`.
+6. Run `005_tts_voice_preferences.sql` through `013_split_user_preferences.sql`.
 7. Copy the project URL and anon key into `apps/web/.env.local` for Web/API local development and `apps/mobile/.env` using Expo's `EXPO_PUBLIC_*` names for mobile builds.
 8. Set Authentication redirect URLs for local development.
 
@@ -51,9 +53,9 @@ This gives you a single login surface with two formal account types:
 
 - Logged-in users can only read and write their own sessions.
 - Turns and correction items are only accessible through the owner session.
-- Learning history and theme preferences are user-scoped.
-- The selected TTS provider is stored on `theme_preferences.tts_provider` and protected by the same user-owned policy.
-- Locale, default scenario, TTS speed, TTS provider, selected voice profile id, and provider voice id are stored on `theme_preferences` and protected by the same user-owned policy.
+- Learning history, UI theme preferences, and user runtime preferences are user-scoped.
+- UI theme state stays on `theme_preferences`.
+- Locale, default scenario, TTS speed, TTS provider, selected voice profile id, and provider voice id are stored on `user_preferences` and protected by the same user-owned policy.
 - Coach voice catalog rows are stored on `tts_voice_profiles` and readable by anon/authenticated clients through the server API.
 - Accent profiles and scenarios are readable by authenticated users.
 

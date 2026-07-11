@@ -1,31 +1,50 @@
+/**
+ * Home screen with scenario selection.
+ * 场景选择主界面。
+ */
+
 import { useMemo } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
+
+import type {
+  Locale,
+  TranslateFn,
+} from '@meteorvoice/shared'
+import type { scenarios as ScenariosType } from '@meteorvoice/shared'
+import {
+  getDifficultyLabel,
+  getScenarioDescription,
+  getScenarioLabel,
+} from '@meteorvoice/shared'
+
+import { useSession } from '../SessionContext'
 import { useTheme } from '../ThemeProvider'
-import { getScenarioLabel, getScenarioDescription, getDifficultyLabel, type scenarios as ScenariosType } from '@meteorvoice/shared'
-import type { Locale } from '@meteorvoice/shared'
 
 type Scenario = (typeof ScenariosType)[number]
 
 interface Props {
-  tr: (key: string) => string
+  tr: TranslateFn
   locale: Locale
   scenarios: Scenario[]
-  selectedScenarioKey: string
-  isSessionActive: boolean
-  scenarioSwitching: boolean
-  onSelectScenario: (key: string) => void | Promise<void>
   onGoToSession: () => void
 }
 
 export function HomeScreen({
   tr, locale, scenarios,
-  selectedScenarioKey, isSessionActive, scenarioSwitching,
-  onSelectScenario, onGoToSession,
+  onGoToSession,
 }: Props) {
+  const { selectedScenarioKey, isSessionActive, selectScenario, scenarioSwitching } = useSession()
   const { C } = useTheme()
   async function handleScenario(key: string) {
-    await onSelectScenario(key)
-    onGoToSession()
+    const shouldNavigate = await selectScenario(key)
+    if (shouldNavigate) onGoToSession()
   }
 
 
@@ -58,6 +77,8 @@ export function HomeScreen({
     },
     resumeTxt: { color: C.cream, fontSize: 14, fontWeight: '700' },
   }), [C])
+
+  // ─── Render / 渲染 ───
   return (
     <ScrollView
       style={styles.shell}
