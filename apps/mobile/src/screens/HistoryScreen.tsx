@@ -31,15 +31,18 @@ import {
 } from '@meteorvoice/shared'
 
 import { useHistoryScreenState } from '../hooks/useHistoryScreenState'
+import type { HistoryAuthState } from '../historyRefresh'
+import { ContentState } from '../components/ContentState'
 import { useTheme } from '../ThemeProvider'
 
 interface Props {
   tr: TranslateFn
   locale: Locale
   api: MeteorVoiceApiClient
-  getAuthHeaders: () => Promise<HeadersInit>
+  authState: HistoryAuthState
+  authUserId: string | null
   handleUnauthorized: () => void
-  defaultApiBaseUrl: string
+  refreshKey: number
 }
 
 function scenarioLabel(entry: HistorySession, locale: Locale) {
@@ -52,7 +55,7 @@ function accentLabel(entry: HistorySession, locale: Locale) {
   return a ? getAccentLabel(a, locale) : entry.accent
 }
 
-export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
+export function HistoryScreen({ tr, locale, api, authState, authUserId, handleUnauthorized, refreshKey }: Props) {
   const { C } = useTheme()
   const {
     deleteSession,
@@ -60,24 +63,20 @@ export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
     expandedId,
     filtered,
     filterScenario,
+    hasSessions,
     loadHistory,
     loading,
     selectedHistory,
     selectedTurns,
     setFilterScenario,
     toggle,
-  } = useHistoryScreenState({ api, handleUnauthorized })
+  } = useHistoryScreenState({ api, authState, authUserId, handleUnauthorized, refreshKey })
 
   // ─── Styles / 样式 ───
   const styles = useMemo(() => StyleSheet.create({
     shell: { flex: 1, backgroundColor: C.bg },
-    header: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: 16, paddingVertical: 12,
-    },
+    header: { paddingHorizontal: 16, paddingVertical: 12 },
     title: { color: C.textPrimary, fontSize: 22, fontWeight: '800' },
-    loadBtn: { backgroundColor: C.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-    loadTxt: { color: C.accent, fontSize: 13, fontWeight: '700' },
     filterBar: { maxHeight: 44 },
     filterContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
     filterChip: {
@@ -87,9 +86,6 @@ export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
     filterChipActive: { backgroundColor: C.accent, borderColor: C.accent },
     filterChipTxt: { color: C.textSecondary, fontSize: 12, fontWeight: '600' },
     filterChipTxtActive: { color: C.cream },
-    error: { color: '#ff8a80', fontSize: 13, paddingHorizontal: 16, marginBottom: 8 },
-    empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    emptyTxt: { color: C.textMuted, fontSize: 14 },
     list: { paddingHorizontal: 16, gap: 10, paddingTop: 4 },
     card: {
       backgroundColor: C.surface, borderRadius: 12,
@@ -138,13 +134,10 @@ export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
     <View style={styles.shell}>
       <View style={styles.header}>
         <Text style={styles.title}>{tr('history.title')}</Text>
-        <Pressable onPress={loadHistory} style={styles.loadBtn} disabled={loading}>
-          <Text style={styles.loadTxt}>{loading ? tr('history.loading') : tr('nav.history') || 'Refresh'}</Text>
-        </Pressable>
       </View>
 
       {/* 场景筛选 */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterContent}>
+      {authState === 'signed-in' && hasSessions ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterContent}>
         <Pressable onPress={() => setFilterScenario(null)} style={[styles.filterChip, filterScenario === null && styles.filterChipActive]}>
           <Text style={[styles.filterChipTxt, filterScenario === null && styles.filterChipTxtActive]}>{tr('history.filter_all')}</Text>
         </Pressable>
@@ -153,17 +146,21 @@ export function HistoryScreen({ tr, locale, api, handleUnauthorized }: Props) {
             <Text style={[styles.filterChipTxt, filterScenario === s.key && styles.filterChipTxtActive]}>{s.icon} {getScenarioLabel(s, locale)}</Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </ScrollView> : null}
 
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      {filtered.length === 0 && !loading ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTxt}>{tr('history.empty')}</Text>
-        </View>
+      {authState !== 'signed-in' ? (
+        <ContentState icon="≡" title={tr('history.auth_required')} message={tr('history.auth_hint')} />
+      ) : loading && !hasSessions ? (
+        <ContentState loading title={tr('history.loading')} />
+      ) : error && !hasSessions ? (
+        <ContentState icon="!" title={tr('history.load_error')} message={error} actionLabel={tr('common.retry')} onAction={loadHistory} />
+      ) : filtered.length === 0 ? (
+        <ContentState icon="≡" title={tr('history.empty')} message={tr('history.empty_hint')} />
       ) : (
         <FlatList
           data={filtered}
+          onRefresh={loadHistory}
+          refreshing={loading}
           keyExtractor={item => String(item.id)}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
