@@ -17,6 +17,7 @@ import {
 
 import type {
   Locale,
+  Scenario,
   TranslateFn,
 } from '@meteorvoice/shared'
 import type {
@@ -27,12 +28,12 @@ import {
   accentProfiles,
   getAccentLabel,
   getScenarioLabel,
-  scenarios,
 } from '@meteorvoice/shared'
 
 import { useHistoryScreenState } from '../hooks/useHistoryScreenState'
 import type { HistoryAuthState } from '../historyRefresh'
 import { ContentState } from '../components/ContentState'
+import { useSession } from '../SessionContext'
 import { useTheme } from '../ThemeProvider'
 
 interface Props {
@@ -45,8 +46,8 @@ interface Props {
   refreshKey: number
 }
 
-function scenarioLabel(entry: HistorySession, locale: Locale) {
-  const s = scenarios.find(x => x.key === (entry.scenario_key ?? entry.scenario))
+function scenarioLabel(entry: HistorySession, locale: Locale, availableScenarios: Scenario[]) {
+  const s = availableScenarios.find(x => x.key === (entry.scenario_key ?? entry.scenario))
   return s ? getScenarioLabel(s, locale) : entry.scenario
 }
 
@@ -56,6 +57,7 @@ function accentLabel(entry: HistorySession, locale: Locale) {
 }
 
 export function HistoryScreen({ tr, locale, api, authState, authUserId, handleUnauthorized, refreshKey }: Props) {
+  const { availableScenarios } = useSession()
   const { C } = useTheme()
   const {
     deleteSession,
@@ -141,7 +143,7 @@ export function HistoryScreen({ tr, locale, api, authState, authUserId, handleUn
         <Pressable onPress={() => setFilterScenario(null)} style={[styles.filterChip, filterScenario === null && styles.filterChipActive]}>
           <Text style={[styles.filterChipTxt, filterScenario === null && styles.filterChipTxtActive]}>{tr('history.filter_all')}</Text>
         </Pressable>
-        {scenarios.map(s => (
+        {availableScenarios.map(s => (
           <Pressable key={s.key} onPress={() => setFilterScenario(s.key)} style={[styles.filterChip, filterScenario === s.key && styles.filterChipActive]}>
             <Text style={[styles.filterChipTxt, filterScenario === s.key && styles.filterChipTxtActive]}>{s.icon} {getScenarioLabel(s, locale)}</Text>
           </Pressable>
@@ -174,7 +176,7 @@ export function HistoryScreen({ tr, locale, api, authState, authUserId, handleUn
               >
                 <View style={styles.cardRow}>
                   <View style={styles.cardLeft}>
-                    <Text style={styles.cardScenario}>{scenarioLabel(item, locale)}</Text>
+                    <Text style={styles.cardScenario}>{scenarioLabel(item, locale, availableScenarios)}</Text>
                     <Text style={styles.cardMeta}>{item.date} · {accentLabel(item, locale)}</Text>
                   </View>
                   <View style={styles.cardRight}>

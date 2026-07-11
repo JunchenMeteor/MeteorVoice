@@ -5,7 +5,6 @@ import {
   getScenarioDescription,
   getScenarioLabel,
   normalizeLocale,
-  scenarios,
 } from '@meteorvoice/shared'
 
 import {
@@ -13,6 +12,7 @@ import {
   jsonApiResult,
   jsonServerError,
 } from '@/lib/server/http'
+import { listConfiguredScenarios } from '@/lib/server/scenarios'
 
 export async function GET(request: Request) {
   try {
@@ -20,9 +20,10 @@ export async function GET(request: Request) {
     if (guard) return jsonApiResult(guard)
     const url = new URL(request.url)
     const locale = normalizeLocale(url.searchParams.get('locale'))
+    const configuredScenarios = await listConfiguredScenarios()
 
     return jsonApiResult({
-      scenarios: scenarios.map(scenario => ({
+      scenarios: configuredScenarios.map(scenario => ({
         ...scenario,
         label: getScenarioLabel(scenario, locale),
         localized_description: getScenarioDescription(scenario, locale),
@@ -32,4 +33,3 @@ export async function GET(request: Request) {
     return jsonServerError(error, 'Failed to load scenarios')
   }
 }
-

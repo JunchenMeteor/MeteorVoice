@@ -17,9 +17,6 @@ import type {
   Locale,
   TranslateFn,
 } from '@meteorvoice/shared'
-import {
-  scenarios,
-} from '@meteorvoice/shared'
 
 import type { SessionContextValue } from './SessionContext'
 import type { MobileAuthState } from './mobileAuth'
@@ -132,7 +129,7 @@ export function AppShell({
     <SafeAreaView style={styles.shell}>
       <View style={styles.content}>
         <SessionContext.Provider value={sessionContext}>
-          {activeTab === 'home' && <HomeScreen tr={tr} locale={locale} scenarios={scenarios} onGoToSession={() => setActiveTab('session')} />}
+          {activeTab === 'home' && <HomeScreen tr={tr} locale={locale} onGoToSession={() => setActiveTab('session')} />}
           {activeTab === 'session' && <SessionScreen tr={tr} accentName={accentName} accentRegion={accentRegion} scenarioName={scenarioName} scenarioIcon={scenarioIcon} scenarioDifficulty={scenarioDifficulty} scenarioDescription={scenarioDescription} />}
           {activeTab === 'history' && <HistoryScreen tr={tr} locale={locale} api={api} authState={auth.state} authUserId={auth.user?.id ?? null} handleUnauthorized={handleUnauthorized} refreshKey={0} />}
           {activeTab === 'settings' && <SettingsScreen tr={tr} locale={locale} appVersion={appVersion} defaultApiBaseUrl={defaultApiBaseUrl} auth={auth} signOut={signOut} handleUnauthorized={handleUnauthorized} getAuthHeaders={getAuthHeaders} onLocaleChange={setLocale} />}

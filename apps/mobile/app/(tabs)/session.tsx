@@ -19,13 +19,13 @@ import { SessionScreen } from '../../src/screens/SessionScreen'
 import { useSession } from '../../src/SessionContext'
 
 export default function SessionTab() {
-  const { tr, locale, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion } = useSession()
+  const { tr, locale, availableScenarios, selectedScenarioKey, selectedAccentKey, voiceProfileAccentLabel, voiceProfileAccentRegion } = useSession()
 
   const { scenario, accent } = useMemo(() => {
-    const s = scenarios.find(x => x.key === selectedScenarioKey) ?? scenarios[0]
+    const s = availableScenarios.find(x => x.key === selectedScenarioKey) ?? availableScenarios[0] ?? scenarios[0]
     const a = accentProfiles.find(x => x.key === selectedAccentKey) ?? accentProfiles[0]
     return { scenario: s, accent: a }
-  }, [selectedScenarioKey, selectedAccentKey])
+  }, [availableScenarios, selectedScenarioKey, selectedAccentKey])
 
   return (
     <SessionScreen
