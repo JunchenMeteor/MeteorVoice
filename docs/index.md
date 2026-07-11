@@ -64,7 +64,7 @@
 - `docs/deployment-runbook.md`
   - Monorepo 迁移后的 Vercel 部署、分支职责、环境变量和发布/回滚流程。
 - `docs/tencent-docker-deployment.md` / `docs/tencent-docker-deployment.zh-CN.md`
-  - 腾讯云 Web/API Docker + Actions Artifact 部署架构、PM2 平滑迁移、健康检查和回滚手册。
+  - 腾讯云 Web/API Docker 镜像制品部署架构、PM2 平滑迁移、健康检查和回滚手册。
 
 ## 已完成计划
 

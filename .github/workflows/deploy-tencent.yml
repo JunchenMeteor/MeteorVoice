@@ -33,6 +33,7 @@ jobs:
   build:
     name: Build Web/API image
     runs-on: ubuntu-latest
+    environment: tencent
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,12 +56,33 @@ jobs:
         if: github.event_name != 'pull_request'
         run: gzip -1 < "${RUNNER_TEMP}/meteorvoice-image.tar" > deploy/meteorvoice-image.tar.gz
 
+      - name: Upload image artifact to Tencent
+        if: github.event_name != 'pull_request'
+        env:
+          DEPLOY_KEY: ${{ secrets.TENCENT_ARTIFACT_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.TENCENT_ARTIFACT_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.TENCENT_ARTIFACT_HOST }}
+          DEPLOY_USER: ${{ vars.TENCENT_ARTIFACT_USER }}
+        run: |
+          key_file="${RUNNER_TEMP}/artifact-upload-key"
+          known_hosts_file="${RUNNER_TEMP}/artifact-known-hosts"
+          printf '%s\n' "${DEPLOY_KEY}" > "${key_file}"
+          printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > "${known_hosts_file}"
+          chmod 0600 "${key_file}" "${known_hosts_file}"
+          ssh -i "${key_file}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${known_hosts_file}" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "${GITHUB_SHA}" \
+            < deploy/meteorvoice-image.tar.gz
+          rm -f deploy/meteorvoice-image.tar.gz "${key_file}" "${known_hosts_file}"
+
       - name: Upload deployment manifest
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: meteorvoice-deployment-${{ github.sha }}
-          path: deploy
+          path: |
+            deploy/docker-compose.yml
+            deploy/deploy-container.sh
           retention-days: 7
 
   deploy:
@@ -95,7 +117,7 @@ jobs:
           fi
 
       - name: Load image artifact
-        run: gzip -dc deployment/meteorvoice-image.tar.gz | docker load
+        run: gzip -dc "/srv/deploy-inbox/meteorvoice/${GITHUB_SHA}.tar.gz" | docker load
 
       - name: Deploy
         env:
@@ -110,3 +132,7 @@ jobs:
         run: |
           chmod +x deployment/deploy-container.sh
           deployment/deploy-container.sh
+
+      - name: Remove uploaded image artifact
+        if: success()
+        run: rm -f "/srv/deploy-inbox/meteorvoice/${GITHUB_SHA}.tar.gz"
