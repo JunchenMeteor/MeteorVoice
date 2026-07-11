@@ -24,7 +24,7 @@ const config = {
   releaseDoc: (version) => `docs/releases/v${version}.md`,
   validation: ['npm test'],
   releaseUrls: ['https://meteorvoice.jcmeteor.com/', 'https://mv-pre.jcmeteor.com/'],
-  deployWorkflow: 'Deploy Tencent',
+  deployWorkflow: 'Deploy Tencent Docker',
 }
 
 const args = process.argv.slice(2)
