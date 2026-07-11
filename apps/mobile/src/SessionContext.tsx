@@ -22,6 +22,7 @@ import type {
   ConversationMessage,
   ConversationResponse,
   Locale,
+  Scenario,
   TranslateFn,
 } from '@meteorvoice/shared'
 import type { MobileAuthState } from './mobileAuth'
@@ -32,6 +33,7 @@ export interface SessionContextValue {
   applyTtsPreferences: (preferences: PreferencesResponse) => void
   auth: MobileAuthState
   audioUrl: string | null
+  availableScenarios: Scenario[]
   busy: boolean
   clearAudio: () => void
   corrections: ConversationResponse['corrections']

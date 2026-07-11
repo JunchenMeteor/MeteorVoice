@@ -17,7 +17,6 @@ import type {
   Locale,
   TranslateFn,
 } from '@meteorvoice/shared'
-import type { scenarios as ScenariosType } from '@meteorvoice/shared'
 import {
   getDifficultyLabel,
   getScenarioDescription,
@@ -27,20 +26,17 @@ import {
 import { useSession } from '../SessionContext'
 import { useTheme } from '../ThemeProvider'
 
-type Scenario = (typeof ScenariosType)[number]
-
 interface Props {
   tr: TranslateFn
   locale: Locale
-  scenarios: Scenario[]
   onGoToSession: () => void
 }
 
 export function HomeScreen({
-  tr, locale, scenarios,
+  tr, locale,
   onGoToSession,
 }: Props) {
-  const { selectedScenarioKey, isSessionActive, selectScenario, scenarioSwitching } = useSession()
+  const { availableScenarios, selectedScenarioKey, isSessionActive, selectScenario, scenarioSwitching } = useSession()
   const { C } = useTheme()
   async function handleScenario(key: string) {
     const shouldNavigate = await selectScenario(key)
@@ -88,7 +84,7 @@ export function HomeScreen({
       <Text style={styles.subtitle}>{tr('home.subtitle')}</Text>
 
       <FlatList
-        data={scenarios}
+        data={availableScenarios}
         keyExtractor={item => item.key}
         numColumns={2}
         columnWrapperStyle={styles.row}

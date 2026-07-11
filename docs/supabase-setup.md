@@ -59,6 +59,18 @@ This gives you a single login surface with two formal account types:
 - Coach voice catalog rows are stored on `tts_voice_profiles` and readable by anon/authenticated clients through the server API.
 - Accent profiles and scenarios are readable by authenticated users.
 
+## Scenario configuration
+
+The mobile app loads enabled rows from the `scenarios` table after sign-in. Update
+`name`, `name_zh`, `description`, `description_zh`, `difficulty`, `icon`, or
+`enabled` in the Supabase Table Editor to change the practice catalog without an
+app rebuild. Keep at least one row enabled. `icon` may be an emoji; the original
+seed values (`briefcase`, `plane`, `coffee`, `utensils`, and `building`) are also
+mapped to their emoji equivalents.
+
+Signed-out clients and failed configuration requests use the shared built-in
+catalog so the home screen remains available offline.
+
 ## Coach Voice Profiles
 
 `tts_voice_profiles` is the editable catalog for all provider voices. Insert one row per voice. Use `provider_voice_id` for the value required by the provider API, and use `display_name`, `display_name_zh`, `gender`, `style`, `quality_tier`, `status`, and `expires_at` for UI and availability.
