@@ -58,7 +58,10 @@ if [ -n "${current_container}" ]; then
   previous_image="$(docker inspect --format '{{.Config.Image}}' "${current_container}")"
 fi
 
-docker pull "${IMAGE_URI}"
+if ! docker image inspect "${IMAGE_URI}" >/dev/null 2>&1; then
+  echo "Image is not loaded: ${IMAGE_URI}" >&2
+  exit 1
+fi
 
 if [ -z "${current_container}" ] && pm2 describe "${PM2_NAME}" >/dev/null 2>&1; then
   shadow_env="$(mktemp)"
@@ -90,7 +93,6 @@ else
     if [ -n "${previous_image}" ]; then
       echo "Deployment failed; restoring ${previous_image}" >&2
       write_deployment_env "${deployment_env}" "${previous_image}" "${HOST_PORT}"
-      docker pull "${previous_image}" || true
       compose "${project_name}" "${deployment_env}" up -d --wait --wait-timeout 180
       wait_for_health "${HOST_PORT}" "${PUBLIC_URL}"
     fi
