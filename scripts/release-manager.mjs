@@ -147,8 +147,8 @@ function ensureTooling() {
   run('git', ['--version'])
   run('gh', ['--version'])
   run('curl', ['--version'])
-  run('git', ['config', 'user.name', 'github-actions[bot]'], { allowFail: true })
-  run('git', ['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], { allowFail: true })
+  run('git', ['config', 'user.name', 'JunchenMeteor'], { allowFail: true })
+  run('git', ['config', 'user.email', '15767428+JunchenMeteor@users.noreply.github.com'], { allowFail: true })
 }
 
 function ensureCleanWorktree() {
