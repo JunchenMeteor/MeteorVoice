@@ -96,10 +96,23 @@ jobs:
             echo "public_url=https://mv-pre.jcmeteor.com/" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Load public runtime config for the build
+        run: |
+          set -a
+          . /etc/meteorvoice/meteorvoice.env
+          set +a
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY NEXT_PUBLIC_APP_URL; do
+            value=$(printenv "$name" || true)
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          done
+
       - name: Build image from artifact
         run: >-
           docker build
           --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+          --build-arg NEXT_PUBLIC_SUPABASE_URL
+          --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY
+          --build-arg NEXT_PUBLIC_APP_URL
           --tag "meteorvoice-web:${GITHUB_SHA}"
           --file source/Dockerfile
           source
